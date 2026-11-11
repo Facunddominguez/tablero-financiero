@@ -79,7 +79,8 @@ h2 { font: 600 .78rem/1.2 var(--f-texto); letter-spacing: .09em; text-transform:
 h2.sub { margin-top: 2rem; }
 
 @media (max-width: 43rem) {
-  .barra { padding-block: .45rem; }
+  /* sin backdrop-filter: si no, la barra pasa a ser el contenedor de la navegación fija */
+  .barra { padding-block: .45rem; backdrop-filter: none; background: var(--papel); }
   .nav { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; gap: 0; justify-content: space-around; padding: .35rem .25rem calc(.35rem + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--papel) 92%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--linea); z-index: 6; }
   .nav a { flex: 1; text-align: center; padding: .55rem .2rem; font-size: .82rem; }
   .mas { margin-left: auto; }

@@ -34,12 +34,12 @@ const ok = n => typeof n === 'number' && isFinite(n);
 
 export const fmt = {
   num: (n, dec = 0) => ok(n) ? N(dec, dec).format(n).replace('-', '−') : '—',
-  usd: (n, dec = 0) => ok(n) ? 'USD ' + fmt.num(n, dec) : '—',
-  ars: (n, dec = 0) => ok(n) ? '$ ' + fmt.num(n, dec) : '—',
+  usd: (n, dec = 0) => ok(n) ? 'USD ' + fmt.num(n, dec) : '—',
+  ars: (n, dec = 0) => ok(n) ? '$ ' + fmt.num(n, dec) : '—',
   cant: n => ok(n) ? N(0, Number.isInteger(n) ? 0 : 2).format(n) : '—',
   pct: (x, dec = 1) => ok(x) ? fmt.num(x * 100, dec) + '%' : '—',
   signo: (n, dec = 0) => ok(n) ? (n > 0 ? '+' : '') + fmt.num(n, dec) : '—',
-  usdSigno: (n, dec = 0) => ok(n) ? (n > 0 ? '+' : n < 0 ? '−' : '') + 'USD ' + fmt.num(Math.abs(n), dec) : '—',
+  usdSigno: (n, dec = 0) => ok(n) ? (n > 0 ? '+' : n < 0 ? '−' : '') + 'USD ' + fmt.num(Math.abs(n), dec) : '—',
   pctSigno: (x, dec = 1) => ok(x) ? (x > 0 ? '+' : '') + fmt.num(x * 100, dec) + '%' : '—',
   pp: (x, dec = 1) => ok(x) ? (x > 0 ? '+' : '') + fmt.num(x * 100, dec) + ' pp' : '—',
   fecha: f => f ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : '—',

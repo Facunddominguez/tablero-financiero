@@ -57,7 +57,7 @@ function graficoEvolucion(e, r) {
     const series = [puntos.map(p => p.v), ...r.benchmarks.map(b => puntos.map(p => r.valorEn[b.nombre](p.f)))];
     new Chart(lienzo, {
       type: 'line',
-      data: { labels: puntos.map(p => fmt.fecha(p.f).slice(0, 5)), datasets: series.map((data, i) => ({ label: nombres[i], data, borderColor: c.series[i], backgroundColor: c.series[i], borderWidth: 2, pointRadius: puntos.length > 40 ? 0 : 2.5, pointHoverRadius: 5, tension: 0 })) },
+      data: { labels: puntos.map(p => `${p.f.slice(8, 10)}/${p.f.slice(5, 7)}/${p.f.slice(2, 4)}`), datasets: series.map((data, i) => ({ label: nombres[i], data, borderColor: c.series[i], backgroundColor: c.series[i], borderWidth: 2, pointRadius: puntos.length > 40 ? 0 : 2.5, pointHoverRadius: 5, tension: 0 })) },
       options: {
         animation: false, responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ` ${x.dataset.label}: ${fmt.usd(x.parsed.y)}` }, bodyFont: { family: c.num } } },
