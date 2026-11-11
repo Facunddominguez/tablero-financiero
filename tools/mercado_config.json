@@ -1,0 +1,7 @@
+{
+  "fci_filtro": "Balanz",
+  "fci_categorias": ["mercadoDinero", "rentaFija"],
+  "usd_tickers": ["SPY", "EFA", "EEM", "IWM"],
+  "historico_desde": "2024-10-25",
+  "insiders_url": "http://openinsider.com/screener?s=&o=&pl=5&ph=&ll=&lh=&fd=7&fdr=&td=0&tdr=&fdlyl=&fdlyh=&daysago=&xp=1&vl=&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&isofficer=1&iscob=1&isceo=1&ispres=1&iscoo=1&iscfo=1&isgc=1&isvp=1&isdirector=1&grp=2&nfl=&nfh=&nil=3&nih=&nol=&noh=&v2l=400&v2h=&oc2l=&oc2h=&sortcol=0&cnt=100&page=1"
+}
