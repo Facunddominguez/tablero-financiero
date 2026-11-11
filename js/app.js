@@ -7,12 +7,16 @@ import { planificador } from './motor.js';
 import { vistaHoy } from './ui/hoy.js';
 import { vistaCartera } from './ui/cartera.js';
 import { vistaAportar } from './ui/aportar.js';
+import { vistaInformes } from './ui/informes.js';
+import { vistaRadar } from './ui/radar.js';
 import { abrirMenu } from './ui/menu.js';
 
 const VISTAS = [
   { id: 'hoy', nombre: 'Hoy', vista: vistaHoy },
   { id: 'cartera', nombre: 'Cartera', vista: vistaCartera },
   { id: 'aportar', nombre: 'Aportar', vista: vistaAportar },
+  { id: 'informes', nombre: 'Informes', vista: vistaInformes },
+  { id: 'radar', nombre: 'Radar', vista: vistaRadar },
 ];
 
 const S = { sobre: null, clave: null, base: null, eventos: [], snaps: {}, ext: {}, estado: null, plan: null };

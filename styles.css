@@ -153,6 +153,8 @@ h2.sub { margin-top: 2rem; }
 .aviso.fijo { margin-bottom: 1.5rem; font-weight: 550; }
 .error { color: var(--mal); font-size: .9rem; min-height: 1.2em; }
 .error:empty { display: none; }
+.tabla td .chip { margin-left: .4rem; }
+.marcas .chip { margin-left: 0; }
 .tilde { color: var(--acento); font-weight: 700; }
 
 /* ---------- tablas ---------- */
