@@ -1,6 +1,6 @@
 // Motor: reglas y planificador. Funciones puras que solo leen el estado (los umbrales salen de los datos).
 import { fechas, fmt, suma } from './util.js';
-import { costoEntradaLote, costosAnuales } from './finanzas.js';
+import { costoEntradaLote, costosAnuales, brechaAportes } from './finanzas.js';
 
 const PRIORIDAD = { emergencia: 1, regla: 2, aporte: 3, flujo: 4, datos: 5, trimestral: 6, pendiente: 7, anual: 8, aviso: 9, senal: 10 };
 
@@ -269,6 +269,14 @@ export function planificador(e, hoy = e.hoy) {
       como: ['Buscá la transferencia en el home banking o en Balanz → Movimientos', 'Marcá Hecho y cargá la fecha'],
       accion: { tipo: 'fecha_aporte', indice: i, fecha: a.fecha },
     });
+  });
+
+  const br = brechaAportes(e);
+  if (br.relevante) agregar({
+    id: 'revisar-aportes', tipo: 'pendiente', titulo: 'Revisá si falta cargar algún aporte',
+    porque: `Lo que hoy tenés costó ${fmt.usd(br.costo)} y los aportes cargados suman ${fmt.usd(br.aportado)}: hay ${fmt.usd(br.brecha)} sin explicar. Puede faltar algún aporte, o parte se compró con ganancias de ventas anteriores. Si faltan aportes, el rendimiento anual que muestra Informes está inflado.`,
+    como: ['Mirá en Balanz → Movimientos los ingresos de dinero (transferencias desde el banco)', 'Compará con la lista de aportes de Informes → Rendimiento', 'Cargá cada aporte que falte; si está todo bien, descartá este paso'],
+    accion: { tipo: 'menu', seccion: 'movimiento', arg: 'aporte_historico', etiqueta: 'Cargar un aporte' },
   });
 
   // 10 · Fin de año

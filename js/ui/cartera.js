@@ -1,5 +1,5 @@
 // Pantalla Cartera: anillo por bloque y tabla ordenable.
-import { h, fmt } from '../util.js';
+import { h, poner, fmt } from '../util.js';
 import { porGrupo, NOMBRE_GRUPO } from '../estado.js';
 import { accionesPorActivo, objetivoDe } from '../motor.js';
 import { cargarScript, CDN, coloresSeries, signoClase } from './comun.js';
@@ -59,8 +59,8 @@ export function vistaCartera(ctx) {
       if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
       return (typeof x === 'string' ? x.localeCompare(y, 'es') : x - y) * s;
     });
-    cuerpo.replaceChildren(...ord.map(f => h('tr', cols.map(c => h('td' + (c.num ? '.num' : ''), c.celda(f))))));
-    cab.replaceChildren(...cols.map(c => h('th' + (c.num ? '.num' : ''), { 'aria-sort': orden.col === c.k ? (orden.asc ? 'ascending' : 'descending') : 'none' },
+    poner(cuerpo, ...ord.map(f => h('tr', cols.map(c => h('td' + (c.num ? '.num' : ''), c.celda(f))))));
+    poner(cab, ...cols.map(c => h('th' + (c.num ? '.num' : ''), { 'aria-sort': orden.col === c.k ? (orden.asc ? 'ascending' : 'descending') : 'none' },
       h('button.orden', { type: 'button', onclick: () => { orden = { col: c.k, asc: orden.col === c.k ? !orden.asc : typeof filas[0][c.k] === 'string' }; pintar(); } },
         c.t, orden.col === c.k ? h('span.flecha', orden.asc ? ' ↑' : ' ↓') : null))));
   };

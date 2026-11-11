@@ -1,16 +1,18 @@
 // Arranque: desbloqueo, carga de datos, estado y navegación.
-import { h, fechas, uid, clon } from './util.js';
+import { h, poner, fechas, uid, clon } from './util.js';
 import { db } from './db.js';
 import { derivarClave, descifrar, cifrar } from './cripto.js';
 import { aplicarEventos, valuar, snapshotDe } from './estado.js';
 import { planificador } from './motor.js';
 import { vistaHoy } from './ui/hoy.js';
 import { vistaCartera } from './ui/cartera.js';
+import { vistaAportar } from './ui/aportar.js';
 import { abrirMenu } from './ui/menu.js';
 
 const VISTAS = [
   { id: 'hoy', nombre: 'Hoy', vista: vistaHoy },
   { id: 'cartera', nombre: 'Cartera', vista: vistaCartera },
+  { id: 'aportar', nombre: 'Aportar', vista: vistaAportar },
 ];
 
 const S = { sobre: null, clave: null, base: null, eventos: [], snaps: {}, ext: {}, estado: null, plan: null };
@@ -54,7 +56,7 @@ const ctx = {
     await db.guardar('eventos', S.eventos);
     recalcular(); await guardarSnapshot(); pintar();
   },
-  menu: seccion => abrirMenu(ctx, seccion),
+  menu: (seccion, arg) => abrirMenu(ctx, seccion, arg),
   ir: destino => { location.hash = destino; },
   // Estado completo para sincronizar: base + todos los eventos + snapshots.
   completo() {
@@ -95,7 +97,7 @@ function pantallaClave(mensaje) {
   const recordar = h('input', { type: 'checkbox', checked: true });
   const error = h('p.error', { role: 'alert' }, mensaje || '');
   const btn = h('button.boton.primario', { type: 'submit' }, 'Abrir');
-  raiz.replaceChildren(h('main.puerta',
+  poner(raiz, h('main.puerta',
     h('form', {
       onsubmit: async ev => {
         ev.preventDefault();
@@ -145,7 +147,7 @@ let principal, nav;
 function armarMarco() {
   principal = h('main#principal', { tabindex: '-1' });
   nav = h('nav.nav', { 'aria-label': 'Secciones' });
-  raiz.replaceChildren(
+  poner(raiz, 
     h('header.barra', h('a.marca', { href: '#hoy' }, 'Tablero'), nav,
       h('button.icono.mas', { type: 'button', 'aria-label': 'Más opciones', onclick: () => abrirMenu(ctx) }, '⋯')),
     principal,
@@ -155,19 +157,19 @@ function armarMarco() {
 function pintar() {
   const [id, sub] = (location.hash.replace('#', '') || 'hoy').split('/');
   const v = VISTAS.find(x => x.id === id) || VISTAS[0];
-  nav.replaceChildren(...VISTAS.map(x => h('a', { href: '#' + x.id, 'aria-current': x === v ? 'page' : null }, x.nombre)));
+  poner(nav, ...VISTAS.map(x => h('a', { href: '#' + x.id, 'aria-current': x === v ? 'page' : null }, x.nombre)));
   const pend = ctx.pendientes;
   document.querySelector('.mas').classList.toggle('con-punto', pend > 0);
   document.querySelector('.mas').title = pend ? `${pend} ${pend === 1 ? 'cambio' : 'cambios'} sin sincronizar` : 'Más opciones';
-  principal.replaceChildren(v.vista(ctx, sub));
+  poner(principal, v.vista(ctx, sub));
   document.title = v.id === 'hoy' ? 'Tablero' : `${v.nombre} · Tablero`;
 }
 window.addEventListener('hashchange', () => { if (S.estado) { pintar(); window.scrollTo(0, 0); } });
 
 async function iniciar() {
-  raiz.replaceChildren(h('p.cargando', 'Cargando…'));
+  poner(raiz, h('p.cargando', 'Cargando…'));
   S.sobre = await json('data/cartera.enc.json');
-  if (!S.sobre) { raiz.replaceChildren(h('main.puerta', h('p.error', 'No se pudieron cargar los datos. Revisá la conexión y recargá la página.'))); return; }
+  if (!S.sobre) { poner(raiz, h('main.puerta', h('p.error', 'No se pudieron cargar los datos. Revisá la conexión y recargá la página.'))); return; }
   const guardada = await db.leer('clave').catch(() => null);
   if (guardada && guardada.salt === S.sobre.salt) {
     try { S.base = await descifrar(S.sobre, guardada.clave); S.clave = guardada.clave; } catch { /* la clave guardada ya no sirve */ }

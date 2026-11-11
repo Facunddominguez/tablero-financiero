@@ -103,3 +103,13 @@ export function costosAnuales(estado) {
   const medio = snaps.length ? (suma(snaps) + estado.total_usd) / (snaps.length + 1) : estado.total_usd;
   return { usd: compras + ventas, patrimonio_medio: medio, pct: medio ? (compras + ventas) / medio : 0 };
 }
+
+// Control de consistencia: lo que costaron los lotes actuales no debería superar lo aportado más lo ganado y cobrado.
+// Si lo supera, probablemente falte cargar algún aporte externo (y el XIRR queda inflado).
+export function brechaAportes(estado) {
+  const d = estado.datos;
+  const costo = suma(d.lotes_costo, costoLoteUSD);
+  const aportado = suma(d.cashflows_externos_usd, a => a.usd);
+  const brecha = costo - aportado - suma(d.realizados || [], r => r.resultado_usd) - suma(d.cobros || [], c => c.usd);
+  return { costo, aportado, brecha, relevante: brecha > aportado * 0.05 };
+}

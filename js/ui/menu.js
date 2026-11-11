@@ -1,5 +1,5 @@
 // Menú "⋯": sincronizar, importar el Excel de Balanz, cargar el mes, cobros y ventas, decisiones, configuración y respaldo.
-import { h, fmt, fechas, aNumero, suma } from '../util.js';
+import { h, poner, fmt, fechas, aNumero, suma } from '../util.js';
 import { db } from '../db.js';
 import { dialogo, campo, entrada, boton, aviso, cargarScript, CDN } from './comun.js';
 
@@ -77,7 +77,7 @@ function importarExcel(ctx) {
     type: 'file', accept: '.xlsx,.xls',
     onchange: async () => {
       const f = archivo.files[0]; if (!f) return;
-      salida.replaceChildren(h('p.nota', 'Leyendo…'));
+      poner(salida, h('p.nota', 'Leyendo…'));
       try {
         await cargarScript(CDN.xlsx);
         const wb = XLSX.read(await f.arrayBuffer(), { cellDates: true });
@@ -88,7 +88,7 @@ function importarExcel(ctx) {
         for (const l of lotes) despues[l.ticker] = (despues[l.ticker] || 0) + l.cantidad;
         const tickers = [...new Set([...Object.keys(antes), ...Object.keys(despues)])].sort();
         const cambios = tickers.filter(t => Math.abs((antes[t] || 0) - (despues[t] || 0)) > 0.005);
-        salida.replaceChildren(
+        poner(salida, 
           h('p', `${lotes.length} lotes de ${Object.keys(despues).length} activos. ${cambios.length ? `Cambian ${cambios.length}:` : 'Las cantidades coinciden con lo que ya había.'}`),
           cambios.length ? h('div.tabla-caja', h('table.tabla.compacta', h('thead', h('tr', h('th', 'Activo'), h('th.num', 'Antes'), h('th.num', 'Después'), h('th.num', 'Diferencia'))),
             h('tbody', cambios.map(t => h('tr', h('td', h('strong', t), !(t in antes) ? ' (nuevo)' : !(t in despues) ? ' (ya no está)' : ''), h('td.num', fmt.cant(antes[t] || 0)), h('td.num', fmt.cant(despues[t] || 0)), h('td.num', fmt.signo((despues[t] || 0) - (antes[t] || 0), 2))))))) : null,
@@ -98,7 +98,7 @@ function importarExcel(ctx) {
             await ctx.registrar({ tipo: 'importar_lotes', fecha: e.hoy, lotes }, { tipo: 'decision', fecha: e.hoy, texto: `Importado el Excel de Balanz: ${lotes.length} lotes, ${cambios.length} activos con cambios` });
             d.close();
           }, 'primario')));
-      } catch (err) { salida.replaceChildren(aviso(err.message, 'mal')); }
+      } catch (err) { poner(salida, aviso(err.message, 'mal')); }
     },
   });
   const d = dialogo('Importar el Excel de Balanz', h('div.formulario',

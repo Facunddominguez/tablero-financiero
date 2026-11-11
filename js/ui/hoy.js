@@ -4,7 +4,7 @@ import { dialogo, campo, entrada, boton, chip, medidor, dialogoCompras, signoCla
 
 function antiguedad(e) {
   if (e.precios.origen === 'archivo') return `precios del resumen del ${fmt.fecha(e.precios.fecha_archivo)}`;
-  const partes = [`precios de ${fmt.hace(e.precios.generado)}`];
+  const partes = [`precios actualizados ${fmt.hace(e.precios.generado)}`];
   if (e.precios.viejos.length) partes.push(`sin actualizar: ${e.precios.viejos.join(', ')}`);
   return partes.join(' · ');
 }
@@ -80,6 +80,7 @@ function tarjetaPaso(ctx, paso, n) {
         paso.informativo ? boton('Visto', visto, 'chico')
           : [boton('Hecho', () => hecho(ctx, paso), 'primario.chico'),
             paso.accion?.tipo === 'ir' ? h('a.boton.chico', { href: paso.accion.destino }, paso.accion.etiqueta) : null,
+            paso.accion?.tipo === 'menu' ? boton(paso.accion.etiqueta, () => ctx.menu(paso.accion.seccion, paso.accion.arg), 'chico') : null,
             boton('Posponer', () => posponer(ctx, paso), 'fantasma.chico'), boton('Descartar', () => descartar(ctx, paso), 'fantasma.chico')])));
 }
 

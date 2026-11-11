@@ -87,6 +87,9 @@ export function h(sel, ...resto) {
   return el;
 }
 
+// Reemplaza el contenido de un nodo (acepta null, false y listas, igual que h).
+export const poner = (el, ...hijos) => el.replaceChildren(...hijos.flat(Infinity).filter(x => x != null && x !== false));
+
 export const suma = (arr, fn = x => x) => arr.reduce((a, x) => a + (fn(x) || 0), 0);
 export const clon = o => JSON.parse(JSON.stringify(o));
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
