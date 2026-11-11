@@ -1,0 +1,11 @@
+# Datos privados en claro: nunca se suben
+privado/
+*.pdf
+*.xlsx
+*.docx
+.env
+.DS_Store
+# La especificación tiene cifras personales (patrimonio, ingreso): queda solo en esta máquina
+CLAUDE.md
+.claude/
+__pycache__/

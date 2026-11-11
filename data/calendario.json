@@ -1,0 +1,14 @@
+{
+  "nota": "Pagos por cada 1 de valor nominal. Fuente: suplemento de prospecto de las ON YPF Clase XLIII (tasa fija 5,50% nominal anual, base días reales/365, emitidas el 14/04/2026, amortización en una única cuota al vencimiento). Si la fecha no es hábil, se paga el día hábil siguiente.",
+  "flujos": [
+    {"ticker": "YM43O", "fecha": "2027-01-14", "tipo": "cupon", "moneda": "USD", "por_vn": 0.041438, "detalle": "Cupón 5,50% · 275 días (14/04/2026 al 14/01/2027)"},
+    {"ticker": "YM43O", "fecha": "2027-07-14", "tipo": "cupon", "moneda": "USD", "por_vn": 0.027274, "detalle": "Cupón 5,50% · 181 días"},
+    {"ticker": "YM43O", "fecha": "2028-01-14", "tipo": "cupon", "moneda": "USD", "por_vn": 0.027726, "detalle": "Cupón 5,50% · 184 días"},
+    {"ticker": "YM43O", "fecha": "2028-07-14", "tipo": "cupon", "moneda": "USD", "por_vn": 0.027425, "detalle": "Cupón 5,50% · 182 días"},
+    {"ticker": "YM43O", "fecha": "2029-01-14", "tipo": "cupon", "moneda": "USD", "por_vn": 0.027726, "detalle": "Cupón 5,50% · 184 días"},
+    {"ticker": "YM43O", "fecha": "2029-07-14", "tipo": "cupon", "moneda": "USD", "por_vn": 0.027274, "detalle": "Cupón 5,50% · 181 días"},
+    {"ticker": "YM43O", "fecha": "2030-01-14", "tipo": "cupon", "moneda": "USD", "por_vn": 0.027726, "detalle": "Cupón 5,50% · 184 días"},
+    {"ticker": "YM43O", "fecha": "2030-04-14", "tipo": "cupon", "moneda": "USD", "por_vn": 0.013562, "detalle": "Último cupón 5,50% · 90 días"},
+    {"ticker": "YM43O", "fecha": "2030-04-14", "tipo": "amortizacion", "moneda": "USD", "por_vn": 1, "detalle": "Devolución del 100% del capital"}
+  ]
+}
