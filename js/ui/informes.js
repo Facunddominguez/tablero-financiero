@@ -152,7 +152,7 @@ function anual(ctx) {
       { titulo: 'Precio', num: 1, celda: l => `${l.moneda === 'USD' ? 'USD' : '$'} ${fmt.num(l.precio_compra, l.precio_compra < 100 ? 4 : 2)}` }, { titulo: 'Gastos $', num: 1, celda: l => fmt.num(l.gastos || 0, 2) }, { titulo: 'MEP del día', num: 1, celda: l => fmt.num(l.mep_dia, 2) },
     ], compras.slice().sort((a, b) => a.fecha_compra < b.fecha_compra ? -1 : 1)) : h('p.nota', 'Sin compras en el año.')),
     sec(`Aportes de ${anio}`, h('p', aportes.length ? `${aportes.length} aportes por ${fmt.usd(suma(aportes, a => a.usd), 2)}: ${aportes.map(a => `${fmt.fecha(a.fecha)} (${fmt.num(a.usd, 2)})`).join(', ')}.` : 'Sin aportes en el año.')),
-    h('p.descargo', 'Información de soporte, no es asesoramiento impositivo. Los valores en pesos usan el dólar MEP indicado arriba; para Bienes Personales corresponde la valuación oficial al 31/12.'));
+    h('p.descargo', 'Los valores en pesos usan el dólar MEP indicado arriba; para Bienes Personales corresponde la valuación oficial al 31/12.'));
 }
 
 // ---------- Contraste con Allaria ----------
@@ -170,7 +170,7 @@ function allaria(ctx) {
     sec('Qué se solapa con lo tuyo',
       h('ul.allaria-lista', a.activos.map(x => h('li' + (mios.has(x.ticker) ? '.tengo' : ''), x.ticker, mios.has(x.ticker) ? h('small', 'en cartera') : watch.has(x.ticker) ? h('small', 'watchlist') : null))),
       h('p', `De los ${a.activos.length} nombres de Allaria tenés ${comunes.length}${comunes.length ? ` (${comunes.map(x => `${x.ticker}, ${fmt.pct(mios.get(x.ticker).pct_lp)} de LP`).join('; ')})` : ''} y ${enWatch.length} ${enWatch.length === 1 ? 'está' : 'están'} en tu watchlist${enWatch.length ? ` (${enWatch.map(x => x.ticker).join(', ')})` : ''}.`),
-      h('p.nota', 'Allaria no publica ponderaciones: es una referencia. Tus reglas (R7, R4 y R4B) mandan.')),
+      h('p.nota', `Allaria no publica ponderaciones. Datos cargados a mano el ${fmt.fecha(a.fecha)}.`)),
     sec('Cómo rindieron sus rotaciones', per.length ? [tabla([
       { titulo: 'Período', celda: ([k]) => h('strong.num', k) }, { titulo: 'Rendimiento', num: 1, celda: ([, r]) => color(r, fmt.pctSigno(r, 2)) },
     ], per, { pie: ['Acumulado', color(acum, fmt.pctSigno(acum, 2))] }),

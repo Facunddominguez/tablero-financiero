@@ -1,4 +1,4 @@
-// Pantalla Radar: compras de insiders, watchlist y cartera modelo de Allaria. Solo informa: nunca genera órdenes.
+// Pantalla Radar: compras de insiders, watchlist y cartera modelo de referencia.
 import { h, fmt } from '../util.js';
 import { tabla, chip, aviso } from './comun.js';
 
@@ -6,16 +6,15 @@ export function vistaRadar(ctx) {
   const e = ctx.estado, d = e.datos;
   const cedears = e.mercado?.cedears?.precios || {};
   const watch = new Set((d.watchlist || []).map(w => w.ticker));
-  const allaria = new Set((d.cartera_modelo_allaria?.activos || []).map(a => a.ticker));
   const mios = new Set(e.posiciones.map(p => p.subyacente || p.ticker));
   const marcas = t => h('span.marcas',
     mios.has(t) ? chip('En tu cartera', 'acento') : null, cedears[t] ? chip('Hay CEDEAR', 'ok') : null,
-    watch.has(t) ? chip('En watchlist', 'acento') : null, allaria.has(t) ? chip('En cartera Allaria') : null);
+    watch.has(t) ? chip('En watchlist', 'acento') : null);
   const ins = e.insiders || { filas: [] };
   const filas = (ins.filas || []).slice().sort((a, b) => b.monto - a.monto);
 
   return h('div.vista.radar',
-    h('header.vista-cab', h('h1', 'Radar'), h('p.nota', 'Para mirar, no para operar. El radar nunca genera órdenes.')),
+    h('header.vista-cab', h('h1', 'Radar'), h('p.nota', 'Lo que conviene tener a la vista: qué compran los directivos y tu lista de seguimiento.')),
     ctx.plan.solo_observacion ? aviso('Nuevas tesis bloqueadas por regla R7: solo observación.', 'alerta.fijo') : null,
 
     h('section',
@@ -38,12 +37,12 @@ export function vistaRadar(ctx) {
         { titulo: 'Ticker', celda: w => h('strong.num', w.ticker) }, { titulo: 'Tema', celda: w => w.tema }, { titulo: 'Prioridad', celda: w => w.prioridad },
         { titulo: 'Máx. inicial', num: 1, celda: w => fmt.pct(w.max_inicial, 0) },
         { titulo: 'CEDEAR', num: 1, celda: w => cedears[w.ticker] ? fmt.ars(cedears[w.ticker][0]) : '—' },
-        { titulo: '', celda: w => h('span.marcas', allaria.has(w.ticker) ? chip('En cartera Allaria') : null, w.solapamiento ? chip('Solapa: ' + w.solapamiento, 'alerta') : null) },
+        { titulo: '', celda: w => h('span.marcas', w.solapamiento ? chip('Solapa: ' + w.solapamiento, 'alerta') : null) },
       ], d.watchlist || []),
       h('p.nota', { style: 'margin-top:.75rem' }, 'El máximo inicial es el tope de la primera compra, en % de la cartera de largo plazo, para cuando la regla R7 lo permita.')),
 
     d.cartera_modelo_allaria ? h('section',
-      h('h2', `Cartera modelo de Allaria · ${d.cartera_modelo_allaria.rotacion}, ${fmt.fecha(d.cartera_modelo_allaria.fecha)}`),
+      h('h2', `Cartera modelo de referencia · Allaria ${d.cartera_modelo_allaria.rotacion}, ${fmt.fecha(d.cartera_modelo_allaria.fecha)}`),
       h('ul.allaria-lista', d.cartera_modelo_allaria.activos.map(a => h('li' + (mios.has(a.ticker) ? '.tengo' : ''), a.ticker,
         mios.has(a.ticker) ? h('small', 'en cartera') : watch.has(a.ticker) ? h('small', 'watchlist') : null))),
       h('p.nota', h('a', { href: '#informes/allaria' }, 'Ver el contraste completo con tu cartera →'))) : null);
