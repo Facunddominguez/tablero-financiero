@@ -83,8 +83,8 @@ export function aplicarEventos(base, eventosLocales = []) {
       case 'decision': d.decisiones.push({ fecha: e.fecha, texto: e.texto }); break;
       case 'config': Object.assign(d.config, e.cambios); break;
       case 'perfil': Object.assign(d.perfil, e.cambios); break;
-      case 'fecha_aporte': {
-        const a = d.cashflows_externos_usd[e.indice];
+      case 'fecha_aporte': { // se busca por monto y fecha original; el índice queda como respaldo para eventos viejos
+        const a = (e.usd != null && d.cashflows_externos_usd.find(x => x.usd === e.usd && x.fecha === e.fecha_original)) || d.cashflows_externos_usd[e.indice];
         if (a) { a.fecha = e.fecha; delete a.fecha_estimada; delete a.nota; }
         break;
       }
@@ -157,6 +157,11 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     const p = posiciones.find(x => x.ticker === t);
     pesos_nucleo[t] = nucleo_usd ? (p ? p.valor_usd : 0) / nucleo_usd : 0;
   }
+  // Gasto de referencia: el promedio real de los últimos tres cierres de mes; si todavía no hay tres, el habitual.
+  const cierres = Object.entries(datos.meses || {}).filter(([, m]) => m.origen === 'cierre' && m.gasto > 0).sort().slice(-3).map(([, m]) => m.gasto);
+  const gasto_ref = cierres.length >= 3 ? suma(cierres) / cierres.length : datos.perfil.gasto_habitual_mensual_usd;
+  const argentina_usd = suma(datos.posiciones.map((p, i) => p.riesgo_ar ? posiciones[i].valor_usd : 0));
+  const invertible_usd = total_usd - datos.emergencia.meses_min * datos.perfil.gasto_habitual_mensual_usd;
   const var_dia_usd = suma(posiciones, p => p.var_dia_usd);
   const viejos = m ? ['fx', 'cedears', 'acciones', 'ons', 'fci'].filter(k => m[k]?.stale) : [];
 
@@ -164,7 +169,10 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     hoy, datos, mep, ccl, posiciones, caja_usd, total_usd, total_ars: total_usd * mep,
     emergencia_usd, lp_usd, nucleo_usd, ypf_usd, satelites_usd, renta_fija_usd: de('renta_fija'),
     nucleo_lp: nucleo_usd / lp_usd, ypf_lp: ypf_usd / lp_usd, satelites_lp: satelites_usd / lp_usd,
-    meses_emergencia: emergencia_usd / datos.perfil.gasto_habitual_mensual_usd,
+    meses_emergencia: emergencia_usd / gasto_ref, gasto_ref,
+    // Riesgo argentino sobre el patrimonio invertible (total menos la emergencia mínima)
+    argentina_usd, invertible_usd, argentina_pct: invertible_usd > 0 ? argentina_usd / invertible_usd : 0,
+    tesis_activas: posiciones.filter(p => p.grupo === 'satelite').length + (posiciones.some(p => p.grupo === 'ypf' && p.tipo !== 'on') ? 1 : 0),
     pesos_nucleo, var_dia_usd, var_dia_pct: total_usd - var_dia_usd ? var_dia_usd / (total_usd - var_dia_usd) : 0,
     precios: { origen: m ? 'mercado' : 'archivo', generado: m?.generado || null, fecha_archivo: datos.meta.fecha_snapshot, viejos, fecha_fci: m?.fci?.fecha || null },
     fecha_resumen: datos.meta.fecha_resumen || datos.meta.fecha_snapshot,

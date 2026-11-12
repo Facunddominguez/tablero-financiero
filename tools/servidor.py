@@ -1,5 +1,6 @@
-"""Servidor local para probar el tablero sin caché: python tools/servidor.py → http://localhost:8765"""
-import http.server, functools, pathlib
+"""Servidor local para probar el tablero sin caché: python tools/servidor.py → http://localhost:8765
+(o el puerto que indique la variable PORT)."""
+import http.server, functools, os, pathlib
 
 class SinCache(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -8,4 +9,5 @@ class SinCache(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     raiz = pathlib.Path(__file__).resolve().parent.parent
-    http.server.ThreadingHTTPServer(("127.0.0.1", 8765), functools.partial(SinCache, directory=str(raiz))).serve_forever()
+    puerto = int(os.environ.get("PORT", "8765"))
+    http.server.ThreadingHTTPServer(("127.0.0.1", puerto), functools.partial(SinCache, directory=str(raiz))).serve_forever()

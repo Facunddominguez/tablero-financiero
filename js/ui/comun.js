@@ -16,7 +16,7 @@ export const campo = (etiqueta, control, ayuda) => h('label.campo', h('span.camp
 export const entrada = (attrs = {}) => h('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', ...attrs });
 export const boton = (texto, onclick, clase = '') => h('button.boton' + (clase ? '.' + clase : ''), { type: 'button', onclick }, texto);
 export const chip = (texto, clase = '') => h('span.chip' + (clase ? '.' + clase : ''), texto);
-export const NIVEL = { ok: ['En orden', 'ok'], alerta: ['Activa', 'alerta'], violada: ['Excedida', 'mal'], sin_datos: ['Sin datos', 'neutro'], info: ['Informativa', 'neutro'] };
+export const NIVEL = { ok: ['En orden', 'ok'], alerta: ['Activa', 'alerta'], violada: ['Incumplida', 'mal'], sin_datos: ['Sin datos', 'neutro'], info: ['Informativa', 'neutro'] };
 
 export function aviso(texto, clase = '') { return h('p.aviso' + (clase ? '.' + clase : ''), texto); }
 

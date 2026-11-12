@@ -8,6 +8,8 @@ import { evaluarReglas as _er, recomendarAporte, aporteDelMes } from './motor.js
 import { desdeTabla, desdeTexto, celdasDeCSV, categorizar, patronDe, aNumeroBanco, fechaDe, resumenGastos, NO_GASTO } from './extracto.js';
 import { fusionar, sincronizar, ErrorSync } from './sync.js';
 import { fortaleza, generarFrase } from './seguridad.js';
+import { proyeccion, paraEmergencia } from './motor.js';
+import { brechaAportes } from './finanzas.js';
 
 export function correrPruebas(base, ext = {}) {
   const res = [];
@@ -169,6 +171,55 @@ export function correrPruebas(base, ext = {}) {
     const paso = planificador(e, '2026-11-02').pasos.find(p => p.tipo === 'aporte');
     if (!paso || Math.abs(paso.accion.usd - 333) > 1e-9 || paso.accion.extra) throw new Error('el paso Aportá no usa lo decidido');
     if (_er(e).find(r => r.id === 'R2').nivel !== 'ok') throw new Error('R2 no tomó el mes cargado');
+  });
+
+  // ----- reglas revisadas contra el Excel de decisiones -----
+  const conReserva = factor => { // misma cartera, con la reserva multiplicada por `factor`
+    const c = clon(limpio);
+    for (const pos of c.posiciones) if (pos.bloque === 'emergencia') pos.cantidad *= factor;
+    return valuar(aplicarEventos(c), {}, fechaBase);
+  };
+  prueba('Emergencia por escalones: bajo el mínimo va todo el ahorro; entre mínimo y objetivo, una parte', () => {
+    const r1 = base.reglas.find(r => r.id === 'R1');
+    if (r1.pct_ahorro_bajo_objetivo == null) return 'los datos todavía no tienen los escalones de R1: se omite';
+    if (paraEmergencia(e0, 700) !== 0) throw new Error('con la reserva completa no debería apartar nada');
+    const media = conReserva(0.8), baja = conReserva(0.4);
+    if (_er(media).find(r => r.id === 'R1').nivel !== 'alerta') throw new Error('entre mínimo y objetivo debería estar en alerta');
+    cerca(paraEmergencia(media, 700), 700 * r1.pct_ahorro_bajo_objetivo, 1e-9, 'parte del ahorro');
+    if (_er(baja).find(r => r.id === 'R1').nivel !== 'violada') throw new Error('bajo el mínimo debería estar incumplida');
+    cerca(paraEmergencia(baja, 700), 700, 1e-9, 'todo el ahorro');
+    const pasos = planificador(valuar(aplicarEventos((() => { const c = clon(limpio); for (const pos of c.posiciones) if (pos.bloque === 'emergencia') pos.cantidad *= 0.8; return c; })()), {}, '2026-12-01'), '2026-12-01').pasos;
+    const em = pasos.find(x => x.tipo === 'emergencia'), ap = pasos.find(x => x.tipo === 'aporte');
+    if (!em || !ap) throw new Error('faltan los pasos de emergencia o de aporte');
+    cerca(em.accion.usd + ap.accion.usd, ahorro, 1e-6, 'emergencia + aporte = ahorro del mes');
+  });
+  prueba('Satélites sobre el techo: plan de normalización con fecha, nunca una venta', () => {
+    const r5 = R.R5;
+    if (r5.nivel === 'violada') throw new Error('R5 no debería pedir ventas');
+    const pr = proyeccion(e0);
+    if (e0.nucleo_lp < base.nucleo.rango_LP[0]) {
+      if (!pr.nucleo || !(pr.nucleo.meses > 0)) throw new Error('falta la proyección del núcleo');
+      const n = pr.nucleo.meses, a = pr.aporte, despues = (e0.nucleo_usd + a * n) / (e0.lp_usd + a * n), antes = (e0.nucleo_usd + a * (n - 1)) / (e0.lp_usd + a * (n - 1));
+      if (despues < base.nucleo.rango_LP[0] - 1e-9 || antes >= base.nucleo.rango_LP[0]) throw new Error(`la proyección no cierra: ${antes.toFixed(4)} → ${despues.toFixed(4)}`);
+    }
+    for (const p of planificador(e0, fechaBase).pasos) if (/vend/i.test(p.titulo)) throw new Error('propone vender: ' + p.titulo);
+  });
+  prueba('Datos conciliados: avisa si falta un aporte y se apaga al cargarlo', () => {
+    if (!R.R9) return 'los datos todavía no tienen la regla R9: se omite';
+    const br = brechaAportes(e0);
+    if (!br.relevante) return 'los datos de arranque ya están conciliados';
+    if (R.R9.nivel !== 'alerta') throw new Error('con una brecha material R9 debería estar en alerta');
+    const ev = [{ id: 'h', ts: '2026-11-06T10:00:00Z', tipo: 'aporte_historico', fecha: '2026-07-17', usd: Math.round(br.brecha) }, { id: 'f', ts: '2026-11-06T10:00:01Z', tipo: 'fecha_aporte', indice: 0, usd: limpio.cashflows_externos_usd.find(a => a.fecha_estimada).usd, fecha_original: limpio.cashflows_externos_usd.find(a => a.fecha_estimada).fecha, fecha: '2026-09-30' }];
+    const e = valuar(aplicarEventos(limpio, ev), {}, fechaBase);
+    if (_er(e).find(r => r.id === 'R9').nivel !== 'ok') throw new Error('R9 sigue activa: ' + _er(e).find(r => r.id === 'R9').detalle);
+    if (planificador(e, fechaBase).pasos.some(p => p.id === 'revisar-aportes')) throw new Error('sigue el paso de revisar aportes');
+    if (e.datos.cashflows_externos_usd[0].fecha !== limpio.cashflows_externos_usd[0].fecha) throw new Error('la fecha se aplicó al aporte equivocado');
+    if (!e.datos.cashflows_externos_usd.some(a => a.fecha === '2026-09-30' && !a.fecha_estimada)) throw new Error('no se confirmó la fecha del aporte correcto');
+  });
+  prueba('Tesis activas y riesgo argentino salen de los datos', () => {
+    if (!(e0.tesis_activas >= 1)) throw new Error('tesis activas: ' + e0.tesis_activas);
+    if (R.R6B && !(e0.argentina_pct > 0 && e0.argentina_pct < 1)) throw new Error('riesgo argentino: ' + e0.argentina_pct);
+    if (R.R7.nivel !== 'alerta') throw new Error('R7 debería seguir bloqueada');
   });
 
   // ----- seguridad -----

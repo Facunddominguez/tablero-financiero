@@ -1,6 +1,7 @@
 // Pantalla Hoy: estado en una línea, próximos pasos e indicadores.
 import { h, fmt, fechas, aNumero } from '../util.js';
 import { dialogo, campo, entrada, boton, chip, medidor, dialogoCompras, signoClase, NIVEL, proximaFecha } from './comun.js';
+import { proyeccion } from '../motor.js';
 
 function antiguedad(e) {
   if (e.precios.origen === 'archivo') return `precios del resumen del ${fmt.fecha(e.precios.fecha_archivo)}`;
@@ -43,7 +44,7 @@ function hecho(ctx, paso) {
         if (!fecha || (a.tipo !== 'fecha_aporte' && !(usd > 0))) { error.textContent = 'Completá la fecha y el monto.'; return; }
         const evento = a.tipo === 'cobro' ? { tipo: 'cobro', fecha, ticker: a.ticker, clase: a.clase, usd, ref: a.ref }
           : a.tipo === 'suscripcion' ? { tipo: 'aporte', fecha, usd, mep: e.mep, compras: [{ ticker: a.ticker, cantidad: usd / pos.precio, precio: pos.precio, moneda: pos.moneda, gastos: 0 }] }
-            : { tipo: 'fecha_aporte', indice: a.indice, fecha };
+            : { tipo: 'fecha_aporte', indice: a.indice, fecha, usd: a.usd, fecha_original: a.fecha };
         await ctx.registrar(evento, { tipo: 'paso', paso_id: paso.id, estado: 'hecho', titulo: paso.titulo, fecha: e.hoy });
         d.close();
       },
@@ -91,9 +92,10 @@ function tarjetaPaso(ctx, paso, n) {
 
 function indicadores(e) {
   const d = e.datos, [nMin, nMax] = d.nucleo.rango_LP, R6 = d.reglas.find(r => r.id === 'R6');
+  const pr = proyeccion(e);
   const ind = (titulo, valor, meta, med) => h('div.indicador', h('p.indicador-etq', titulo), h('p.indicador-valor', valor), med, h('p.indicador-meta', meta));
   return h('section.indicadores', { 'aria-label': 'Indicadores' },
-    ind('Núcleo en largo plazo', fmt.pct(e.nucleo_lp), `objetivo ${fmt.pct(d.nucleo.peso_en_LP_objetivo, 0)} · rango ${fmt.pct(nMin, 0)}–${fmt.pct(nMax, 0)}`,
+    ind('Núcleo en largo plazo', fmt.pct(e.nucleo_lp), `objetivo ${fmt.pct(d.nucleo.peso_en_LP_objetivo, 0)} · rango ${fmt.pct(nMin, 0)}–${fmt.pct(nMax, 0)}${pr.nucleo ? ` · a este ritmo llega al ${fmt.pct(nMin, 0)} en ${fmt.mes(pr.nucleo.fecha)}` : ''}`,
       medidor({ valor: e.nucleo_lp, objetivo: d.nucleo.peso_en_LP_objetivo, rango: [nMin, nMax], max: 1, estado: e.nucleo_lp < nMin ? 'alerta' : 'ok' })),
     ind('Fondo de emergencia', fmt.num(e.meses_emergencia, 1) + ' meses', `objetivo ${d.emergencia.meses_obj} meses · ${fmt.usd(e.emergencia_usd)} de ${fmt.usd(d.emergencia.objetivo_usd)}`,
       medidor({ valor: e.meses_emergencia, objetivo: d.emergencia.meses_obj, rango: [d.emergencia.meses_min, d.emergencia.meses_obj * 4 / 3], max: d.emergencia.meses_obj * 4 / 3, estado: e.meses_emergencia < d.emergencia.meses_min ? 'mal' : 'ok' })),
