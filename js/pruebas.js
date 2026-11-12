@@ -4,6 +4,10 @@ import { aplicarEventos, valuar } from './estado.js';
 import { evaluarReglas, planificador, repartirAporte } from './motor.js';
 import { xirr, costoLoteUSD, rendimiento } from './finanzas.js';
 import { clon, fechas, fmt, aNumero } from './util.js';
+import { evaluarReglas as _er, recomendarAporte, aporteDelMes } from './motor.js';
+import { desdeTabla, desdeTexto, celdasDeCSV, categorizar, patronDe, aNumeroBanco, fechaDe, resumenGastos, NO_GASTO } from './extracto.js';
+import { fusionar, sincronizar, ErrorSync } from './sync.js';
+import { fortaleza, generarFrase } from './seguridad.js';
 
 export function correrPruebas(base, ext = {}) {
   const res = [];
@@ -115,6 +119,100 @@ export function correrPruebas(base, ext = {}) {
     if (fmt.num(98765) !== '98.765') throw new Error(fmt.num(98765));
     if (aNumero('1.234,56') !== 1234.56 || aNumero('1234.5') !== 1234.5) throw new Error('aNumero');
   });
+  // ----- cierre del mes -----
+  prueba('Extracto en tabla con débito, crédito y saldo', () => {
+    const filas = [['Movimientos de cuenta'], ['Fecha', 'Concepto', 'Débito', 'Crédito', 'Saldo'],
+      ['01/10/2026', 'ACREDITACION DE HABERES', '', '1.500.000,00', '1.600.000,00'], ['03/10/2026', 'COMPRA TARJETA COTO 123', '45.300,50', '', '1.554.699,50'],
+      ['05/10/2026', 'UBER *TRIP', '8.200,00', '', '1.546.499,50'], ['', 'renglón vacío', '', '', '']];
+    const r = desdeTabla(filas);
+    if (r.movimientos.length !== 3) throw new Error('movimientos: ' + r.movimientos.length);
+    if (r.movimientos[0].m !== 1500000 || r.movimientos[1].m !== -45300.5 || r.movimientos[1].f !== '2026-10-03') throw new Error(JSON.stringify(r.movimientos.slice(0, 2)));
+  });
+  prueba('Extracto con una sola columna de importe: el signo sale del saldo', () => {
+    const csv = 'Fecha;Descripcion;Importe;Saldo\n02/10/26;SALDO INICIAL X;10,00;1.000,00\n03/10/26;CARREFOUR;200,00;800,00\n04/10/26;TRANSFERENCIA RECIBIDA;500,00;1.300,00\n05/10/26;NETFLIX;50,00;1.250,00';
+    const r = desdeTabla(celdasDeCSV(csv));
+    const m = Object.fromEntries(r.movimientos.map(x => [x.d, x.m]));
+    if (m.CARREFOUR !== -200 || m['TRANSFERENCIA RECIBIDA'] !== 500 || m.NETFLIX !== -50) throw new Error(JSON.stringify(m));
+  });
+  prueba('Extracto como texto (pegado o de un PDF)', () => {
+    const t = 'RESUMEN DE CUENTA\nFECHA CONCEPTO DEBITO CREDITO SALDO\nSALDO ANTERIOR 100.000,00\n01/10 HABERES EMPRESA SA 900.000,00 1.000.000,00\n02/10 PAGO SERVICIOS EDENOR 25.000,00 975.000,00\n   REF 0001234\n07/10 FARMACITY 12.500,00 962.500,00\nTOTAL 37.500,00';
+    const r = desdeTexto(t, '2026');
+    if (r.movimientos.length !== 3) throw new Error('movimientos: ' + JSON.stringify(r.movimientos));
+    if (r.movimientos[0].m !== 900000 || r.movimientos[1].m !== -25000 || r.movimientos[2].m !== -12500 || r.movimientos[2].f !== '2026-10-07') throw new Error(JSON.stringify(r.movimientos));
+  });
+  prueba('Números y fechas de banco', () => {
+    const n = [['1.234,56', 1234.56], ['-1.234,56', -1234.56], ['1.234,56-', -1234.56], ['(1.234,56)', -1234.56], ['$ 45.300', 45300], ['1234.5', 1234.5], [77, 77]];
+    for (const [a, b] of n) if (aNumeroBanco(a) !== b) throw new Error(`${a} → ${aNumeroBanco(a)}`);
+    if (fechaDe('5/3/26') !== '2026-03-05' || fechaDe('05/03', '2026') !== '2026-03-05' || fechaDe('2026-03-05') !== '2026-03-05' || fechaDe('99/99') !== null) throw new Error('fechas');
+  });
+  prueba('Categorías: reglas generales y lo aprendido de una corrección', () => {
+    if (categorizar({ d: 'COMPRA COTO SUC 12', m: -1 }) !== 'Supermercado') throw new Error('COTO');
+    if (categorizar({ d: 'HABERES', m: 10 }) !== 'Ingreso') throw new Error('ingreso');
+    if (categorizar({ d: 'TRANSF A BALANZ', m: -1 }) !== NO_GASTO) throw new Error('inversión');
+    const patron = patronDe('COMPRA TARJETA KIOSCO PEPE 0042');
+    if (patron !== 'kiosco pepe') throw new Error('patrón: ' + patron);
+    if (categorizar({ d: 'KIOSCO PEPE 0099', m: -1 }, [{ patron, categoria: 'Comida y delivery' }]) !== 'Comida y delivery') throw new Error('no aprendió');
+    const r = resumenGastos([{ m: -100, c: 'Supermercado' }, { m: -50, c: NO_GASTO }, { m: 500, c: 'Ingreso' }]);
+    if (r.total !== 100 || r.ingresos !== 500) throw new Error('resumen');
+  });
+  prueba('Recomendación: rango entre el piso de ahorro y todo el sobrante', () => {
+    const p = base.perfil, ingreso = p.ingreso_mensual_usd;
+    const r = recomendarAporte(e0, { ingreso, gasto: ingreso * 0.5 });
+    cerca(r.sobrante, ingreso * 0.5, 1e-9, 'sobrante'); cerca(r.maximo, ingreso * 0.5, 1e-9, 'máximo'); cerca(r.minimo, p.piso_tasa_ahorro * ingreso, 1e-9, 'mínimo');
+    const mal = recomendarAporte(e0, { ingreso, gasto: ingreso * 1.2 });
+    if (mal.maximo !== 0 || mal.sugerido !== 0 || !mal.motivos.length) throw new Error('con déficit debería dar 0');
+  });
+  prueba('Cerrar el mes fija el aporte del mes siguiente y alimenta la regla de ahorro', () => {
+    const ev = [{ id: 'm', ts: '2026-11-02T10:00:00Z', tipo: 'mes', mes: '2026-10', fecha: '2026-11-02', origen: 'cierre', ingreso: 1000, gasto: 450, aporte: 333, movimientos: [] }];
+    const e = valuar(aplicarEventos(limpio, ev), {}, '2026-11-02');
+    if (aporteDelMes(e, '2026-11') !== 333) throw new Error('aporte: ' + aporteDelMes(e, '2026-11'));
+    const paso = planificador(e, '2026-11-02').pasos.find(p => p.tipo === 'aporte');
+    if (!paso || Math.abs(paso.accion.usd - 333) > 1e-9 || paso.accion.extra) throw new Error('el paso Aportá no usa lo decidido');
+    if (_er(e).find(r => r.id === 'R2').nivel !== 'ok') throw new Error('R2 no tomó el mes cargado');
+  });
+
+  // ----- seguridad -----
+  prueba('Fortaleza de la clave: rechaza frases cortas y acepta las largas', () => {
+    if (fortaleza('hola1234').acepta) throw new Error('aceptó una clave corta');
+    if (fortaleza('casa perro mesa').acepta) throw new Error('aceptó tres palabras');
+    if (!fortaleza('lluvia tornillo mandarina puente violeta sombra').acepta) throw new Error('rechazó seis palabras');
+    const g = generarFrase();
+    if (!/^([a-z]{4}-){5}[a-z]{4}$/.test(g) || !fortaleza(g).acepta || g === generarFrase()) throw new Error('generador: ' + g);
+  });
+
+  // ----- sincronización -----
+  prueba('Fusionar: une eventos por id y no pierde los de ningún lado', () => {
+    const remoto = { meta: {}, x: 'remoto', eventos: [{ id: 'a' }, { id: 'b' }], snapshots: { '2026-01-01': 1 } };
+    const local = { meta: {}, x: 'local', eventos: [{ id: 'b' }, { id: 'c' }], snapshots: { '2026-01-02': 2 } };
+    const f = fusionar(remoto, local);
+    if (f.eventos.map(e => e.id).join() !== 'a,b,c' || f.x !== 'remoto' || Object.keys(f.snapshots).length !== 2 || !f.meta.sincronizado) throw new Error(JSON.stringify(f));
+    if (fusionar(remoto, local, { localManda: true }).x !== 'local') throw new Error('respaldo importado debería mandar');
+  });
+  if (ext.asincronicas) ext.asincronicas.push(['Sincronizar: reintenta ante un conflicto y sube la unión', async () => {
+    const b64 = o => btoa(JSON.stringify(o));
+    let archivo = { eventos: [{ id: 'a' }], snapshots: {}, meta: {} }, sha = 's1', puts = 0;
+    const falso = async (url, o = {}) => {
+      if (!o.method) return { ok: true, status: 200, json: async () => ({ content: b64({ ct: archivo }), sha }) };
+      const cuerpo = JSON.parse(o.body); puts++;
+      if (puts === 1) { archivo = { eventos: [{ id: 'a' }, { id: 'z' }], snapshots: {}, meta: {} }; sha = 's2'; return { ok: false, status: 409 }; } // otro dispositivo se adelantó
+      if (cuerpo.sha !== sha) return { ok: false, status: 409 };
+      archivo = JSON.parse(atob(cuerpo.content)).ct; sha = 's3';
+      return { ok: true, status: 200, json: async () => ({ content: { sha } }) };
+    };
+    const r = await sincronizar({ gh: { repo: 'u/r', token: 't' }, local: { eventos: [{ id: 'a' }, { id: 'c' }], snapshots: {}, meta: {} }, abrir: async s => s.ct, cerrar: async d => ({ ct: d }) }, falso);
+    if (archivo.eventos.map(e => e.id).sort().join() !== 'a,c,z') throw new Error('quedó: ' + archivo.eventos.map(e => e.id).join());
+    if (r.enviados !== 1 || r.recibidos !== 1 || puts !== 2) throw new Error(JSON.stringify({ enviados: r.enviados, recibidos: r.recibidos, puts }));
+  }], ['Sincronizar: si falla, avisa y no toca lo local', async () => {
+    const local = { eventos: [{ id: 'c' }], snapshots: {}, meta: {} };
+    const sinRed = async () => { throw new TypeError('fetch failed'); };
+    try { await sincronizar({ gh: { repo: 'u/r', token: 't' }, local, abrir: async s => s, cerrar: async d => d }, sinRed); throw new Error('no falló'); }
+    catch (err) { if (!(err instanceof ErrorSync) || err.codigo !== 'red') throw err; }
+    const sinPermiso = async (url, o = {}) => o.method ? { ok: false, status: 403 } : { ok: true, status: 200, json: async () => ({ content: btoa(JSON.stringify({ eventos: [], meta: {} })), sha: 'x' }) };
+    try { await sincronizar({ gh: { repo: 'u/r', token: 't' }, local, abrir: async s => s, cerrar: async d => d }, sinPermiso); throw new Error('no falló'); }
+    catch (err) { if (err.codigo !== 'permiso') throw err; }
+    if (local.eventos.length !== 1) throw new Error('tocó lo local');
+  }]);
+
   if (ext.historico?.fechas?.length) prueba('Benchmark simulado con los mismos aportes', () => {
     const r = rendimiento(valuar(aplicarEventos(limpio), { historico: ext.historico }, fechaBase));
     if (r.benchmarks.length !== 2 || r.benchmarks.some(b => !(b.valor > 0))) throw new Error('benchmark sin valor');

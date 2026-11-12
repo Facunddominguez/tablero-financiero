@@ -2,12 +2,15 @@
 import { h, poner, fmt, fechas, aNumero } from '../util.js';
 import { repartirAporte, aporteDelMes } from '../motor.js';
 import { dialogoCompras, boton, aviso } from './comun.js';
+import { vistaMes, entradaMes } from './mes.js';
 
-let moneda = 'USD', texto = null, deCaja = false;
+let moneda = 'USD', texto = null, deCaja = false, sugerido = null;
 
-export function vistaAportar(ctx) {
+export function vistaAportar(ctx, sub) {
+  if (sub === 'mes') return vistaMes(ctx);
   const e = ctx.estado, d = e.datos;
-  if (texto == null) texto = fmt.num(aporteDelMes(e, fechas.mes(e.hoy)));
+  const delMes = aporteDelMes(e, fechas.mes(e.hoy));
+  if (texto == null || delMes !== sugerido) { texto = fmt.num(delMes); sugerido = delMes; }
   const fMonto = h('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', value: texto, 'aria-label': 'Monto a aportar' });
   const salida = h('div');
   const bMoneda = m => h('button', { type: 'button', 'aria-pressed': String(moneda === m), onclick: () => { moneda = m; pintar(); poner(conm, bMoneda('USD'), bMoneda('ARS')); } }, m === 'USD' ? 'USD' : '$');
@@ -47,6 +50,7 @@ export function vistaAportar(ctx) {
   return h('div.vista.aportar',
     h('header.vista-cab', h('h1', 'Aportar'),
       h('p.nota', activas.length ? `Hoy las reglas (${activas.join(', ')}) habilitan solo el núcleo. Se compra primero lo que está más lejos de su peso.` : 'Los aportes van al núcleo, primero a lo que está más lejos de su peso.')),
+    entradaMes(ctx),
     h('div.calc-monto', h('label.campo', h('span.campo-etq', 'Cuánto vas a aportar'), fMonto), conm),
     salida,
     h('p.nota', { style: 'margin-top:2rem' }, `Precios ${e.precios.origen === 'mercado' ? 'actualizados ' + fmt.hace(e.precios.generado) : 'del resumen del ' + fmt.fecha(e.precios.fecha_archivo)} · MEP ${fmt.num(e.mep, 2)}. Usá órdenes límite: el precio puede moverse.`));

@@ -48,7 +48,6 @@ export function vistaCartera(ctx) {
     { k: 'pnl_usd', t: 'Resultado USD', num: 1, celda: f => f.pnl_usd == null ? '—' : h('span.' + (signoClase(f.pnl_usd) || 'plano'), fmt.signo(f.pnl_usd)) },
     { k: 'pnl_pct', t: 'Resultado %', num: 1, celda: f => f.pnl_pct == null ? '—' : h('span.' + (signoClase(f.pnl_pct) || 'plano'), fmt.pctSigno(f.pnl_pct)) },
     { k: 'accion', t: 'Acción vigente', celda: f => f.accion },
-    { k: 'en_allaria', t: 'Allaria', celda: f => f.en_allaria ? h('span.tilde', { title: 'Está en la cartera modelo de Allaria' }, '✓') : '' },
   ];
   const cuerpo = h('tbody');
   const cab = h('tr');
@@ -72,6 +71,7 @@ export function vistaCartera(ctx) {
     anillo(e),
     h('div.tabla-caja', h('table.tabla.cartera-tabla', h('thead', cab), cuerpo,
       h('tfoot', h('tr', h('td', { colspan: 3 }, 'Total con caja'), h('td.num', fmt.num(e.total_usd)), h('td', { colspan: 3 }),
-        h('td.num', h('span.' + (signoClase(pnl) || 'plano'), fmt.signo(pnl))), h('td.num', h('span.' + (signoClase(pnl) || 'plano'), fmt.pctSigno(costo ? pnl / costo : 0))), h('td', { colspan: 2 }))))),
+        h('td.num', h('span.' + (signoClase(pnl) || 'plano'), fmt.signo(pnl))), h('td.num', h('span.' + (signoClase(pnl) || 'plano'), fmt.pctSigno(costo ? pnl / costo : 0))), h('td'))))),
+    h('p.nota', h('button.enlace', { type: 'button', onclick: () => ctx.menu('fuentes') }, `Precios ${e.precios.origen === 'mercado' ? 'actualizados ' + fmt.hace(e.precios.generado) : 'del resumen del ' + fmt.fecha(e.precios.fecha_archivo)} · ver fuentes`)),
     h('p.nota', 'Resultado = valor de hoy menos el costo de cada lote, en dólares al MEP del día de compra y con gastos incluidos. % LP y objetivo son sobre la cartera de largo plazo; la emergencia queda afuera.'));
 }

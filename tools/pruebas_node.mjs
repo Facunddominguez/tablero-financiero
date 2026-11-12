@@ -8,7 +8,9 @@ import { rendimiento } from '../js/finanzas.js';
 const leer = p => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
 const base = leer('../privado/datos_iniciales.json');
 const ext = { calendario: leer('../data/calendario.json'), historico: leer('../data/historico.json'), mercado: leer('../data/market.json'), insiders: leer('../data/insiders.json') };
+ext.asincronicas = [];
 const res = correrPruebas(base, ext);
+for (const [nombre, fn] of ext.asincronicas) { try { await fn(); res.push({ nombre, ok: true, detalle: '' }); } catch (err) { res.push({ nombre, ok: false, detalle: String(err.message || err) }); } }
 for (const r of res) console.log((r.ok ? 'ok   ' : 'FALLA') + ' ' + r.nombre + (r.detalle ? ' — ' + r.detalle : ''));
 console.log(`\n${res.filter(r => r.ok).length}/${res.length} pruebas pasan`);
 if (process.argv.includes('--detalle')) {

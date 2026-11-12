@@ -9,14 +9,18 @@ function antiguedad(e) {
   return partes.join(' · ');
 }
 
-function estadoLinea(e) {
+function estadoLinea(ctx) {
+  const e = ctx.estado;
   return h('section.estado',
     h('p.estado-etq', 'Patrimonio'),
     h('p.estado-total', h('span.moneda', 'USD'), fmt.num(e.total_usd)),
     h('p.estado-detalle',
       h('span.' + (signoClase(e.var_dia_usd) || 'plano'), `${fmt.usdSigno(e.var_dia_usd)} hoy (${fmt.pctSigno(e.var_dia_pct, 2)})`),
       h('span.sep', '·'), h('span', `${fmt.ars(e.total_ars)} a MEP ${fmt.num(e.mep, 2)}`)),
-    h('p.estado-fuente', antiguedad(e)));
+    h('p.estado-fuente',
+      h('button.enlace', { type: 'button', title: 'Ver de dónde sale cada dato', onclick: () => ctx.menu('fuentes') }, antiguedad(e)),
+      h('span.sep', ' · '),
+      h('button.linea-sync.' + ctx.sync.clase, { type: 'button', dataset: { sync: '1' }, onclick: () => ctx.menu('sincronizar') }, ctx.sync.texto)));
 }
 
 // --- acciones de un paso ---
@@ -80,6 +84,7 @@ function tarjetaPaso(ctx, paso, n) {
         paso.informativo ? boton('Visto', visto, 'chico')
           : [boton('Hecho', () => hecho(ctx, paso), 'primario.chico'),
             paso.accion?.tipo === 'ir' ? h('a.boton.chico', { href: paso.accion.destino }, paso.accion.etiqueta) : null,
+            paso.accion?.extra ? h('a.boton.chico', { href: paso.accion.extra.destino }, paso.accion.extra.etiqueta) : null,
             paso.accion?.tipo === 'menu' ? boton(paso.accion.etiqueta, () => ctx.menu(paso.accion.seccion, paso.accion.arg), 'chico') : null,
             boton('Posponer', () => posponer(ctx, paso), 'fantasma.chico'), boton('Descartar', () => descartar(ctx, paso), 'fantasma.chico')])));
 }
@@ -111,7 +116,7 @@ export function vistaHoy(ctx) {
   const tareas = plan.pasos.filter(p => !p.informativo), avisos = plan.pasos.filter(p => p.informativo);
   let n = 0;
   return h('div.vista.hoy',
-    estadoLinea(e),
+    estadoLinea(ctx),
     h('section.pasos',
       h('h2', 'Próximos pasos'),
       tareas.length

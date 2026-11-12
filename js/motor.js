@@ -143,13 +143,43 @@ export function repartirAporte(e, usd) {
 
 const textoCompras = (compras) => compras.map(c => `Comprá ${fmt.cant(c.cantidad)} ${c.ticker} · orden límite a ≈ ${fmt.ars(c.precio)} · plazo 24 hs`);
 
-// Monto del aporte del mes: lo cargado para el mes, o ingreso − gasto − lo que va a objetivos externos.
+// Cierre del mes anterior (extracto cargado y monto elegido), si existe.
+export function cierreDe(e, mes) {
+  const c = e.datos.meses?.[fechas.mes(fechas.sumarMeses(mes + '-01', -1))];
+  return c && c.origen === 'cierre' ? c : null;
+}
+
+// Monto del aporte del mes: lo decidido al cerrar el mes anterior; si no, lo cargado para el mes;
+// si no, una estimación: ingreso − gasto habitual − lo que va a objetivos externos.
 export function aporteDelMes(e, mes) {
-  const d = e.datos, m = d.meses?.[mes];
+  const d = e.datos, m = d.meses?.[mes], cierre = cierreDe(e, mes);
+  if (cierre) return Math.max(0, cierre.aporte || 0);
   if (m && m.aporte > 0) return m.aporte;
   const externos = m ? (m.vacaciones || 0) + (m.auto || 0) : suma(d.objetivos_externos || [], o => o.aporte_mensual_usd || 0);
   const ingreso = m?.ingreso ?? d.perfil.ingreso_mensual_usd, gasto = m?.gasto ?? d.perfil.gasto_habitual_mensual_usd;
   return Math.max(0, ingreso - gasto - externos);
+}
+
+// Cuánto invertir con el sobrante real del mes. Devuelve un rango y por qué; el monto final lo elige la persona.
+export function recomendarAporte(e, { ingreso, gasto, externos = 0 }) {
+  const d = e.datos, p = d.perfil;
+  const sobrante = ingreso - gasto - externos;
+  const tasa = ingreso > 0 ? (ingreso - gasto) / ingreso : 0;
+  const disponible = Math.max(0, sobrante);
+  const faltaEmergencia = Math.max(0, d.emergencia.objetivo_usd - e.emergencia_usd);
+  const aEmergencia = Math.min(disponible, faltaEmergencia);
+  const maximo = disponible - aEmergencia;
+  const minimo = Math.min(maximo, Math.max(0, p.piso_tasa_ahorro * ingreso - aEmergencia));
+  const motivos = [];
+  if (sobrante <= 0) motivos.push(`Este mes el gasto (${fmt.usd(gasto)}) ${externos ? 'más lo que separaste ' : ''}se llevó todo el ingreso: no queda sobrante para invertir.`);
+  else {
+    motivos.push(`Ahorraste ${fmt.pct(tasa, 0)} del ingreso (meta ${fmt.pct(p.meta_tasa_ahorro, 0)}, piso ${fmt.pct(p.piso_tasa_ahorro, 0)}).`);
+    if (aEmergencia > 0) motivos.push(`Primero van ${fmt.usd(aEmergencia)} al fondo de emergencia, que está ${fmt.usd(faltaEmergencia)} por debajo de su objetivo.`);
+    else motivos.push(`El fondo de emergencia está completo (${fmt.num(e.meses_emergencia, 1)} meses de gasto), así que todo el sobrante puede ir a la cartera.`);
+    if (tasa < p.piso_tasa_ahorro) motivos.push(`Ojo: quedaste por debajo del piso de ahorro. Antes de invertir más, conviene revisar el gasto (regla R2).`);
+    else if (minimo < maximo) motivos.push(`Como mínimo, ${fmt.usd(minimo)}: es el piso de ahorro. Lo que no inviertas queda en el banco.`);
+  }
+  return { sobrante, tasa, disponible, a_emergencia: aEmergencia, minimo, maximo, sugerido: maximo, motivos };
 }
 
 // ---------- Planificador ----------
@@ -203,7 +233,10 @@ export function planificador(e, hoy = e.hoy) {
     const paraNucleo = Math.max(0, monto - faltaEmergencia);
     if (paraNucleo >= 1) {
       const rep = repartirAporte(e, paraNucleo);
-      const motivos = [`Ahorro de ${fmt.mes(hoy).split(' de ')[0]}: ${fmt.usd(monto)}${faltaEmergencia > 1 ? ` (primero ${fmt.usd(Math.min(monto, faltaEmergencia))} a emergencia)` : ''}.`];
+      const cierre = cierreDe(e, mes), mesPrevio = fmt.mes(fechas.sumarMeses(mes + '-01', -1)).split(' de ')[0];
+      const motivos = [cierre
+        ? `Al cerrar ${mesPrevio} gastaste ${fmt.usd(cierre.gasto)} de ${fmt.usd(cierre.ingreso)} y elegiste invertir ${fmt.usd(monto)}.`
+        : `Es una estimación con tu gasto habitual (${fmt.usd(d.perfil.ingreso_mensual_usd)} − ${fmt.usd(d.perfil.gasto_habitual_mensual_usd)})${faltaEmergencia > 1 ? `; primero ${fmt.usd(Math.min(monto, faltaEmergencia))} van a emergencia` : ''}. Con el extracto de ${mesPrevio} sale el número real.`];
       if (R.R3?.activa) motivos.push(`Regla R3: el núcleo es ${fmt.pct(e.nucleo_lp)} de LP (mínimo ${fmt.pct(d.nucleo.rango_LP[0], 0)}), así que todo va al núcleo.`);
       else motivos.push('Las reglas habilitan solo el núcleo para los aportes.');
       if (R['R3B-E']?.activa) motivos.push(`Regla R3B-E: ${R['R3B-E'].accion}.`);
@@ -211,7 +244,7 @@ export function planificador(e, hoy = e.hoy) {
         id: `aporte-${mes}`, tipo: 'aporte', titulo: `Aportá ${fmt.usd(paraNucleo)}`, porque: motivos.join(' '),
         como: [`Transferí ${fmt.usd(paraNucleo)} a Balanz (≈ ${fmt.ars(paraNucleo * e.mep)})`, ...textoCompras(rep.compras),
           `Costo estimado ${fmt.usd(rep.costo_usd, 2)} (${fmt.pct(rep.costo_pct, 2)}) · sobran ≈ ${fmt.usd(rep.sobrante_usd, 2)} en caja`],
-        accion: { tipo: 'aporte', usd: paraNucleo, compras: rep.compras },
+        accion: { tipo: 'aporte', usd: paraNucleo, compras: rep.compras, extra: cierre ? null : { destino: '#aportar/mes', etiqueta: 'Calcular con el extracto' } },
       });
     }
   }
@@ -294,23 +327,13 @@ export function planificador(e, hoy = e.hoy) {
   const propios = new Set(e.posiciones.map(p => p.subyacente || p.ticker)), watch = new Set((d.watchlist || []).map(w => w.ticker));
   const donde = t => propios.has(t) ? 'lo tenés en cartera' : watch.has(t) ? 'está en tu watchlist' : null;
   const etiqueta = soloObs ? 'Solo observación' : 'Informativo';
-  for (const c of d.cartera_modelo_allaria?.ultimos_cambios || []) {
-    if (fechas.dias(c.fecha, hoy) > 45 || c.fecha > hoy) continue;
-    for (const [verbo, lista] of [['sumó', [c.entra].flat()], ['sacó', [c.sale].flat()]]) for (const t of lista) {
-      if (!t || !donde(t)) continue;
-      agregar({
-        id: `allaria-${c.fecha}-${t}`, tipo: 'senal', informativo: true, etiqueta, titulo: `Allaria ${verbo} ${t} ${verbo === 'sumó' ? 'a' : 'de'} su cartera modelo`,
-        porque: `Cambio del ${fmt.fecha(c.fecha)}; ${donde(t)}. ${soloObs ? 'Regla R7 activa: no se abren tesis nuevas, es solo para saberlo.' : 'Es una referencia, no una orden.'}`,
-      });
-    }
-  }
   const porTicker = {};
   for (const f of e.insiders.filas || []) if (donde(f.ticker) && fechas.dias(f.fecha, hoy) <= 10) (porTicker[f.ticker] = porTicker[f.ticker] || []).push(f);
   for (const [t, filas] of Object.entries(porTicker)) {
     const f = filas.sort((a, b) => b.monto - a.monto)[0];
     agregar({
       id: `insider-${t}-${f.fecha}`, tipo: 'senal', informativo: true, etiqueta, titulo: `Compras de directivos en ${t}`,
-      porque: `${f.insiders} directivos compraron por ${fmt.usd(f.monto)} el ${fmt.fecha(f.fecha)}; ${donde(t)}. ${soloObs ? 'Regla R7 activa: es solo para saberlo.' : 'Es una referencia, no una orden.'}`,
+      porque: `${f.insiders} directivos compraron por ${fmt.usd(f.monto)} el ${fmt.fecha(f.fecha)}; ${donde(t)}. Fuente: OpenInsider.${soloObs ? ' Regla R7 activa: no se abren tesis nuevas.' : ''}`,
     });
   }
 

@@ -79,19 +79,35 @@ export function dialogoCompras(ctx, { titulo, compras, usd, externo, paso }) {
   return d;
 }
 
-// Carga un script externo una sola vez (Chart.js y SheetJS se piden solo cuando hacen falta).
-const cargados = {};
-export function cargarScript(url) {
-  return cargados[url] || (cargados[url] = new Promise((ok, mal) => {
-    const s = h('script', { src: url, crossorigin: 'anonymous' });
-    s.onload = ok; s.onerror = () => { delete cargados[url]; mal(new Error('No se pudo cargar ' + url)); };
-    document.head.append(s);
-  }));
-}
+// Bibliotecas externas: se bajan, se comprueba su huella (SHA-384) y recién entonces se ejecutan.
+// Si el archivo del CDN cambiara, aunque sea un byte, no se carga.
 export const CDN = {
-  chart: 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js',
-  xlsx: 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+  chart: ['https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js', 'bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD'],
+  xlsx: ['https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js', 'EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT'],
+  pdf: ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', '/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e'],
+  pdfWorker: ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js', 'SnzOobpRMLXZ52iJvZm/C0fYw0OQemTXzTjIsdsfMcrCtCEe9qgzxTd3RSklO5x2'],
 };
+const verificados = {};
+// Devuelve una URL local (blob:) con el contenido ya verificado.
+export function bajarVerificado([url, huella]) {
+  return verificados[url] || (verificados[url] = (async () => {
+    const r = await fetch(url, { credentials: 'omit' });
+    if (!r.ok) throw new Error('No se pudo bajar ' + url);
+    const buf = await r.arrayBuffer();
+    const dig = new Uint8Array(await crypto.subtle.digest('SHA-384', buf));
+    let bin = ''; for (const b of dig) bin += String.fromCharCode(b);
+    if (btoa(bin) !== huella) throw new Error('La biblioteca descargada no coincide con la versión verificada: no se ejecuta.');
+    return URL.createObjectURL(new Blob([buf], { type: 'text/javascript' }));
+  })().catch(err => { delete verificados[url]; throw err; }));
+}
+const cargados = {};
+export function cargarScript(lib) {
+  return cargados[lib[0]] || (cargados[lib[0]] = bajarVerificado(lib).then(src => new Promise((ok, mal) => {
+    const s = h('script', { src });
+    s.onload = ok; s.onerror = () => mal(new Error('No se pudo ejecutar ' + lib[0]));
+    document.head.append(s);
+  })).catch(err => { delete cargados[lib[0]]; throw err; }));
+}
 
 // Colores de series leídos de las variables CSS (cambian con el tema).
 export function coloresSeries() {
