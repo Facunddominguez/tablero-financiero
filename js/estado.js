@@ -67,13 +67,22 @@ export function aplicarEventos(base, eventosLocales = []) {
         d.realizados.push({ fecha: e.fecha, ticker: e.ticker, cantidad: e.cantidad, costo_usd: costo, neto_usd: netoArs / e.mep, resultado_usd: netoArs / e.mep - costo, gastos_usd: (e.gastos || 0) / e.mep });
         break;
       }
-      case 'mes': d.meses[e.mes] = { ingreso: e.ingreso, gasto: e.gasto, vacaciones: e.vacaciones, auto: e.auto, aporte: e.aporte }; break;
+      case 'mes': { // cierre de un mes: resumen para las reglas + detalle de gastos
+        const { id, ts, tipo, mes, ...resto } = e;
+        d.meses[mes] = resto;
+        break;
+      }
+      case 'reglas_gasto': { // lo que aprendió de tus correcciones al categorizar
+        d.reglas_gasto = (d.reglas_gasto || []).filter(r => !e.reglas.some(n => n.patron === r.patron)).concat(e.reglas);
+        break;
+      }
       case 'paso':
         d.pasos[e.paso_id] = { estado: e.estado, hasta: e.hasta, fecha: e.fecha };
         d.decisiones.push({ fecha: e.fecha, texto: `${{ hecho: 'Hecho', pospuesto: 'Pospuesto', descartado: 'Descartado' }[e.estado]}: ${e.titulo}${e.nota ? ' — ' + e.nota : ''}` });
         break;
       case 'decision': d.decisiones.push({ fecha: e.fecha, texto: e.texto }); break;
       case 'config': Object.assign(d.config, e.cambios); break;
+      case 'perfil': Object.assign(d.perfil, e.cambios); break;
       case 'fecha_aporte': {
         const a = d.cashflows_externos_usd[e.indice];
         if (a) { a.fecha = e.fecha; delete a.fecha_estimada; delete a.nota; }

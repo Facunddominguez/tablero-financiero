@@ -285,6 +285,71 @@ input[type="file"] { width: 100%; font-size: .9rem; }
 .pruebas .falla { color: var(--mal); }
 .pruebas small { display: block; }
 
+/* ---------- sincronización, seguridad y guías ---------- */
+.linea-sync { all: unset; font-size: .8rem; color: var(--tinta-3); }
+button.linea-sync, .enlace { cursor: pointer; text-decoration: underline; text-decoration-color: var(--linea-fuerte); text-underline-offset: 3px; }
+.enlace { all: unset; cursor: pointer; text-decoration: underline; text-decoration-color: var(--linea-fuerte); text-underline-offset: 3px; }
+.enlace:hover, button.linea-sync:hover { color: var(--tinta); }
+.linea-sync.alerta { color: var(--alerta); } .linea-sync.mal { color: var(--mal); } .linea-sync.ok { color: var(--ok); }
+.dialogo p.linea-sync { display: block; font-size: .9rem; font-weight: 550; }
+.menu .linea-sync { font-size: .82rem; }
+.mas.punto-mal::after { background: var(--mal); }
+.guia { list-style: none; counter-reset: guia; display: grid; gap: 1rem; }
+.guia > li { counter-increment: guia; position: relative; padding-left: 2.2rem; display: grid; gap: .45rem; justify-items: start; }
+.guia > li::before { content: counter(guia); position: absolute; left: 0; top: 0; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--tinta); color: var(--papel); font: 600 .78rem/1.5rem var(--f-num); text-align: center; }
+.guia input { width: 100%; }
+code { font: .86em var(--f-num); background: var(--linea); padding: .08em .35em; border-radius: 4px; }
+.otra-forma { border-top: 1px solid var(--linea); padding-top: .7rem; }
+.otra-forma summary { cursor: pointer; font-size: .9rem; color: var(--tinta-2); }
+.otra-forma[open] summary { margin-bottom: .7rem; }
+.otra-forma > * + * { margin-top: .6rem; }
+.fuerza { height: 6px; border-radius: 3px; background: var(--linea); overflow: hidden; }
+.fuerza span { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--mal); transition: width .2s; }
+.fuerza[data-nivel="1"] span { width: 25%; } .fuerza[data-nivel="2"] span { width: 50%; background: var(--alerta); }
+.fuerza[data-nivel="3"] span { width: 75%; background: var(--ok); } .fuerza[data-nivel="4"] span { width: 100%; background: var(--ok); }
+.campo-clave { position: relative; }
+.campo-clave input { padding-right: 5rem; }
+.fantasma-texto { all: unset; position: absolute; right: .7rem; top: 50%; transform: translateY(-50%); font-size: .82rem; color: var(--tinta-2); cursor: pointer; }
+.aviso-global { max-width: var(--ancho); margin: 1rem auto 0; }
+textarea { width: 100%; font: inherit; color: inherit; padding: .6rem .7rem; border: 1px solid var(--linea-fuerte); border-radius: 8px; background: var(--superficie); }
+.boton.apagado { opacity: .5; }
+@media (max-width: 43rem) { .vista { padding-bottom: 6rem; } }
+
+/* ---------- Cuánto invierto ---------- */
+.tarjeta-mes { display: grid; grid-template-columns: 1fr auto; gap: .15rem 1rem; padding: 1rem 1.1rem; margin-bottom: 1.75rem; border: 1px solid var(--linea-fuerte); border-radius: 14px; background: var(--superficie); text-decoration: none; }
+.tarjeta-mes:hover { border-color: var(--acento); }
+.tarjeta-titulo { font: 600 1.15rem/1.3 var(--f-titulo); }
+.tarjeta-sub { grid-column: 1; font-size: .88rem; color: var(--tinta-2); }
+.tarjeta-flecha { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-size: 1.4rem; color: var(--acento); }
+.pasos-mes { display: flex; gap: .3rem; margin-top: .9rem; overflow-x: auto; scrollbar-width: none; }
+.pasos-mes li { flex: 1; min-width: 3.4rem; display: grid; gap: .3rem; font-size: .7rem; letter-spacing: .04em; color: var(--tinta-3); border-top: 3px solid var(--linea); padding-top: .4rem; }
+.pasos-mes li span { font: 600 .8rem var(--f-num); }
+.pasos-mes li.hecho { border-color: var(--tinta-3); } .pasos-mes li.actual { border-color: var(--acento); color: var(--tinta); }
+.paso-mes { display: grid; gap: 1rem; }
+.paso-mes h2 { margin-bottom: 0; }
+.paso-mes > div:not([class]) { display: grid; gap: 1rem; }
+.paso-mes .calc-monto { margin-bottom: 0; grid-template-columns: 1fr; }
+.nav-mes { justify-content: space-between; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--linea); }
+.caja { display: grid; gap: .7rem; padding: 1rem; border: 1px solid var(--linea); border-radius: var(--radio); background: var(--superficie); }
+.caja .tabla-caja { margin-inline: 0; padding-inline: 0; }
+.total-paso { display: grid; gap: .1rem; }
+.total-paso span { font-size: .78rem; letter-spacing: .09em; text-transform: uppercase; color: var(--tinta-3); }
+.total-paso strong { font: 500 2.2rem/1.1 var(--f-num); letter-spacing: -.04em; }
+.recomendado { font-size: 1.05rem; } .recomendado strong { font-family: var(--f-num); }
+.chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.chips li { display: flex; gap: .5rem; padding: .25rem .65rem; border: 1px solid var(--linea-fuerte); border-radius: 999px; font-size: .8rem; }
+.chips strong { font-family: var(--f-num); font-weight: 600; }
+.gastos { border-top: 1px solid var(--linea-fuerte); }
+.gastos li { display: grid; grid-template-columns: 1fr 9.5rem 7rem; gap: .5rem; align-items: center; padding: .55rem 0; border-bottom: 1px solid var(--linea); }
+.gastos li.excluido .gasto-desc, .gastos li.excluido input { opacity: .45; text-decoration: line-through; }
+.gasto-desc { min-width: 0; display: grid; }
+.gasto-desc span { font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gasto-desc small { font: .74rem var(--f-num); color: var(--tinta-3); }
+.gastos select, .gastos input { min-height: 2.2rem; padding: .25rem .5rem; font-size: .84rem; }
+.gastos input { text-align: right; font-family: var(--f-num); }
+@media (max-width: 34rem) { .gastos li { grid-template-columns: 1fr 6.2rem; } .gasto-desc { grid-column: 1 / -1; } }
+input[type="range"] { width: 100%; accent-color: var(--acento); }
+
 /* ---------- impresión ---------- */
 @media print {
   :root { --papel: #fff; --superficie: #fff; --tinta: #000; --tinta-2: #333; --tinta-3: #555; --linea: #ccc; --linea-fuerte: #999; --acento: #000; --sube: #000; --baja: #000; color-scheme: light; }
