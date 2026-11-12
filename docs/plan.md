@@ -203,6 +203,31 @@ Se mantiene (3 corridas por día hábil, permisos mínimos, sin secretos). Cambi
 
 ---
 
+### Revisión contra el Excel de decisiones (rama `reglas-y-aportes`)
+
+**Aportes.** La hoja de cashflows del Excel tenía un aporte que no estaba cargado. Se agregó como evento (`aporte_historico`). Con eso los aportes cierran contra el costo de la cartera, desaparece el paso "Revisá si falta cargar algún aporte" y el rendimiento anual pasa a un valor realista (antes estaba inflado).
+
+**Reglas: qué cambió y por qué.**
+
+| Regla | Cambio | Origen en el Excel |
+|---|---|---|
+| R1 Emergencia | Escalones: bajo el mínimo va todo el ahorro; entre mínimo y objetivo, el 25% del ahorro (antes se reponía todo de una vez); más de 12 meses, paso para decidir el destino del excedente. Cuando haya tres cierres de mes, los meses se miden con el gasto real promedio. | R1A, R1B, R1C |
+| R5 Satélites totales | Pasar el techo ya no figura como "Excedida": pide un plan de normalización sin ventas, con fecha estimada. | R5A, R5B ("no venta automática") |
+| R3 Núcleo | Muestra en cuántos meses de aportes vuelve al rango. | — |
+| R6B Argentina total (nueva) | Riesgo argentino (acciones, ON y renta fija en pesos) sobre el patrimonio invertible: objetivo 20%, alerta 25%, techo 30%. | R6C |
+| R7 Nuevas tesis | Además del núcleo bajo, bloquea si hay más de 5 tesis abiertas (YPF cuenta como una). | R15 |
+| R8 Sin deuda (nueva) | Avisa si la cuenta queda con saldo deudor. | R11 |
+| R9 Datos conciliados (nueva) | Avisa si falta un aporte material o hay fechas estimadas: sin eso el rendimiento no se puede leer. | R14 |
+| Condiciones para una tesis nueva | En Radar: espera de 24/48 h, riesgo máximo por tesis y checklist V-5. Sin calculadora todavía. | R8A, R8B, R10, R12 |
+
+**No se cambió** (queda a decisión): la definición de satélites sigue incluyendo la ON (en el Excel el "bono de emisor único" va aparte); la reserva sigue contando los dos fondos al 100% (el Excel le aplica un descuento del 10% al fondo en dólares); R4 sigue sin definir hasta dónde vender al pasar el tope duro; la banda de rebalanceo por bloque del Excel (5 pp o 25% relativo) no se usa porque la app no propone ventas.
+
+**Decisiones del ranking** (hoja 01): quedan cubiertas por la app la 1 (seguridad), 2 (ahorro, con el cierre mensual), 4 (asignación), 5 (concentración: YPF y ahora Argentina), 7 (costos), 8 (rebalanceo con aportes), 9 (registro de decisiones) y 10 (medición: flujos completos y benchmark). Pendientes: 3 (objetivos con fecha para lo que está fuera de la cuenta), 6 y 11 (calculadora V-5 y tesis de una página, para cuando se desbloqueen las tesis nuevas).
+
+**Corrección técnica**: confirmar la fecha de un aporte ahora lo identifica por monto y fecha original, no por su posición en la lista.
+
+---
+
 ## Etapa 6 · Extras (priorizados; nada implementado)
 
 | # | Idea | Valor | Esfuerzo | Nota |
