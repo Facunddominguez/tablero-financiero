@@ -107,6 +107,18 @@ def fci():
     return {"precios": precios, "fecha": fecha}
 
 
+def mep_mensual():
+    """Promedio mensual del dólar MEP (punto medio compra/venta) de los últimos 36 meses."""
+    filas = json.loads(bajar("https://api.argentinadatos.com/v1/cotizaciones/dolares/bolsa"))
+    meses = {}
+    for f in filas:
+        if f.get("compra") and f.get("venta") and f.get("fecha"):
+            meses.setdefault(f["fecha"][:7], []).append((f["compra"] + f["venta"]) / 2)
+    if len(meses) < 3:
+        raise RuntimeError("mep_mensual: sin historia")
+    return {"meses": {m: round(sum(v) / len(v), 2) for m, v in sorted(meses.items())[-36:]}}
+
+
 def yahoo(ticker, desde):
     """Cierres diarios (cierre, cierre ajustado) con yfinance."""
     import yfinance as yf  # se importa acá para que el resto funcione aunque no esté instalado
@@ -184,6 +196,7 @@ def main():
     # las ON cotizan cada 100 de valor nominal: se guarda el precio por 1 VN
     mercado["ons"] = seccion("ons", m_prev.get("ons"), lambda: data912("arg_corp", 100))
     mercado["fci"] = seccion("fci", m_prev.get("fci"), fci)
+    mercado["mep_mensual"] = seccion("mep_mensual", m_prev.get("mep_mensual"), mep_mensual)
 
     hist = h_prev
     try:
