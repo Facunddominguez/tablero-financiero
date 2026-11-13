@@ -17,7 +17,8 @@ export function evaluarReglas(e) {
 
   // R1 · Emergencia, en escalones: bajo el mínimo, entre mínimo y objetivo, y posible exceso
   const em = d.emergencia, m = e.meses_emergencia, r1 = R.R1 || {};
-  const baseR1 = `Cubre ${fmt.num(m, 1)} meses de gasto (mínimo ${em.meses_min}, objetivo ${em.meses_obj}).`;
+  const enPesos = suma(e.posiciones.filter(p => p.grupo === 'emergencia' && p.moneda !== 'USD'), p => p.valor_usd);
+  const baseR1 = `Cubre ${fmt.num(m, 1)} meses de gasto (mínimo ${em.meses_min}, objetivo ${em.meses_obj}).${enPesos > 1 ? ` De la reserva, ${fmt.usd(enPesos)} están en pesos: esa parte cambia de valor en dólares cuando se mueve el MEP.` : ''}`;
   if (m < em.meses_min) fila('R1', 'violada', fmt.num(m, 1) + ' meses', baseR1);
   else if (e.emergencia_usd < em.objetivo_usd) fila('R1', 'alerta', fmt.num(m, 1) + ' meses', `${baseR1} Faltan ${fmt.usd(em.objetivo_usd - e.emergencia_usd)} para el objetivo de ${fmt.usd(em.objetivo_usd)}.`, r1.accion_bajo_objetivo);
   else if (r1.meses_exceso && m > r1.meses_exceso) fila('R1', 'info', fmt.num(m, 1) + ' meses', `${baseR1} Hay más reserva de la necesaria: ${fmt.usd(e.emergencia_usd - em.objetivo_usd)} por encima del objetivo.`, r1.accion_exceso);
@@ -35,7 +36,7 @@ export function evaluarReglas(e) {
   // R3 · Núcleo sobre LP
   const pr = proyeccion(e);
   fila('R3', e.nucleo_lp < nMin ? 'alerta' : 'ok', fmt.pct(e.nucleo_lp),
-    `El núcleo es ${fmt.pct(e.nucleo_lp)} de la cartera de largo plazo (rango ${fmt.pct(nMin, 0)}–${fmt.pct(nMax, 0)}, objetivo ${fmt.pct(d.nucleo.peso_en_LP_objetivo, 0)}).${e.nucleo_lp < nMin && pr.nucleo ? ` ${pr.nucleo.texto}` : ''}`);
+    `El núcleo es ${fmt.pct(e.nucleo_lp)} de la cartera de largo plazo (rango ${fmt.pct(nMin, 0)}–${fmt.pct(nMax, 0)}, objetivo ${fmt.pct(d.nucleo.peso_en_LP_objetivo, 0)}).${e.nucleo_lp < nMin && pr.nucleo ? ` ${pr.nucleo.texto}` : e.nucleo_lp >= nMin && e.nucleo_lp < d.nucleo.peso_en_LP_objetivo && R.R3.accion_en_rango ? ` Entre el mínimo y el objetivo: ${R.R3.accion_en_rango.toLowerCase()}.` : ''}`);
 
   // R3B-E · Pesos internos del núcleo
   const banda = d.nucleo.banda_interna_pp;
@@ -53,7 +54,7 @@ export function evaluarReglas(e) {
     const duros = lista.filter(p => p.pct_lp > r.duro), alertas = lista.filter(p => p.pct_lp > r.alerta && p.pct_lp <= r.duro);
     const mayor = lista.slice().sort((a, b) => b.pct_lp - a.pct_lp)[0];
     const nombres = l => l.map(p => `${p.ticker} ${fmt.pct(p.pct_lp)}`).join(', ');
-    if (duros.length) fila(id, 'violada', nombres(duros), `Supera el tope duro de ${fmt.pct(r.duro, 0)}: ${nombres(duros)}.`, 'Reducir hasta volver por debajo de la alerta');
+    if (duros.length) fila(id, 'violada', nombres(duros), `Supera el tope duro de ${fmt.pct(r.duro, 0)}: ${nombres(duros)}.`, `Reducir hasta ${r.vender_hasta === 'objetivo' ? 'el objetivo' : `la alerta (${fmt.pct(r.alerta, 0)})`}${r.antes_de_vender ? '. Antes: ' + r.antes_de_vender.toLowerCase() : ''}`);
     else if (alertas.length) fila(id, 'alerta', nombres(alertas), `En zona de alerta (${fmt.pct(r.alerta, 0)}–${fmt.pct(r.duro, 0)}): ${nombres(alertas)}.`,
       alertas.map(p => `${p.ticker}: ${d.objetivos_por_activo[p.ticker]?.accion || 'sin compras'}`).join('; '));
     else fila(id, 'ok', mayor ? `máx. ${mayor.ticker} ${fmt.pct(mayor.pct_lp)}` : '—', `Ninguno supera la alerta de ${fmt.pct(r.alerta, 0)}.`);
@@ -67,9 +68,13 @@ export function evaluarReglas(e) {
       sobreTecho ? (R.R5.accion_techo || R.R5.accion) : undefined);
   }
 
-  // R6 · YPF consolidada
-  if (R.R6) fila('R6', e.ypf_lp > R.R6.objetivo ? 'alerta' : 'ok', fmt.pct(e.ypf_lp),
-    `YPF consolidada es ${fmt.pct(e.ypf_lp)} de LP (objetivo ${fmt.pct(R.R6.objetivo, 0)}; exceso aceptado transitoriamente).`);
+  // R6 · YPF consolidada: exceso aceptado mientras no pase el máximo; sale por dilución
+  if (R.R6) {
+    const r = R.R6, pasado = r.maximo_aceptado != null && e.ypf_lp > r.maximo_aceptado;
+    fila('R6', pasado ? 'violada' : e.ypf_lp > r.objetivo ? 'alerta' : 'ok', fmt.pct(e.ypf_lp),
+      `YPF consolidada es ${fmt.pct(e.ypf_lp)} de LP (objetivo ${fmt.pct(r.objetivo, 0)}${r.maximo_aceptado != null ? `; exceso aceptado hasta ${fmt.pct(r.maximo_aceptado, 0)}` : ''}).${e.ypf_lp > r.objetivo && pr.ypf ? ` ${pr.ypf.texto}` : ''}`,
+      pasado ? r.accion_maximo : undefined);
+  }
 
   // R6B · Argentina total, sobre el patrimonio invertible
   if (R.R6B) {
@@ -123,18 +128,47 @@ export function evaluarReglas(e) {
 
 // Proyección sin ventas: cuántos meses de aportes al núcleo hacen falta para volver a los rangos, con precios quietos.
 export function proyeccion(e, hoy = e.hoy) {
-  const d = e.datos, aporte = Math.max(0, d.perfil.ingreso_mensual_usd - d.perfil.gasto_habitual_mensual_usd);
-  const nMin = d.nucleo.rango_LP[0], R5 = d.reglas.find(r => r.id === 'R5');
+  const d = e.datos;
+  // aporte mensual: el promedio de lo decidido en los últimos cierres; si no hay, ingreso menos gasto habitual
+  const cierres = Object.entries(d.meses || {}).filter(([, m]) => m.origen === 'cierre').sort().slice(-3).map(([, m]) => m.aporte || 0);
+  const aporte = cierres.length ? suma(cierres) / cierres.length : Math.max(0, d.perfil.ingreso_mensual_usd - d.perfil.gasto_habitual_mensual_usd);
+  const nMin = d.nucleo.rango_LP[0], R5 = d.reglas.find(r => r.id === 'R5'), R6 = d.reglas.find(r => r.id === 'R6');
   const armar = (meses, meta) => {
     if (!(aporte > 0) || !isFinite(meses) || meses <= 0) return null;
     const n = Math.ceil(meses), fecha = fechas.sumarMeses(fechas.diaDelMes(hoy, 1), n);
     return { meses: n, fecha, aporte, texto: `Con aportes de ${fmt.usd(aporte)} por mes al núcleo, ${meta} en unos ${n} ${n === 1 ? 'mes' : 'meses'} (${fmt.mes(fecha)}), si los precios no cambian.` };
   };
+  const bajo = (usd, tope, meta) => tope && usd / e.lp_usd > tope ? armar((usd / tope - e.lp_usd) / aporte, meta) : null;
   return {
-    aporte,
+    aporte, real: cierres.length > 0,
     nucleo: e.nucleo_lp < nMin ? armar((nMin * e.lp_usd - e.nucleo_usd) / (aporte * (1 - nMin)), `llega al ${fmt.pct(nMin, 0)}`) : null,
-    satelites: R5 && e.satelites_lp > R5.techo ? armar((e.satelites_usd / R5.techo - e.lp_usd) / aporte, `los satélites bajan del ${fmt.pct(R5.techo, 0)}`) : null,
+    satelites: R5 ? bajo(e.satelites_usd, R5.techo, `los satélites bajan del ${fmt.pct(R5.techo, 0)}`) : null,
+    satelites_alerta: R5 ? bajo(e.satelites_usd, R5.alerta, `los satélites bajan del ${fmt.pct(R5.alerta, 0)}`) : null,
+    satelites_objetivo: R5 ? bajo(e.satelites_usd, R5.objetivo, `los satélites llegan a su objetivo de ${fmt.pct(R5.objetivo, 0)}`) : null,
+    ypf: R6 ? bajo(e.ypf_usd, R6.objetivo, `YPF baja a su objetivo de ${fmt.pct(R6.objetivo, 0)}`) : null,
   };
+}
+
+// Movimientos fuertes de precio del día, en dólares, según los umbrales de `alertas` (los mismos que usa el aviso al teléfono).
+export function movimientosFuertes(e) {
+  const al = e.datos.alertas;
+  if (!al || e.precios.origen !== 'mercado') return [];
+  const out = [];
+  const nivel = (x, g) => { const c = al.critico?.dia?.[g], a = al.aviso?.dia?.[g]; return c && Math.abs(x) >= c ? 'critico' : a && Math.abs(x) >= a ? 'aviso' : null; };
+  for (const p of e.posiciones) {
+    const g = p.tipo === 'on' ? 'on' : p.grupo === 'nucleo' ? 'nucleo' : (p.grupo === 'satelite' || p.grupo === 'ypf') && p.tipo !== 'fci' ? 'satelite' : null;
+    const n = g && nivel(p.dia_usd_pct, g);
+    if (n) out.push({ ticker: p.ticker, pct: p.dia_usd_pct, nivel: n, umbral: al[n].dia[g], grupo: g });
+  }
+  const cedears = e.mercado?.cedears?.precios || {}, mios = new Set(e.posiciones.map(p => p.ticker));
+  for (const w of e.datos.watchlist || []) {
+    const f = cedears[w.ticker]; if (!f || mios.has(w.ticker)) continue;
+    const x = (1 + (f[1] || 0) / 100) / (1 + e.cambio_mep) - 1, u = al.aviso?.dia?.watchlist;
+    if (u && Math.abs(x) >= u) out.push({ ticker: w.ticker, pct: x, nivel: 'aviso', umbral: u, grupo: 'watchlist' });
+  }
+  const um = al.critico?.dia?.mep, ua = al.aviso?.dia?.mep, cm = e.cambio_mep;
+  if (ua && Math.abs(cm) >= ua) out.push({ ticker: 'Dólar MEP', pct: cm, nivel: um && Math.abs(cm) >= um ? 'critico' : 'aviso', umbral: um && Math.abs(cm) >= um ? um : ua, grupo: 'mep' });
+  return out.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
 }
 
 // Acción vigente por activo, para la tabla de Cartera.
@@ -280,11 +314,12 @@ export function planificador(e, hoy = e.hoy) {
   for (const id of ['R4', 'R4B']) if (R[id]?.nivel === 'violada') {
     const r = d.reglas.find(x => x.id === id);
     for (const p of e.posiciones.filter(p => p.grupo === 'satelite' && (id === 'R4B') === (p.bloque === 'satelite_volatil') && p.pct_lp > r.duro)) {
-      const vender = Math.ceil((p.valor_usd - r.alerta * e.lp_usd) / (p.precio_ars / e.mep));
+      const hasta = r.vender_hasta === 'objetivo' ? (d.objetivos_por_activo[p.ticker]?.objetivo ?? r.alerta) : r.alerta;
+      const vender = Math.ceil((p.valor_usd - hasta * e.lp_usd) / (p.precio_ars / e.mep));
       agregar({
         id: `duro-${p.ticker}-${mes}`, tipo: 'regla', titulo: `Reducí ${p.ticker}: vendé ${fmt.cant(vender)} unidades`,
         porque: `Regla ${id}: ${p.ticker} pesa ${fmt.pct(p.pct_lp)} de LP y el tope duro es ${fmt.pct(r.duro, 0)}. Es la única regla que pide vender.`,
-        como: [`Vendé ${fmt.cant(vender)} ${p.ticker} · orden límite a ≈ ${fmt.ars(p.precio_ars)} · plazo 24 hs`, 'Con lo que entre, comprá núcleo (aparece como paso cuando registres la venta)', 'Registrá la venta en ⋯ → Registrar cobro o venta'],
+        como: [r.antes_de_vender || 'Revisá el costo de ida y vuelta antes de vender', `Vendé ${fmt.cant(vender)} ${p.ticker} · orden límite a ≈ ${fmt.ars(p.precio_ars)} · plazo 24 hs`, 'Con lo que entre, comprá núcleo (aparece como paso cuando registres la venta)', 'Registrá la venta en ⋯ → Registrar cobro o venta'],
       });
     }
   }
@@ -402,6 +437,12 @@ export function planificador(e, hoy = e.hoy) {
       porque: `${f.insiders} directivos compraron por ${fmt.usd(f.monto)} el ${fmt.fecha(f.fecha)}; ${donde(t)}. Fuente: OpenInsider.${soloObs ? ' Regla R7 activa: no se abren tesis nuevas.' : ''}`,
     });
   }
+
+  for (const mv of movimientosFuertes(e)) agregar({
+    id: `precio-${mv.ticker}-${hoy}`, tipo: 'aviso', informativo: true, etiqueta: mv.nivel === 'critico' ? 'Movimiento crítico' : 'Movimiento fuerte',
+    titulo: `${mv.ticker} ${fmt.pctSigno(mv.pct)} hoy, en dólares`,
+    porque: `Pasa tu umbral de ±${fmt.num(mv.umbral * 100, 0)}% para ${{ nucleo: 'el núcleo', satelite: 'los satélites', on: 'la ON', watchlist: 'la watchlist', mep: 'el dólar' }[mv.grupo]}. ${mv.grupo === 'nucleo' ? 'No cambia nada: el próximo aporte va al núcleo como siempre.' : 'Las reglas no operan por un movimiento de precio; cualquier cambio espera 48 horas.'}`,
+  });
 
   pasos.sort((a, b) => a.prioridad - b.prioridad);
   return { pasos, reglas, vigentes: reglas.filter(r => r.activa), proxima: proximaAccion(e, hoy), solo_observacion: soloObs };

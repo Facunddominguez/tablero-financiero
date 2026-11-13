@@ -1,6 +1,6 @@
 // Pantalla Informes: cinco informes de una página, imprimibles (window.print + CSS de impresión).
 import { h, fmt, fechas, suma } from '../util.js';
-import { rendimiento, costosAnuales, brechaAportes, rendimientoHist } from '../finanzas.js';
+import { rendimiento, costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque } from '../finanzas.js';
 import { NOMBRE_GRUPO } from '../estado.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase } from './comun.js';
 
@@ -77,13 +77,22 @@ function rendimientoInforme(ctx) {
   const dif = r.benchmarks[0] && r.cartera.xirr != null ? r.cartera.xirr - r.benchmarks[0].xirr : null;
   return hoja('Rendimiento', `en USD MEP · al ${fmt.fecha(e.hoy)}`,
     br.relevante ? aviso(`Ojo: lo que hoy tenés costó ${fmt.usd(br.costo)} y los aportes cargados suman ${fmt.usd(br.aportado)}. Si falta cargar algún aporte, el rendimiento anual de tu cartera está inflado. Revisalo antes de sacar conclusiones.`, 'alerta') : null,
-    sec('Con los mismos aportes, en las mismas fechas',
+    sec('Todo el patrimonio, con los mismos aportes en las mismas fechas',
       tabla([
         { titulo: '', celda: f => h('strong', f.nombre) }, { titulo: 'Aportado', num: 1, celda: f => fmt.num(f.aportado) }, { titulo: 'Valor hoy', num: 1, celda: f => fmt.num(f.valor) },
         { titulo: 'Ganancia', num: 1, celda: f => color(f.ganancia, fmt.signo(f.ganancia)) }, { titulo: 'Anual (XIRR)', num: 1, celda: f => f.xirr == null ? '—' : color(f.xirr, fmt.pctSigno(f.xirr)) },
       ], filas),
       r.benchmarks.length ? h('p.nota', { style: 'margin-top:.6rem' }, `${dif == null || br.relevante ? '' : `${dif >= 0 ? 'Vas' : 'Venís'} ${fmt.pp(Math.abs(dif)).replace('+', '')} ${dif >= 0 ? 'por encima' : 'por debajo'} de SPY por año. `}Los benchmarks simulan comprar el ETF en USD el día de cada aporte, con dividendos reinvertidos y sin costos.`)
         : h('p.nota', 'Todavía no hay precios históricos para simular los benchmarks.')),
+    sec('Lo invertido a largo plazo, por bloque', (() => {
+      const filas = rendimientoPorBloque(e), pc = x => x == null ? '—' : color(x, fmt.pctSigno(x));
+      return [tabla([
+        { titulo: '', celda: f => h('strong', f.nombre) }, { titulo: 'Costó', num: 1, celda: f => fmt.num(f.costo) }, { titulo: 'Vale', num: 1, celda: f => fmt.num(f.valor) },
+        { titulo: 'Ganancia', num: 1, celda: f => color(f.ganancia, fmt.signo(f.ganancia)) }, { titulo: 'Antigüedad', num: 1, celda: f => `${fmt.num(f.meses, 0)} m` },
+        { titulo: 'Anual', num: 1, celda: f => f.reciente ? '—' : pc(f.xirr) }, { titulo: 'En el núcleo', num: 1, celda: f => f.reciente ? '—' : pc(f.xirr_nucleo) }, { titulo: 'En SPY', num: 1, celda: f => f.reciente ? '—' : pc(f.xirr_spy) },
+      ], filas),
+      h('p.nota', { style: 'margin-top:.6rem' }, 'Deja afuera el fondo de emergencia, que no está para rendir. Mide lo que hoy tenés desde la compra de cada lote (no cuenta lo ya vendido) y lo compara con haber puesto esa misma plata, esos mismos días, en el núcleo o en SPY. Tu vara es el núcleo: es lo que elegiste como base; SPY es el objetivo declarado. Con menos de tres meses de antigüedad media no se muestra la tasa anual: todavía no dice nada.')];
+    })()),
     sec('Evolución', graficoEvolucion(e, r)),
     sec('Costos (regla C3)', h('div.resumen',
       dato('Últimos 12 meses', fmt.usd(c.usd, 2), 'comisiones y gastos de operaciones'),

@@ -8,7 +8,8 @@ import { evaluarReglas as _er, recomendarAporte, aporteDelMes } from './motor.js
 import { desdeTabla, desdeTexto, celdasDeCSV, categorizar, patronDe, aNumeroBanco, fechaDe, resumenGastos, NO_GASTO } from './extracto.js';
 import { fusionar, sincronizar, ErrorSync } from './sync.js';
 import { fortaleza, generarFrase } from './seguridad.js';
-import { proyeccion, paraEmergencia } from './motor.js';
+import { proyeccion, paraEmergencia, movimientosFuertes } from './motor.js';
+import { rendimientoPorBloque } from './finanzas.js';
 import { brechaAportes } from './finanzas.js';
 
 export function correrPruebas(base, ext = {}) {
@@ -220,6 +221,35 @@ export function correrPruebas(base, ext = {}) {
     if (!(e0.tesis_activas >= 1)) throw new Error('tesis activas: ' + e0.tesis_activas);
     if (R.R6B && !(e0.argentina_pct > 0 && e0.argentina_pct < 1)) throw new Error('riesgo argentino: ' + e0.argentina_pct);
     if (R.R7.nivel !== 'alerta') throw new Error('R7 debería seguir bloqueada');
+  });
+
+  // ----- alertas de precio y rendimiento por bloque -----
+  prueba('Alertas de precio: detecta el movimiento en dólares y no propone operar', () => {
+    if (!base.alertas) return 'los datos todavía no tienen la configuración de alertas: se omite';
+    const nuc = limpio.posiciones.find(x => x.bloque === 'nucleo'), sat = limpio.posiciones.find(x => x.bloque === 'satelite');
+    const m = { generado: fechaBase + 'T15:00:00Z', fx: { mep: base.meta.tc_snapshot.mep * 1.02, mep_prev: base.meta.tc_snapshot.mep, ccl: base.meta.tc_snapshot.cable_usd },
+      cedears: { precios: { [nuc.ticker]: [nuc.precio, -4.0], [sat.ticker]: [sat.precio, 13.0] } }, acciones: { precios: {} }, ons: { precios: {} }, fci: { precios: {} } };
+    const e = valuar(aplicarEventos(limpio), { mercado: m }, fechaBase);
+    const mv = Object.fromEntries(movimientosFuertes(e).map(x => [x.ticker, x]));
+    cerca(mv[nuc.ticker].pct, 0.96 / 1.02 - 1, 1e-9, 'núcleo en dólares'); // −4% en pesos con el MEP +2% es −5,9% en dólares
+    if (mv[nuc.ticker].nivel !== 'critico' || mv[sat.ticker].nivel !== 'critico') throw new Error('niveles: ' + JSON.stringify(mv));
+    const pasos = planificador(e, fechaBase).pasos.filter(x => x.id.startsWith('precio-'));
+    if (pasos.length < 2 || pasos.some(x => !x.informativo || x.accion || /vend|compr/i.test(x.titulo + x.porque))) throw new Error('los avisos de precio deben ser solo informativos');
+    if (movimientosFuertes(e0).length) throw new Error('sin precios en vivo no debería haber avisos');
+  });
+  if (ext.historico?.fechas?.length) prueba('Rendimiento por bloque: sin emergencia y contra el núcleo', () => {
+    const e = valuar(aplicarEventos(limpio), { historico: ext.historico }, fechaBase), filas = rendimientoPorBloque(e);
+    const lp = filas.find(f => f.nombre.startsWith('Largo plazo')), nuc = filas.find(f => f.nombre === 'Núcleo');
+    if (!lp || !nuc) throw new Error('faltan filas');
+    cerca(lp.valor, e.lp_usd - e.caja_usd, 0.01, 'valor de largo plazo sin caja');
+    if (![lp.xirr, lp.xirr_nucleo, lp.xirr_spy, nuc.xirr].every(x => x != null && isFinite(x))) throw new Error('faltan tasas');
+    cerca(filas.filter(f => !f.nombre.startsWith('Largo')).reduce((a, f) => a + f.costo, 0), lp.costo, 0.01, 'los bloques suman el total');
+  });
+  prueba('Proyecciones: núcleo, satélites e YPF tienen fecha estimada cuando están fuera de rango', () => {
+    const pr = proyeccion(e0);
+    if (e0.nucleo_lp < base.nucleo.rango_LP[0] && !pr.nucleo) throw new Error('falta la proyección del núcleo');
+    const r6 = base.reglas.find(r => r.id === 'R6');
+    if (e0.ypf_lp > r6.objetivo) { if (!pr.ypf || !(pr.ypf.meses > 0)) throw new Error('falta la proyección de YPF'); const n = pr.ypf.meses; if (e0.ypf_usd / (e0.lp_usd + pr.aporte * n) > r6.objetivo + 1e-9) throw new Error('la proyección de YPF no cierra'); }
   });
 
   // ----- seguridad -----

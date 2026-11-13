@@ -1,6 +1,7 @@
 // Pantalla Radar: compras de insiders, watchlist y cartera modelo de referencia.
 import { h, fmt } from '../util.js';
 import { tabla, chip, aviso } from './comun.js';
+import { proyeccion } from '../motor.js';
 
 export function vistaRadar(ctx) {
   const e = ctx.estado, d = e.datos;
@@ -40,6 +41,15 @@ export function vistaRadar(ctx) {
         { titulo: '', celda: w => h('span.marcas', w.solapamiento ? chip('Solapa: ' + w.solapamiento, 'alerta') : null) },
       ], d.watchlist || []),
       h('p.nota', { style: 'margin-top:.75rem' }, 'El máximo inicial es el tope de la primera compra, en % de la cartera de largo plazo, para cuando la regla R7 lo permita.'),
+      (() => {
+        const R5 = d.reglas.find(r => r.id === 'R5'), R7 = d.reglas.find(r => r.id === 'R7'), pr = proyeccion(e);
+        const total = (d.watchlist || []).reduce((a, w) => a + (w.max_inicial || 0), 0), enSpy = (d.watchlist || []).filter(w => /SPY/i.test(w.solapamiento || '')).length;
+        const partes = [`Abrir toda la lista sumaría ${fmt.pct(total, 0)} del largo plazo; el objetivo para todos los satélites juntos es ${fmt.pct(R5?.objetivo ?? 0, 0)} y hoy son ${fmt.pct(e.satelites_lp)}.`];
+        if (pr.satelites_alerta) partes.push(pr.satelites_alerta.texto);
+        if (R7?.max_tesis != null && e.tesis_activas >= R7.max_tesis) partes.push(`Hay ${e.tesis_activas} tesis abiertas y el máximo es ${R7.max_tesis}: para abrir una hay que cerrar otra.`);
+        if (enSpy) partes.push(`${enSpy} de los ${d.watchlist.length} nombres ya están dentro de SPY.`);
+        return h('p.nota', partes.join(' '));
+      })(),
       d.reglas_tesis ? h('details.otra-forma', h('summary', 'Antes de abrir una tesis nueva'),
         h('p.nota', `Esperar ${d.reglas_tesis.espera_horas} horas desde que la escribís (${d.reglas_tesis.espera_cambio_estrategico_horas} si cambia la estrategia). La pérdida prevista si sale mal no puede pasar de ${fmt.pct(d.reglas_tesis.riesgo_normal, 1)} del patrimonio (${fmt.usd(e.total_usd * d.reglas_tesis.riesgo_normal)} hoy); nunca más de ${fmt.pct(d.reglas_tesis.riesgo_max, 0)}.`),
         h('ol.pasos-ayuda', d.reglas_tesis.checklist.map(x => h('li', x))),

@@ -228,6 +228,38 @@ Se mantiene (3 corridas por día hábil, permisos mínimos, sin secretos). Cambi
 
 ---
 
+### Alertas de precio y ajustes (rama `alertas-y-ajustes`)
+
+**Alertas de precio.** Dos niveles: *aviso* (se ve en Hoy) y *crítico* (además llega al teléfono). Todo se mide **en dólares**: el movimiento del precio en pesos corregido por lo que se movió el MEP, para que un salto del dólar no dispare todo junto.
+
+| Qué dispara un crítico | Núcleo | Satélites | ON | Dólar MEP |
+|---|---|---|---|---|
+| Movimiento del día | ±5% | ±10% | ±4% | ±5% |
+| Acumulado desde el precio de referencia, por escalones | ±10% | ±25% | ±8% | — |
+| Tope duro de la regla de satélites | — | al precio en que la posición lo cruza | — | — |
+
+Avisos en la app (no llegan al teléfono): núcleo ±3%, satélites ±6%, ON ±2%, watchlist ±8%, dólar ±3%.
+
+Calibración con dos años de precios: con estos umbrales salen del orden de cuarenta críticos por año en total (menos de uno por semana, concentrados en semanas movidas). Bajando el núcleo a ±4% o los satélites a ±8% se duplican. Los umbrales están en los datos cifrados (`alertas`) y se pueden cambiar.
+
+Cómo funciona: el Action de mercado (tres veces por día hábil) evalúa los umbrales con `tools/alertas.py` y avisa por ntfy. La lista de activos y sus niveles no está en el repositorio: va en el secreto `ALERTAS_CONFIG`, que arma `tools/alertas_config.py` desde los datos descifrados; el canal va en `NTFY_TOPIC`. El estado público (`data/alertas_estado.json`) solo tiene huellas con sal y contadores; los registros del Action solo dicen cuántos avisos salieron. Límites: la demora puede ser de hasta tres horas; hay que volver a armar el secreto cuando cambian las tenencias; los avisos pasan por ntfy.sh, un servicio de terceros (solo viaja el texto del aviso, no montos).
+
+Cada aviso recuerda la regla: un movimiento de precio no dispara ninguna operación.
+
+**Ajustes.**
+
+- Informes → Rendimiento: tabla "Lo invertido a largo plazo, por bloque" (sin emergencia), comparada con el núcleo y con SPY. La vara principal pasa a ser el núcleo.
+- Proyecciones: además del núcleo, cuándo bajan los satélites (techo, alerta y objetivo) y cuándo YPF llega a su objetivo. Cuando haya cierres de mes, usan el ahorro real en lugar del estimado.
+- R4: queda escrito hasta dónde reducir si se pasa el tope duro (hasta la alerta) y qué revisar antes (costo de ida y vuelta y 48 horas).
+- R6: el exceso de YPF se acepta hasta un máximo; por encima pide revisión. Muestra la fecha estimada de salida por dilución.
+- R3: entre el mínimo y el objetivo, los aportes siguen al núcleo; una tesis nueva solo si R5 y R7 lo permiten.
+- R1: muestra cuánto de la reserva está en pesos.
+- Radar: cuánto sumaría abrir toda la watchlist frente al objetivo de satélites, cuándo sería posible y qué nombres ya están dentro de SPY.
+
+Los valores de R4 (hasta la alerta) y R6 (máximo aceptado) son puntos de partida a confirmar.
+
+---
+
 ## Etapa 6 · Extras (priorizados; nada implementado)
 
 | # | Idea | Valor | Esfuerzo | Nota |
