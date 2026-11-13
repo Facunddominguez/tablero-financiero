@@ -26,11 +26,14 @@ jobs:
         run: pip install --quiet yfinance
       - name: Bajar datos
         run: python tools/mercado.py
+        env:
+          ALERTAS_CONFIG: ${{ secrets.ALERTAS_CONFIG }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
       - name: Guardar si cambió algo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/market.json data/insiders.json data/historico.json
+          git add data/market.json data/insiders.json data/historico.json data/alertas_estado.json 2>/dev/null || git add data/market.json data/insiders.json data/historico.json
           if git diff --cached --quiet; then
             echo "Sin cambios"
           else

@@ -123,6 +123,7 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
   const m = ext.mercado || null;
   const mep = m?.fx?.mep || datos.meta.tc_snapshot.mep;
   const ccl = m?.fx?.ccl || datos.meta.tc_snapshot.cable_usd;
+  const cambioMep = m?.fx?.mep_prev ? m.fx.mep / m.fx.mep_prev - 1 : 0;
   const allaria = new Set((datos.cartera_modelo_allaria?.activos || []).map(a => a.ticker));
 
   const posiciones = datos.posiciones.map(p => {
@@ -138,6 +139,8 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
       subyacente: p.ticker_subyacente_usa, cantidad: p.cantidad, precio, moneda: p.moneda_precio,
       precio_ars: enUSD ? precio * mep : precio, valor_usd,
       var_dia_usd: valor_usd - valor_usd / (1 + variacion / 100), var_dia_pct: variacion / 100,
+      // movimiento del día medido en dólares: se descuenta lo que se movió el MEP (los fondos no tienen variación diaria)
+      dia_usd_pct: pm && p.tipo !== 'fci' ? (1 + variacion / 100) / (1 + cambioMep) - 1 : 0,
       costo_usd, pnl_usd: lotes.length ? valor_usd - costo_usd : null, pnl_pct: costo_usd > 0 ? valor_usd / costo_usd - 1 : null,
       precio_de_mercado: !!pm, en_allaria: allaria.has(p.subyacente || p.ticker_subyacente_usa || p.ticker),
     };
@@ -172,6 +175,7 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     meses_emergencia: emergencia_usd / gasto_ref, gasto_ref,
     // Riesgo argentino sobre el patrimonio invertible (total menos la emergencia mínima)
     argentina_usd, invertible_usd, argentina_pct: invertible_usd > 0 ? argentina_usd / invertible_usd : 0,
+    cambio_mep: cambioMep,
     tesis_activas: posiciones.filter(p => p.grupo === 'satelite').length + (posiciones.some(p => p.grupo === 'ypf' && p.tipo !== 'on') ? 1 : 0),
     pesos_nucleo, var_dia_usd, var_dia_pct: total_usd - var_dia_usd ? var_dia_usd / (total_usd - var_dia_usd) : 0,
     precios: { origen: m ? 'mercado' : 'archivo', generado: m?.generado || null, fecha_archivo: datos.meta.fecha_snapshot, viejos, fecha_fci: m?.fci?.fecha || null },

@@ -37,6 +37,18 @@ Sin permiso se puede bajar una copia cifrada (⋯ → Sincronizar → "Otra form
 - Las bibliotecas externas (Chart.js, SheetJS, pdf.js) solo se ejecutan si su huella SHA-384 coincide con la verificada en `js/ui/comun.js`. Para actualizar una versión hay que cambiar ahí la dirección y la huella.
 - El extracto del banco se lee en el navegador y no se sube; lo que queda guardado va dentro de los datos cifrados.
 
+## Alertas de precio
+
+Los movimientos fuertes aparecen en Hoy; los críticos además llegan al teléfono por la app **ntfy** (gratuita): se instala, se toca "Suscribirse a un tema" y se pega el nombre del canal. Los umbrales y el detalle están en `docs/plan.md`.
+
+Cuando cambian las tenencias o la watchlist hay que rearmar la configuración privada (con los datos descifrados):
+
+```bash
+python tools/alertas_config.py privado/datos_actual.json | gh secret set ALERTAS_CONFIG
+```
+
+Pruebas del evaluador: `python tools/pruebas_alertas.py`.
+
 ## Cambios de datos a mano
 
 En la carpeta del proyecto, con la clave:

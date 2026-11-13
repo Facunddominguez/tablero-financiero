@@ -113,3 +113,22 @@ export function brechaAportes(estado) {
   const brecha = costo - aportado - suma(d.realizados || [], r => r.resultado_usd) - suma(d.cobros || [], c => c.usd);
   return { costo, aportado, brecha, relevante: brecha > aportado * 0.05 };
 }
+
+// Rendimiento de lo que hoy hay en cartera, por bloque, medido desde la compra de cada lote (no incluye lo ya vendido).
+// Cada fila se compara con haber puesto esa misma plata, en esas mismas fechas, en el núcleo y en SPY.
+export function rendimientoPorBloque(estado) {
+  const d = estado.datos, hoy = estado.hoy, hist = estado.historico;
+  const grupoDeTicker = Object.fromEntries(estado.posiciones.map(p => [p.ticker, p.grupo]));
+  const fila = (nombre, grupos) => {
+    const pos = estado.posiciones.filter(p => grupos.includes(p.grupo));
+    const lotes = d.lotes_costo.filter(l => grupos.includes(grupoDeTicker[l.ticker]));
+    const aportes = lotes.map(l => ({ fecha: l.fecha_compra, usd: costoLoteUSD(l) })).filter(a => a.usd > 0);
+    const costo = suma(aportes, a => a.usd), valor = suma(pos, p => p.valor_usd);
+    if (!(costo > 0)) return null;
+    const flujos = aportes.map(a => ({ fecha: a.fecha, monto: -a.usd }));
+    const contra = pesos => { const sim = simularBenchmark(aportes, hist, pesos); return sim ? xirr([...flujos, { fecha: hoy, monto: sim(hoy) }]) : null; };
+    const meses = suma(aportes, a => a.usd * fechas.dias(a.fecha, hoy)) / costo / 30.44; // antigüedad media, ponderada por costo
+    return { nombre, costo, valor, ganancia: valor - costo, meses, reciente: meses < 3, xirr: xirr([...flujos, { fecha: hoy, monto: valor }]), xirr_nucleo: contra(d.nucleo.pesos_internos), xirr_spy: contra({ SPY: 1 }) };
+  };
+  return [fila('Largo plazo (todo)', ['nucleo', 'satelite', 'ypf', 'renta_fija']), fila('Núcleo', ['nucleo']), fila('Satélites', ['satelite']), fila('YPF', ['ypf']), fila('Renta fija en pesos', ['renta_fija'])].filter(Boolean);
+}

@@ -191,6 +191,11 @@ def main():
 
     mercado = {"generado": ahora()}
     mercado["fx"] = seccion("fx", m_prev.get("fx"), fx)
+    # MEP con el que cerró el día anterior: sirve para medir en dólares el movimiento diario de cada precio
+    hoy_ar = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=3)).strftime("%Y-%m-%d")
+    fx_prev = m_prev.get("fx") or {}
+    mercado["fx"]["mep_prev"] = fx_prev.get("mep") if fx_prev.get("dia") not in (None, hoy_ar) else fx_prev.get("mep_prev")
+    mercado["fx"]["dia"] = hoy_ar
     mercado["cedears"] = seccion("cedears", m_prev.get("cedears"), lambda: data912("arg_cedears"))
     mercado["acciones"] = seccion("acciones", m_prev.get("acciones"), lambda: data912("arg_stocks"))
     # las ON cotizan cada 100 de valor nominal: se guarda el precio por 1 VN
@@ -213,6 +218,12 @@ def main():
     escribir("market.json", mercado)
     escribir("historico.json", hist)
     escribir("insiders.json", seccion("insiders", i_prev, insiders))
+
+    try:  # alertas de precio al teléfono (no detienen el resto si fallan)
+        import alertas
+        alertas.correr(mercado)
+    except Exception as e:  # noqa: BLE001
+        print(f"FALLA alertas: {type(e).__name__}", file=sys.stderr)
 
 
 if __name__ == "__main__":
