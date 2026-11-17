@@ -6,7 +6,7 @@ import { xirr, costoLoteUSD, rendimiento } from './finanzas.js';
 import { clon, fechas, fmt, aNumero } from './util.js';
 import { evaluarReglas as _er, recomendarAporte, aporteDelMes } from './motor.js';
 import { desdeTabla, desdeTexto, celdasDeCSV, categorizar, patronDe, aNumeroBanco, fechaDe, resumenGastos, NO_GASTO } from './extracto.js';
-import { fusionar, sincronizar, ErrorSync } from './sync.js';
+import { fusionar, sincronizar, ErrorSync, actualizarMercado } from './sync.js';
 import { fortaleza, generarFrase } from './seguridad.js';
 import { proyeccion, paraEmergencia, movimientosFuertes } from './motor.js';
 import { rendimientoPorBloque } from './finanzas.js';
@@ -293,10 +293,67 @@ export function correrPruebas(base, ext = {}) {
     catch (err) { if (err.codigo !== 'permiso') throw err; }
     if (local.eventos.length !== 1) throw new Error('tocó lo local');
   }]);
+  if (ext.asincronicas) ext.asincronicas.push(...pruebasPrecios());
 
   if (ext.historico?.fechas?.length) prueba('Benchmark simulado con los mismos aportes', () => {
     const r = rendimiento(valuar(aplicarEventos(limpio), { historico: ext.historico }, fechaBase));
     if (r.benchmarks.length !== 2 || r.benchmarks.some(b => !(b.valor > 0))) throw new Error('benchmark sin valor');
   });
   return res;
+}
+
+// Pedido de precios a GitHub, con un GitHub simulado: no hace falta ningún dato personal.
+export function pruebasPrecios() {
+  const gh = { repo: 'u/r', token: 't' };
+  const sinEspera = async () => {};
+  // Simula la API: `etapas` es la secuencia de estados que va mostrando la corrida nueva.
+  const github = ({ etapas = ['queued', 'in_progress', 'completed'], conclusion = 'success', disparo = 204, lista = 200 } = {}) => {
+    const corridas = [{ id: 1, status: 'completed', conclusion: 'success' }];
+    let disparada = false, vuelta = 0;
+    const pedidos = [];
+    const fetchFn = async (url, o = {}) => {
+      pedidos.push([o.method || 'GET', url, o.body]);
+      if (url.endsWith('/dispatches')) { disparada = disparo === 204; return { ok: disparo < 300, status: disparo }; }
+      if (url.includes('/runs?')) {
+        if (lista !== 200) return { ok: false, status: lista };
+        if (disparada && vuelta < etapas.length) { const st = etapas[vuelta++]; corridas[1] = { id: 2, status: st, conclusion: st === 'completed' ? conclusion : null }; }
+        return { ok: true, status: 200, json: async () => ({ workflow_runs: [...corridas].reverse() }) };
+      }
+      if (url.includes('/contents/data/market.json')) return { ok: true, status: 200, text: async () => JSON.stringify({ generado: '2026-11-17T15:00:00Z' }) };
+      if (url.includes('/contents/')) return { ok: true, status: 200, text: async () => '{}' };
+      return { ok: false, status: 404 };
+    };
+    return { fetchFn, pedidos };
+  };
+  return [
+    ['Precios: lanza la actualización, espera la corrida nueva y trae los archivos', async () => {
+      const { fetchFn, pedidos } = github(), etapas = [];
+      const r = await actualizarMercado(gh, { fetchFn, esperar: sinEspera, alAvanzar: e => etapas.push(e) });
+      if (r.mercado?.generado !== '2026-11-17T15:00:00Z' || !r.insiders || !r.historico) throw new Error(JSON.stringify(r));
+      if (etapas.join() !== 'pedido,queued,in_progress,leyendo') throw new Error(etapas.join());
+      const disparo = pedidos.find(p => p[0] === 'POST');
+      if (!disparo || JSON.parse(disparo[2]).inputs.origen !== 'app' || JSON.parse(disparo[2]).ref !== 'main') throw new Error('disparo mal armado');
+    }],
+    ['Precios: sin permiso de Actions avisa cómo arreglarlo y no lanza nada', async () => {
+      const { fetchFn, pedidos } = github({ lista: 403 });
+      try { await actualizarMercado(gh, { fetchFn, esperar: sinEspera }); throw new Error('no falló'); }
+      catch (err) { if (err.codigo !== 'actions' || !/Actions: Read and write/.test(err.message)) throw err; }
+      if (pedidos.some(p => p[0] === 'POST')) throw new Error('lanzó igual');
+    }],
+    ['Precios: si la corrida falla en GitHub lo dice', async () => {
+      const { fetchFn } = github({ conclusion: 'failure' });
+      try { await actualizarMercado(gh, { fetchFn, esperar: sinEspera }); throw new Error('no falló'); }
+      catch (err) { if (err.codigo !== 'fallo') throw err; }
+    }],
+    ['Precios: si GitHub tarda demasiado, corta con un aviso', async () => {
+      const { fetchFn } = github({ etapas: Array(50).fill('queued') });
+      try { await actualizarMercado(gh, { fetchFn, esperar: sinEspera, vueltas: 5 }); throw new Error('no cortó'); }
+      catch (err) { if (err.codigo !== 'demora') throw err; }
+    }],
+    ['Precios: permiso vencido', async () => {
+      const { fetchFn } = github({ lista: 401 });
+      try { await actualizarMercado(gh, { fetchFn, esperar: sinEspera }); throw new Error('no falló'); }
+      catch (err) { if (err.codigo !== 'token') throw err; }
+    }],
+  ];
 }

@@ -1,6 +1,6 @@
 // Pantalla Hoy: estado en una línea, próximos pasos e indicadores.
 import { h, fmt, fechas, aNumero } from '../util.js';
-import { dialogo, campo, entrada, boton, chip, medidor, dialogoCompras, signoClase, NIVEL, proximaFecha } from './comun.js';
+import { dialogo, campo, entrada, boton, chip, medidor, dialogoCompras, signoClase, NIVEL, proximaFecha, botonPrecios } from './comun.js';
 import { proyeccion } from '../motor.js';
 
 function antiguedad(e) {
@@ -21,6 +21,7 @@ function estadoLinea(ctx) {
     h('p.estado-fuente',
       h('button.enlace', { type: 'button', title: 'Ver de dónde sale cada dato', onclick: () => ctx.menu('fuentes') }, antiguedad(e)),
       h('span.sep', ' · '),
+      ctx.permiso ? [botonPrecios(ctx), h('span.sep', ' · ')] : null,
       h('button.linea-sync.' + ctx.sync.clase, { type: 'button', dataset: { sync: '1' }, onclick: () => ctx.menu('sincronizar') }, ctx.sync.texto)));
 }
 

@@ -293,6 +293,10 @@ button.linea-sync, .enlace { cursor: pointer; text-decoration: underline; text-d
 .linea-sync.alerta { color: var(--alerta); } .linea-sync.mal { color: var(--mal); } .linea-sync.ok { color: var(--ok); }
 .dialogo p.linea-sync { display: block; font-size: .9rem; font-weight: 550; }
 .menu .linea-sync { font-size: .82rem; }
+button.linea-sync:disabled { cursor: default; text-decoration: none; }
+.copiable { display: flex; gap: .5rem; align-items: flex-start; margin: .25rem 0 .6rem; }
+.copiable code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: .78rem; padding: .35rem .5rem; border: 1px solid var(--linea); border-radius: 6px; }
+.fuentes-accion { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; }
 .mas.punto-mal::after { background: var(--mal); }
 .guia { list-style: none; counter-reset: guia; display: grid; gap: 1rem; }
 .guia > li { counter-increment: guia; position: relative; padding-left: 2.2rem; display: grid; gap: .45rem; justify-items: start; }

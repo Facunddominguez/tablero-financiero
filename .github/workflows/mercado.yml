@@ -2,9 +2,16 @@ name: Datos de mercado
 
 on:
   schedule:
-    # Lunes a viernes 11:30, 14:30 y 17:30 de Argentina (UTC-3)
-    - cron: "30 14,17,20 * * 1-5"
+    # Respaldo: lunes a viernes ~11:20, 14:20 y 17:20 de Argentina (UTC-3). GitHub las atrasa o saltea a veces;
+    # el horario confiable lo da un cron externo (cron-job.org) que llama a workflow_dispatch con origen "cron".
+    - cron: "20 14,17,20 * * 1-5"
   workflow_dispatch:
+    inputs:
+      origen:
+        description: "Quién la pide: app o manual (corre siempre) / cron (se saltea si hay datos de hace menos de 40 min)"
+        required: false
+        default: manual
+        type: string
 
 permissions:
   contents: write
@@ -19,17 +26,44 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      # Si llegan la programada de GitHub y la del cron externo, la segunda no repite el trabajo.
+      - name: ¿Hace falta?
+        id: chequeo
+        env:
+          ORIGEN: ${{ github.event_name == 'schedule' && 'schedule' || inputs.origen || 'manual' }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          origen = os.environ["ORIGEN"]
+          correr = True
+          if origen in ("schedule", "cron"):
+              try:
+                  g = json.load(open("data/market.json"))["generado"]
+                  edad = (datetime.now(timezone.utc) - datetime.fromisoformat(g.replace("Z", "+00:00"))).total_seconds() / 60
+                  correr = edad >= 40
+                  print(f"origen={origen}, datos de hace {edad:.0f} min")
+              except Exception as e:
+                  print("no pude leer la fecha de los datos:", e)
+          print("corre" if correr else "se saltea: hay datos recientes")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"correr={'true' if correr else 'false'}\n")
+          PY
       - uses: actions/setup-python@v5
+        if: steps.chequeo.outputs.correr == 'true'
         with:
           python-version: "3.12"
       - name: Dependencias
+        if: steps.chequeo.outputs.correr == 'true'
         run: pip install --quiet yfinance
       - name: Bajar datos
+        if: steps.chequeo.outputs.correr == 'true'
         run: python tools/mercado.py
         env:
           ALERTAS_CONFIG: ${{ secrets.ALERTAS_CONFIG }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
       - name: Guardar si cambió algo
+        if: steps.chequeo.outputs.correr == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
