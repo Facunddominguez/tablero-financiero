@@ -3,7 +3,7 @@ import { h, poner, fechas, fmt, uid, clon } from './util.js';
 import { db } from './db.js';
 import { derivarClave, descifrar, cifrar } from './cripto.js';
 import { guardarCifrado, leerCifrado, bloqueo } from './seguridad.js';
-import { sincronizar, leerRemoto, repoDeUbicacion } from './sync.js';
+import { sincronizar, leerRemoto, repoDeUbicacion, actualizarMercado, leerArchivosMercado } from './sync.js';
 import { aplicarEventos, valuar, snapshotDe } from './estado.js';
 import { planificador } from './motor.js';
 import { vistaHoy } from './ui/hoy.js';
@@ -27,6 +27,7 @@ const S = {
   gh: null,            // { repo, token }: permiso para guardar en GitHub (en memoria, descifrado)
   localManda: false,   // hay un respaldo importado que todavía no se subió
   sync: { fecha: null, ids: new Set(), error: null, enCurso: false },
+  precios: { enCurso: null, etapa: null, error: null }, // pedido de precios nuevos a GitHub
   aviso: null,
 };
 const raiz = document.getElementById('app');
@@ -75,6 +76,22 @@ function programarSync() {
   temporizador = setTimeout(() => ctx.sincronizarAhora().catch(() => {}), 4000);
 }
 
+// Reemplaza los datos de mercado si los recibidos son más nuevos que los que hay.
+async function usarMercado(nuevos, { forzar = false } = {}) {
+  if (!nuevos?.mercado?.generado) return false;
+  const actual = S.ext.mercado?.generado || '';
+  if (!forzar && nuevos.mercado.generado <= actual) return false;
+  S.ext = { ...S.ext, ...Object.fromEntries(Object.entries(nuevos).filter(([, v]) => v)) };
+  recalcular(); await guardarSnapshot(); pintar();
+  return true;
+}
+
+// Con permiso, los precios se leen directo de GitHub: la página publicada tarda unos minutos en reflejar cada actualización.
+async function refrescarMercado() {
+  if (!S.gh) return;
+  await usarMercado(await leerArchivosMercado(S.gh).catch(() => null));
+}
+
 // Trae la copia más nueva directo de GitHub: la página publicada puede tardar varios minutos en actualizarse.
 async function refrescarRemoto() {
   const repo = S.gh?.repo || repoDeUbicacion();
@@ -103,6 +120,35 @@ const ctx = {
     if (!S.gh) return n ? { clase: 'alerta', texto: `${n} ${n === 1 ? 'cambio guardado' : 'cambios guardados'} solo en este dispositivo`, n } : { clase: 'neutro', texto: 'Este dispositivo todavía no sincroniza', n };
     if (n) return { clase: 'alerta', texto: `${n} ${n === 1 ? 'cambio' : 'cambios'} sin subir`, n };
     return { clase: 'ok', texto: S.sync.fecha ? `Sincronizado ${fmt.hace(S.sync.fecha)}` : 'Sincronización activada', n };
+  },
+  // Estado del pedido de precios nuevos, en una frase (se muestra en Hoy y en Fuentes y fechas).
+  get precios() {
+    const p = S.precios;
+    if (!S.gh) return { clase: 'neutro', texto: 'Para actualizar desde acá hace falta activar la sincronización', puede: false };
+    if (p.enCurso) return { clase: 'neutro', texto: { pedido: 'Pedido a GitHub…', queued: 'En cola en GitHub…', in_progress: 'Bajando precios…', leyendo: 'Trayendo los precios nuevos…' }[p.etapa] || 'Pidiendo precios…', puede: false };
+    if (p.error) return { clase: 'mal', texto: p.error, puede: true };
+    return { clase: '', texto: 'Actualizar ahora', puede: true };
+  },
+  // Lanza la actualización en GitHub, espera el resultado y muestra los precios nuevos. Tarda alrededor de un minuto.
+  actualizarPrecios() {
+    if (!S.gh) return Promise.reject(new Error('Falta activar la sincronización en este dispositivo.'));
+    if (S.precios.enCurso) return S.precios.enCurso;
+    const gh = S.gh;
+    S.precios = { enCurso: null, etapa: 'pedido', error: null };
+    S.precios.enCurso = actualizarMercado(gh, { alAvanzar: etapa => { S.precios.etapa = etapa; pintarPrecios(); } })
+      .then(async nuevos => {
+        if (!nuevos.mercado) throw new Error('GitHub terminó pero no pude leer los precios nuevos. Recargá la página en un rato.');
+        S.precios = { enCurso: null, etapa: null, error: null };
+        if (S.gh === gh) await usarMercado(nuevos, { forzar: true }); else pintarPrecios();
+        return nuevos.mercado.generado;
+      })
+      .catch(err => {
+        S.precios = { enCurso: null, etapa: null, error: err.codigo === 'demora' ? err.message : `No se pudo actualizar: ${err.message}` };
+        pintarPrecios();
+        throw err;
+      });
+    pintarPrecios();
+    return S.precios.enCurso;
   },
   // Guarda uno o más eventos en este dispositivo, vuelve a calcular todo y los sube si hay permiso.
   async registrar(...eventos) {
@@ -157,7 +203,7 @@ const ctx = {
     try { await ctx.sincronizarAhora(); await guardarCifrado('github', S.gh, S.clave, S.sobre.salt); }
     catch (err) { S.gh = anterior; S.sync.error = null; pintarSync(); throw err; }
   },
-  async borrarPermiso() { S.gh = null; S.sync.error = null; await db.borrar('github'); pintarSync(); },
+  async borrarPermiso() { S.gh = null; S.sync.error = null; S.precios.error = null; await db.borrar('github'); pintarSync(); pintarPrecios(); },
 
   // Reemplaza los datos base por un respaldo en JSON plano (queda en este dispositivo hasta sincronizar).
   async importarPlano(obj) {
@@ -266,6 +312,7 @@ async function cargarTodo(frase) {
   pintar();
   if (!vigilando) { vigilando = true; bloqueo.vigilar(() => bloquear('Se bloqueó por inactividad. Escribí la clave para seguir.')); }
   refrescarRemoto().then(() => { if (ctx.pendientes) programarSync(); });
+  refrescarMercado();
 }
 
 // ---------- marco y navegación ----------
@@ -287,13 +334,20 @@ function pintarSync() {
   document.querySelectorAll('[data-sync]').forEach(el => { el.textContent = s.texto; el.className = `linea-sync ${s.clase}`; });
 }
 
+// Actualiza solo los indicadores del pedido de precios.
+function pintarPrecios() {
+  if (!S.estado) return;
+  const p = ctx.precios;
+  document.querySelectorAll('[data-precios]').forEach(el => { el.textContent = p.texto; el.className = `linea-sync ${p.clase}`; el.disabled = !p.puede; });
+}
+
 function pintar() {
   const [id, sub] = (location.hash.replace('#', '') || 'hoy').split('/');
   const v = VISTAS.find(x => x.id === id) || VISTAS[0];
   poner(nav, ...VISTAS.map(x => h('a', { href: '#' + x.id, 'aria-current': x === v ? 'page' : null }, x.nombre)));
   poner(principal, S.aviso ? h('p.aviso.alerta.aviso-global', S.aviso) : null, v.vista(ctx, sub));
   document.title = v.id === 'hoy' ? 'Tablero' : `${v.nombre} · Tablero`;
-  pintarSync();
+  pintarSync(); pintarPrecios();
 }
 window.addEventListener('hashchange', () => { if (S.estado) { pintar(); window.scrollTo(0, 0); } });
 window.addEventListener('online', () => { if (S.estado && ctx.pendientes) programarSync(); });

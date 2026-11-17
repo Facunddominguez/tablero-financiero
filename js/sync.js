@@ -77,7 +77,69 @@ export async function sincronizar({ gh, local, localManda, abrir, cerrar }, fetc
 }
 
 // Enlace a GitHub con el permiso ya precargado (falta elegir el repositorio, que GitHub no deja precargar).
+// "Actions" sirve para pedir precios nuevos desde la app.
 export function enlacePermiso() {
-  const p = new URLSearchParams({ name: 'Tablero (sincronizar)', description: 'Permite al tablero guardar el archivo de datos cifrado. Solo este repositorio.', expires_in: '366', contents: 'write' });
+  const p = new URLSearchParams({ name: 'Tablero (sincronizar)', description: 'Permite al tablero guardar el archivo de datos cifrado y pedir precios nuevos. Solo este repositorio.', expires_in: '366', contents: 'write', actions: 'write' });
   return `https://github.com/settings/personal-access-tokens/new?${p}`;
+}
+
+// Permiso aparte para un servicio de cron externo: solo puede lanzar la actualización de precios.
+export function enlacePermisoCron() {
+  const p = new URLSearchParams({ name: 'Tablero (cron de precios)', description: 'Solo lanza la actualización de precios del tablero. Lo usa cron-job.org.', expires_in: '366', actions: 'write' });
+  return `https://github.com/settings/personal-access-tokens/new?${p}`;
+}
+export const LISTA_PERMISOS = 'https://github.com/settings/personal-access-tokens';
+
+// ---------- Actualizar precios a pedido ----------
+// GitHub atrasa o saltea las corridas programadas; desde la app se puede lanzar una y esperar el resultado.
+export const WORKFLOW = 'mercado.yml';
+const ARCHIVOS_MERCADO = { mercado: 'data/market.json', insiders: 'data/insiders.json', historico: 'data/historico.json' };
+const SIN_ACTIONS = 'El permiso de este dispositivo no deja pedir precios. En GitHub, editá el permiso "Tablero (sincronizar)" y sumale "Actions: Read and write"; no hace falta volver a pegarlo.';
+
+// Dirección y cuerpo de la llamada que lanza la actualización (los usa también la guía del cron externo).
+export const urlDisparo = repo => `${API}/repos/${repo}/actions/workflows/${WORKFLOW}/dispatches`;
+export const cuerpoDisparo = (origen, rama = 'main') => JSON.stringify({ ref: rama, inputs: { origen } });
+
+function revisarActions(r, que) {
+  if (r.status === 401) throw new ErrorSync('token', 'GitHub no reconoce el permiso guardado: venció o se borró. Hay que generar uno nuevo.');
+  if (r.status === 403 || r.status === 404) throw new ErrorSync('actions', SIN_ACTIONS);
+  if (r.status === 429) throw new ErrorSync('limite', 'GitHub limitó las consultas por un rato.');
+  if (!r.ok) throw new ErrorSync('otro', `GitHub respondió ${r.status} al ${que}.`);
+}
+
+async function corridas({ repo, token }, fetchFn) {
+  const r = await pedir(fetchFn, `${API}/repos/${repo}/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=10`, { headers: cabeceras(token), cache: 'no-store' });
+  revisarActions(r, 'consultar las actualizaciones');
+  return (await r.json()).workflow_runs || [];
+}
+
+// Lee los archivos de mercado directo de GitHub (la página publicada tarda en reflejarlos). Los que fallan quedan en null.
+export async function leerArchivosMercado({ repo, token, rama = 'main' }, fetchFn = fetch) {
+  const salida = {};
+  await Promise.all(Object.entries(ARCHIVOS_MERCADO).map(async ([k, ruta]) => {
+    try {
+      const r = await fetchFn(`${API}/repos/${repo}/contents/${ruta}?ref=${rama}`, { headers: { ...cabeceras(token), Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
+      salida[k] = r.ok ? JSON.parse(await r.text()) : null;
+    } catch { salida[k] = null; }
+  }));
+  return salida;
+}
+
+// Lanza la actualización, espera a que termine y devuelve los archivos nuevos.
+// `alAvanzar(etapa)` recibe 'pedido', 'queued', 'in_progress' o 'leyendo'.
+export async function actualizarMercado(gh, { fetchFn = fetch, esperar = ms => new Promise(ok => setTimeout(ok, ms)), alAvanzar = () => {}, vueltas = 36 } = {}) {
+  const previas = new Set((await corridas(gh, fetchFn)).map(c => c.id)); // también comprueba el permiso antes de pedir nada
+  const r = await pedir(fetchFn, urlDisparo(gh.repo), { method: 'POST', headers: cabeceras(gh.token), body: cuerpoDisparo('app', gh.rama) });
+  revisarActions(r, 'pedir precios');
+  alAvanzar('pedido');
+  for (let i = 0; i < vueltas; i++) {
+    await esperar(i < 6 ? 4000 : 8000);
+    const c = (await corridas(gh, fetchFn).catch(err => { if (err.codigo === 'red') return []; throw err; })).find(x => !previas.has(x.id));
+    if (!c) continue;
+    if (c.status !== 'completed') { alAvanzar(c.status); continue; }
+    if (c.conclusion !== 'success') throw new ErrorSync('fallo', `La actualización terminó con error en GitHub (${c.conclusion}). Se siguen viendo los precios anteriores.`);
+    alAvanzar('leyendo');
+    return leerArchivosMercado(gh, fetchFn);
+  }
+  throw new ErrorSync('demora', 'GitHub todavía no terminó. Los precios nuevos van a aparecer solos la próxima vez que abras el tablero.');
 }

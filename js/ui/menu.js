@@ -1,8 +1,8 @@
 // Menú "⋯": sincronizar, importar el Excel de Balanz, movimientos, decisiones, fuentes, configuración, seguridad y respaldo.
 import { h, poner, fmt, aNumero } from '../util.js';
 import { fortaleza, generarFrase, bloqueo } from '../seguridad.js';
-import { enlacePermiso } from '../sync.js';
-import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN } from './comun.js';
+import { enlacePermiso, enlacePermisoCron, LISTA_PERMISOS, urlDisparo, cuerpoDisparo } from '../sync.js';
+import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN, botonPrecios } from './comun.js';
 
 const descargar = (nombre, texto, tipo = 'application/json') => {
   const a = h('a', { href: URL.createObjectURL(new Blob([texto], { type: tipo })), download: nombre });
@@ -30,11 +30,11 @@ function guiaPermiso(ctx, alTerminar) {
   },
     h('ol.guia',
       h('li', h('p', 'Abrí GitHub: el permiso ya viene armado.'), h('a.boton.chico', { href: enlacePermiso(), target: '_blank', rel: 'noopener noreferrer' }, 'Abrir GitHub ↗')),
-      h('li', h('p', 'En "Repository access" elegí "Only select repositories" y marcá ', h('code', sugerido.split('/')[1] || 'el repositorio del tablero'), '. No cambies nada más.')),
+      h('li', h('p', 'En "Repository access" elegí "Only select repositories" y marcá ', h('code', sugerido.split('/')[1] || 'el repositorio del tablero'), '. Los permisos ya vienen marcados ("Contents" y "Actions": Read and write); no cambies nada más.')),
       h('li', h('p', 'Bajá hasta el final, tocá "Generate token" y copiá el texto que empieza con ', h('code', 'github_pat_'), '.')),
       h('li', h('p', 'Pegalo acá:'), fToken, sugerido ? null : campo('Repositorio', fRepo))),
     estado, h('div.acciones', btn),
-    h('p.nota', 'Queda guardado cifrado y solo en este dispositivo. Solo sirve para ese repositorio y vence al año; cuando venza, el tablero te avisa.'));
+    h('p.nota', 'Queda guardado cifrado y solo en este dispositivo. Solo sirve para ese repositorio y vence al año; cuando venza, el tablero te avisa. "Actions" sirve para pedir precios nuevos desde el tablero.'));
 }
 
 function sincronizar(ctx) {
@@ -47,6 +47,7 @@ function sincronizar(ctx) {
       mensaje ? h('p.nota', { role: 'status' }, mensaje) : null,
       p ? [
         h('p', `Cada cambio se sube solo, cifrado, a ${p.repo}. En tus otros dispositivos aparece al abrir el tablero.`),
+        h('p.nota', 'Con este permiso también podés pedir precios nuevos (en Hoy, "Actualizar ahora"). Si al pedirlos dice que falta "Actions", ', h('a', { href: LISTA_PERMISOS, target: '_blank', rel: 'noopener noreferrer' }, 'editá el permiso en GitHub ↗'), ' y sumale "Actions: Read and write". No hace falta volver a pegarlo.'),
         h('div.acciones.izq',
           boton('Sincronizar ahora', async ev => {
             ev.target.disabled = true;
@@ -260,11 +261,37 @@ function fuentes(ctx) {
     ['Aportes', 'Cargados a mano', ultimoAporte?.fecha],
     ['Cartera modelo de referencia', 'Allaria (cargada a mano)', d.cartera_modelo_allaria?.fecha],
   ];
-  return dialogo('De dónde sale cada dato', h('div.formulario',
+  const dlg = dialogo('De dónde sale cada dato', h('div.formulario',
     !e.mercado ? aviso('No se pudieron cargar los precios en vivo: se están usando los del último resumen.', 'alerta') : null,
     h('div.tabla-caja', h('table.tabla.compacta', h('thead', h('tr', h('th', 'Dato'), h('th', 'Fuente'), h('th', 'Fecha del dato'))),
       h('tbody', filas.map(([dato, fuente, fecha, viejo, fijo]) => h('tr', h('td', dato), h('td', fuente), h('td', fijo || cuando(fecha), viejo ? chip('sin actualizar', 'alerta') : null)))))),
-    h('p.nota', 'Los precios se actualizan solos tres veces por día hábil (11:30, 14:30 y 17:30). Si una fuente falla, se conserva el último dato y se marca "sin actualizar".')), { ancho: '40rem' });
+    h('p.nota', 'Los precios se actualizan solos tres veces por día hábil (11:30, 14:30 y 17:30 de Argentina). Si una fuente falla, se conserva el último dato y se marca "sin actualizar".'),
+    h('div.bloque', h('h3', 'Actualizar ahora'),
+      ctx.permiso
+        ? h('div.fuentes-accion', botonPrecios(ctx, () => { if (dlg.open) { dlg.close(); fuentes(ctx); } }), h('small', 'Lo pide a GitHub y en alrededor de un minuto aparecen los precios de este momento.'))
+        : h('small', 'Para pedir precios desde acá, primero activá la sincronización (⋯ → Sincronizar).')),
+    guiaCron(ctx)), { ancho: '40rem' });
+  return dlg;
+}
+
+// Guía para que un servicio externo lance la actualización a horario (GitHub atrasa o saltea sus propias corridas programadas).
+const copiable = texto => h('div.copiable', h('code', texto), boton('Copiar', ev => {
+  navigator.clipboard?.writeText(texto).then(() => { ev.target.textContent = 'Copiado'; setTimeout(() => { ev.target.textContent = 'Copiar'; }, 1500); }).catch(() => {});
+}, 'chico'));
+function guiaCron(ctx) {
+  const repo = ctx.repoSugerido || 'usuario/repositorio';
+  return h('details.otra-forma', h('summary', 'Que se actualicen solos a horario, sin falta'),
+    h('p.nota', 'GitHub atrasa o saltea a veces sus corridas programadas. Un servicio gratuito de tareas programadas (cron-job.org) puede lanzarlas a horario. Si llegan las dos, la segunda se saltea sola. Se configura una sola vez:'),
+    h('ol.guia',
+      h('li', h('p', 'Creá un permiso solo para esto (únicamente puede lanzar la actualización; no ve ni toca tus datos). Elegí "Only select repositories" → ', h('code', repo.split('/')[1]), ', "Generate token" y copiá el texto.'),
+        h('a.boton.chico', { href: enlacePermisoCron(), target: '_blank', rel: 'noopener noreferrer' }, 'Abrir GitHub ↗')),
+      h('li', h('p', 'Entrá a ', h('a', { href: 'https://console.cron-job.org/jobs/create', target: '_blank', rel: 'noopener noreferrer' }, 'cron-job.org ↗'), ' (cuenta gratis) → "Create cronjob". En URL pegá:'), copiable(urlDisparo(repo))),
+      h('li', h('p', 'Horario: "Custom". Días: lunes a viernes. Horas: 11, 14 y 17. Minuto: 30. Zona horaria: ', h('code', 'America/Argentina/Buenos_Aires'), '.')),
+      h('li', h('p', 'En "Advanced": método ', h('code', 'POST'), ' y estos encabezados (en Authorization va el permiso del paso 1):'),
+        copiable('Accept: application/vnd.github+json'), copiable('X-GitHub-Api-Version: 2022-11-28'), copiable('Content-Type: application/json'), h('p', h('code', 'Authorization: Bearer github_pat_…'))),
+      h('li', h('p', 'Cuerpo (Request body):'), copiable(cuerpoDisparo('cron'))),
+      h('li', h('p', 'Guardá y tocá "Test run": tiene que responder ', h('code', '204'), '. En un minuto esta tabla muestra la hora nueva.'))),
+    h('p.nota', 'El permiso queda guardado en cron-job.org. Si alguien lo obtuviera, lo único que podría hacer es lanzar esta misma actualización. Vence al año: cuando falle, generá otro y reemplazalo ahí.'));
 }
 
 // ---------- Respaldo en JSON plano ----------

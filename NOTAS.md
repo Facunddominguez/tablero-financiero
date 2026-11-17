@@ -4,7 +4,7 @@ Herramienta personal de seguimiento de inversiones.
 
 - App: `index.html` + `styles.css` + módulos ES en `js/`. Sin build ni frameworks.
 - Los datos privados viajan **cifrados** en `data/cartera.enc.json` (AES-256-GCM, PBKDF2-SHA256 con 600.000 iteraciones) y se descifran en el navegador con la clave. La clave no está en ningún archivo.
-- Datos de mercado: un GitHub Action corre `tools/mercado.py` tres veces por día hábil.
+- Datos de mercado: un GitHub Action corre `tools/mercado.py` tres veces por día hábil (lo lanza un cron externo; ver "Precios a horario"), y a pedido desde la app.
 - Plan de trabajo, auditoría y decisiones pendientes: `docs/plan.md`.
 
 ## Uso diario
@@ -18,7 +18,7 @@ Herramienta personal de seguimiento de inversiones.
 
 Lo que registrás queda guardado, cifrado, en el dispositivo. Para verlo en los demás hay que darle permiso a ese dispositivo para guardar en GitHub, una sola vez:
 
-1. ⋯ → Sincronizar → **Abrir GitHub** (el permiso ya viene armado: solo "Contents: Read and write").
+1. ⋯ → Sincronizar → **Abrir GitHub** (el permiso ya viene armado: "Contents" y "Actions", ambos Read and write).
 2. En "Repository access": "Only select repositories" → este repositorio.
 3. "Generate token", copiar el texto `github_pat_…` y pegarlo en el tablero → **Probar y activar**.
 
@@ -27,6 +27,18 @@ Desde ahí cada cambio se sube solo. Si no hay conexión o el permiso venció (d
 Cómo funciona: antes de subir lee el archivo directo de la API de GitHub, lo fusiona con lo local (los eventos se unen por identificador) y sube con control de versión; si otro dispositivo guardó al mismo tiempo, reintenta. Nunca borra cambios locales antes de que GitHub confirme.
 
 Sin permiso se puede bajar una copia cifrada (⋯ → Sincronizar → "Otra forma"), que sirve de respaldo.
+
+## Precios a horario
+
+GitHub atrasa o saltea a veces las corridas programadas (`schedule`): en noviembre de 2026 corría una o dos de las tres por día. Por eso hay dos caminos más, y el workflow evita trabajo repetido:
+
+- **A pedido, desde la app**: en Hoy, al lado de "precios actualizados…", **Actualizar ahora** (también en ⋯ → Fuentes y fechas). Lanza el workflow con `origen: app`, espera la corrida y lee los archivos nuevos directo de la API (sin esperar a que se publique la página). Tarda alrededor de un minuto. Usa el permiso de sincronizar, que necesita **Actions: Read and write** además de Contents: si es un permiso viejo, en GitHub → Settings → Developer settings → Fine-grained tokens → "Tablero (sincronizar)" → Edit → sumar Actions. El texto del permiso no cambia, no hay que volver a pegarlo.
+- **A horario, con cron-job.org** (gratis): llama a `workflow_dispatch` con `origen: cron` de lunes a viernes a las 11:30, 14:30 y 17:30 (zona `America/Argentina/Buenos_Aires`). La guía paso a paso, con los valores para copiar, está en ⋯ → Fuentes y fechas → "Que se actualicen solos a horario". Usa un permiso aparte que solo tiene **Actions: Read and write**.
+  - URL: `POST https://api.github.com/repos/<usuario>/<repo>/actions/workflows/mercado.yml/dispatches`
+  - Encabezados: `Accept: application/vnd.github+json`, `Authorization: Bearer <permiso>`, `X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`
+  - Cuerpo: `{"ref":"main","inputs":{"origen":"cron"}}`. Respuesta esperada: `204`.
+
+La corrida programada de GitHub queda como respaldo (minuto 20). Las que llegan con origen `schedule` o `cron` se saltean si `market.json` tiene menos de 40 minutos, así no se duplican commits ni alertas. Las de la app y las manuales corren siempre.
 
 ## Seguridad
 
@@ -67,7 +79,7 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | `js/motor.js` | `evaluarReglas`, `planificador`, `repartirAporte`, `recomendarAporte`. Puros: los umbrales salen de los datos. |
 | `js/finanzas.js` | Costo de lotes, XIRR, benchmark simulado, costos anuales. |
 | `js/extracto.js` | Lectura de extractos (tabla, CSV, texto) y categorización de gastos. Puro. |
-| `js/sync.js` | Leer, fusionar y subir el archivo cifrado a GitHub. |
+| `js/sync.js` | Leer, fusionar y subir el archivo cifrado a GitHub; pedir precios nuevos (`actualizarMercado`). |
 | `js/seguridad.js` | Fortaleza de la clave, generador de frases, guardado local cifrado, bloqueo. |
 | `js/cripto.js`, `js/db.js` | WebCrypto e IndexedDB. |
 | `js/ui/*.js` | Pantallas, menú y el paso a paso del mes (`mes.js`). |

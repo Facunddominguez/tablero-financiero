@@ -36,6 +36,15 @@ export function tabla(columnas, filas, { clase = '', pie } = {}) {
     pie ? h('tfoot', h('tr', pie.map((p, i) => h('td' + (columnas[i]?.num ? '.num' : ''), p)))) : null));
 }
 
+// Pide precios nuevos a GitHub. El texto lo mantiene al día app.js (data-precios) mientras dura el pedido.
+export function botonPrecios(ctx, alTerminar) {
+  const p = ctx.precios;
+  return h('button.linea-sync.' + (p.clase || 'neutro'), {
+    type: 'button', dataset: { precios: '1' }, disabled: !p.puede, title: 'Pedir a GitHub los precios de este momento (tarda alrededor de un minuto)',
+    onclick: () => ctx.actualizarPrecios().then(() => alTerminar?.()).catch(() => {}),
+  }, p.texto);
+}
+
 export const signoClase = n => n > 0 ? 'sube' : n < 0 ? 'baja' : '';
 
 // Diálogo para registrar compras ejecutadas (un aporte nuevo o una reinversión desde caja).
