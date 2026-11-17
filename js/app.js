@@ -3,7 +3,7 @@ import { h, poner, fechas, fmt, uid, clon } from './util.js';
 import { db } from './db.js';
 import { derivarClave, descifrar, cifrar } from './cripto.js';
 import { guardarCifrado, leerCifrado, bloqueo } from './seguridad.js';
-import { sincronizar, leerRemoto, repoDeUbicacion, actualizarMercado, leerArchivosMercado } from './sync.js';
+import { sincronizar, leerRemoto, repoDeUbicacion, actualizarMercado, leerArchivosMercado, probarActions } from './sync.js';
 import { aplicarEventos, valuar, snapshotDe } from './estado.js';
 import { planificador } from './motor.js';
 import { vistaHoy } from './ui/hoy.js';
@@ -202,6 +202,9 @@ const ctx = {
     S.gh = { repo, token }; S.sync.error = null;
     try { await ctx.sincronizarAhora(); await guardarCifrado('github', S.gh, S.clave, S.sobre.salt); }
     catch (err) { S.gh = anterior; S.sync.error = null; pintarSync(); throw err; }
+    S.precios.error = null; pintarPrecios();
+    const sinActions = await probarActions(S.gh);
+    return sinActions ? `Sincroniza bien, pero este permiso no deja pedir precios.${sinActions.message.match(/ \(GitHub:.*\)$/)?.[0] || ''} Al crearlo hay que marcar también "Actions: Read and write".` : null;
   },
   async borrarPermiso() { S.gh = null; S.sync.error = null; S.precios.error = null; await db.borrar('github'); pintarSync(); pintarPrecios(); },
 

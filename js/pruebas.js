@@ -315,7 +315,7 @@ export function pruebasPrecios() {
       pedidos.push([o.method || 'GET', url, o.body]);
       if (url.endsWith('/dispatches')) { disparada = disparo === 204; return { ok: disparo < 300, status: disparo }; }
       if (url.includes('/runs?')) {
-        if (lista !== 200) return { ok: false, status: lista };
+        if (lista !== 200) return { ok: false, status: lista, json: async () => ({ message: 'Resource not accessible by personal access token' }) };
         if (disparada && vuelta < etapas.length) { const st = etapas[vuelta++]; corridas[1] = { id: 2, status: st, conclusion: st === 'completed' ? conclusion : null }; }
         return { ok: true, status: 200, json: async () => ({ workflow_runs: [...corridas].reverse() }) };
       }
@@ -337,7 +337,7 @@ export function pruebasPrecios() {
     ['Precios: sin permiso de Actions avisa cómo arreglarlo y no lanza nada', async () => {
       const { fetchFn, pedidos } = github({ lista: 403 });
       try { await actualizarMercado(gh, { fetchFn, esperar: sinEspera }); throw new Error('no falló'); }
-      catch (err) { if (err.codigo !== 'actions' || !/Actions: Read and write/.test(err.message)) throw err; }
+      catch (err) { if (err.codigo !== 'actions' || !/Actions: Read and write/.test(err.message) || !/GitHub: 403 Resource not accessible/.test(err.message)) throw err; }
       if (pedidos.some(p => p[0] === 'POST')) throw new Error('lanzó igual');
     }],
     ['Precios: si la corrida falla en GitHub lo dice', async () => {
