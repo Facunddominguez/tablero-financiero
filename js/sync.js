@@ -94,22 +94,34 @@ export const LISTA_PERMISOS = 'https://github.com/settings/personal-access-token
 // GitHub atrasa o saltea las corridas programadas; desde la app se puede lanzar una y esperar el resultado.
 export const WORKFLOW = 'mercado.yml';
 const ARCHIVOS_MERCADO = { mercado: 'data/market.json', insiders: 'data/insiders.json', historico: 'data/historico.json' };
-const SIN_ACTIONS = 'El permiso de este dispositivo no deja pedir precios. En GitHub, editá el permiso "Tablero (sincronizar)" y sumale "Actions: Read and write"; no hace falta volver a pegarlo.';
+const SIN_ACTIONS = 'El permiso guardado en este dispositivo no deja pedir precios. Si generaste un permiso nuevo, hay que pegarlo acá (⋯ → Sincronizar → Cambiar el permiso). Si editaste el que ya tenías, revisá que en "Repository permissions" diga "Actions: Read and write" y que lo hayas guardado con "Update".';
 
 // Dirección y cuerpo de la llamada que lanza la actualización (los usa también la guía del cron externo).
 export const urlDisparo = repo => `${API}/repos/${repo}/actions/workflows/${WORKFLOW}/dispatches`;
 export const cuerpoDisparo = (origen, rama = 'main') => JSON.stringify({ ref: rama, inputs: { origen } });
 
-function revisarActions(r, que) {
-  if (r.status === 401) throw new ErrorSync('token', 'GitHub no reconoce el permiso guardado: venció o se borró. Hay que generar uno nuevo.');
-  if (r.status === 403 || r.status === 404) throw new ErrorSync('actions', SIN_ACTIONS);
-  if (r.status === 429) throw new ErrorSync('limite', 'GitHub limitó las consultas por un rato.');
-  if (!r.ok) throw new ErrorSync('otro', `GitHub respondió ${r.status} al ${que}.`);
+// Lo que GitHub dice del error, para mostrarlo tal cual (ayuda a saber si es el permiso u otra cosa).
+async function motivo(r) {
+  try { const j = await r.json(); return j?.message ? ` (GitHub: ${r.status} ${j.message})` : ` (GitHub: ${r.status})`; } catch { return ` (GitHub: ${r.status})`; }
+}
+async function revisarActions(r, que) {
+  if (r.ok) return;
+  const m = await motivo(r);
+  if (r.status === 401) throw new ErrorSync('token', 'GitHub no reconoce el permiso guardado: venció o se borró. Hay que generar uno nuevo.' + m);
+  if (r.status === 403 && /rate limit/i.test(m)) throw new ErrorSync('limite', 'GitHub limitó las consultas por un rato.' + m);
+  if (r.status === 403 || r.status === 404) throw new ErrorSync('actions', SIN_ACTIONS + m);
+  if (r.status === 429) throw new ErrorSync('limite', 'GitHub limitó las consultas por un rato.' + m);
+  throw new ErrorSync('otro', `GitHub respondió ${r.status} al ${que}.` + m);
+}
+
+// ¿El permiso deja pedir precios? Devuelve null si sí, o el error si no.
+export async function probarActions(gh, fetchFn = fetch) {
+  try { await corridas(gh, fetchFn); return null; } catch (err) { return err; }
 }
 
 async function corridas({ repo, token }, fetchFn) {
   const r = await pedir(fetchFn, `${API}/repos/${repo}/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=10`, { headers: cabeceras(token), cache: 'no-store' });
-  revisarActions(r, 'consultar las actualizaciones');
+  await revisarActions(r, 'consultar las actualizaciones');
   return (await r.json()).workflow_runs || [];
 }
 
@@ -130,7 +142,7 @@ export async function leerArchivosMercado({ repo, token, rama = 'main' }, fetchF
 export async function actualizarMercado(gh, { fetchFn = fetch, esperar = ms => new Promise(ok => setTimeout(ok, ms)), alAvanzar = () => {}, vueltas = 36 } = {}) {
   const previas = new Set((await corridas(gh, fetchFn)).map(c => c.id)); // también comprueba el permiso antes de pedir nada
   const r = await pedir(fetchFn, urlDisparo(gh.repo), { method: 'POST', headers: cabeceras(gh.token), body: cuerpoDisparo('app', gh.rama) });
-  revisarActions(r, 'pedir precios');
+  await revisarActions(r, 'pedir precios');
   alAvanzar('pedido');
   for (let i = 0; i < vueltas; i++) {
     await esperar(i < 6 ? 4000 : 8000);

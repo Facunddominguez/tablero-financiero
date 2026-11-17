@@ -24,7 +24,7 @@ function guiaPermiso(ctx, alTerminar) {
       if (!/^(github_pat_|ghp_)\w{20,}$/.test(token)) { estado.textContent = 'Eso no parece un permiso de GitHub: tiene que empezar con github_pat_.'; return; }
       if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { estado.textContent = 'Completá el repositorio como usuario/repositorio.'; return; }
       btn.disabled = true; estado.textContent = 'Probando: leo los datos de GitHub y los vuelvo a guardar…';
-      try { await ctx.guardarPermiso(repo, token); fToken.value = ''; alTerminar(); }
+      try { const aviso = await ctx.guardarPermiso(repo, token); fToken.value = ''; alTerminar(aviso); }
       catch (err) { estado.textContent = `No funcionó: ${err.message} No se guardó nada; podés corregir y probar de nuevo.`; btn.disabled = false; }
     },
   },
@@ -54,10 +54,11 @@ function sincronizar(ctx) {
             try { const r = await ctx.sincronizarAhora(); pintarD(r ? `Listo. Subí ${r.enviados} ${r.enviados === 1 ? 'cambio' : 'cambios'} y recibí ${r.recibidos}.` : 'Ya había una sincronización en curso.'); }
             catch (err) { pintarD(err.codigo === 'token' || err.codigo === 'permiso' ? 'Hay que renovar el permiso: quitalo y activalo de nuevo.' : 'Tus cambios siguen guardados acá. Probá de nuevo en un rato.'); }
           }, 'primario'),
+          boton('Cambiar el permiso', async () => { await ctx.borrarPermiso(); pintarD('Pegá el permiso nuevo. Mientras tanto, tus cambios quedan guardados en este dispositivo.'); }),
           boton('Quitar el permiso de este dispositivo', async () => { await ctx.borrarPermiso(); pintarD('Permiso quitado. Este dispositivo ya no sube cambios.'); }, 'fantasma')),
       ] : [
         h('p', 'Lo que registrás queda guardado en este dispositivo. Para verlo también en el celular o en otra computadora, este dispositivo necesita permiso para guardar en GitHub. Se hace una sola vez y lleva dos minutos.'),
-        guiaPermiso(ctx, () => pintarD('Listo: la sincronización quedó activada. Desde ahora cada cambio se sube solo.')),
+        guiaPermiso(ctx, aviso => pintarD('Listo: la sincronización quedó activada. Desde ahora cada cambio se sube solo.' + (aviso ? ' ' + aviso : ' También podés pedir precios nuevos.'))),
         h('details.otra-forma', h('summary', 'Otra forma: bajar una copia cifrada'),
           h('p.nota', 'Descarga cartera.enc.json con todos tus cambios, ya cifrado. Sirve como copia de seguridad; para que otros dispositivos lo vean hay que reemplazar a mano el archivo de la carpeta data del repositorio.'),
           boton('Descargar copia cifrada', async () => descargar('cartera.enc.json', JSON.stringify(await ctx.cifrarDatos(ctx.completo()))), 'chico')),
