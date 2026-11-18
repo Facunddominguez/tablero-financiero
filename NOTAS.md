@@ -103,6 +103,7 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | ETF en USD e histórico | yfinance (cierre ajustado diario) |
 | Compras de directivos | OpenInsider, tabla del filtro configurado en `tools/mercado_config.json` |
 | Inflación de EE.UU. | FRED, serie `CPIAUCSL` (CSV público, sin clave): rendimiento real en Informes |
+| Histórico de lo que tenés | Yahoo Finance, tickers de `historico_extra` en `tools/mercado_config.json` (solo para reconstruir la evolución de tu cartera antes de los registros diarios; si un ticker falla no frena al resto) |
 
 ## Probar en la computadora
 

@@ -1,6 +1,7 @@
 // Estado = datos base (descifrados) + registro de eventos locales + precios. Todo puro: no toca red ni DOM.
 import { clon, suma, fechas } from './util.js';
-import { costoLoteUSD } from './finanzas.js';
+import { costoLoteUSD, ADR_DE_LOCAL } from './finanzas.js';
+export { ADR_DE_LOCAL };
 
 const GRUPO = { nucleo: 'nucleo', satelite: 'satelite', satelite_argentina: 'satelite', satelite_volatil: 'satelite', satelite_ypf: 'ypf', renta_fija_ars: 'renta_fija', emergencia: 'emergencia' };
 export const NOMBRE_GRUPO = { nucleo: 'Núcleo', satelite: 'Satélites', ypf: 'YPF', renta_fija: 'Renta fija ARS', emergencia: 'Emergencia', caja: 'Caja' };
@@ -9,11 +10,6 @@ export const grupoDe = bloque => GRUPO[bloque] || 'satelite';
 // ¿Tiene la forma de los datos del tablero (un respaldo sin cifrar)?
 export const esRespaldoPlano = o => !!o && Array.isArray(o.posiciones) && Array.isArray(o.reglas) && !!o.meta && !!o.nucleo;
 
-// Acciones argentinas que cotizan como ADR en EE.UU. con otro ticker. OpenInsider y la SEC usan el del ADR.
-export const ADR_DE_LOCAL = {
-  PAMP: 'PAM', YPFD: 'YPF', TGSU2: 'TGS', TECO2: 'TEO', CRES: 'CRESY', IRSA: 'IRS',
-  GGAL: 'GGAL', BMA: 'BMA', BBAR: 'BBAR', SUPV: 'SUPV', CEPU: 'CEPU', EDN: 'EDN', LOMA: 'LOMA',
-};
 
 // Todos los tickers con los que puede aparecer algo que ya tenés: el propio, el subyacente del CEDEAR,
 // el ADR de una acción local y, para el bloque YPF (acciones u ON), el ADR de YPF.

@@ -1,7 +1,7 @@
 // Pruebas que no necesitan tus datos: corren en cada PR (GitHub Actions) y también dentro de tests.html.
 // Devuelve [nombre, fn] como las asincrónicas de js/pruebas.js.
 import { tickersPropios, esRespaldoPlano } from './estado.js';
-import { deflactor, rendimiento, xirr, curvaPorcentual, puntosDelPeriodo } from './finanzas.js';
+import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
 
@@ -57,13 +57,39 @@ export function pruebasPublicas() {
     }],
 
     ['Período: el mes y el año arrancan en el último dato anterior; sin datos previos, en el primero', async () => {
-      const snaps = { '2025-12-20': { t: 90 }, '2026-01-10': { t: 95 }, '2026-10-31': { t: 100 }, '2026-11-05': { t: 104 }, '2026-11-18': { t: 108 } };
-      const fs = per => puntosDelPeriodo(snaps, '2026-11-18', per).map(p => p.f).join();
-      if (fs('mes') !== '2026-10-31,2026-11-05,2026-11-18') throw new Error('mes: ' + fs('mes'));
-      if (fs('anio') !== '2025-12-20,2026-01-10,2026-10-31,2026-11-05,2026-11-18') throw new Error('año: ' + fs('anio'));
-      if (fs('todo').split(',').length !== 5) throw new Error('todo');
-      const sinPrevio = puntosDelPeriodo({ '2026-11-05': { t: 1 }, '2026-11-06': { t: 2 } }, '2026-11-18', 'mes');
-      if (sinPrevio[0].f !== '2026-11-05') throw new Error('sin dato previo');
+      const fs = ['2025-12-20', '2026-01-10', '2026-10-31', '2026-11-05', '2026-11-18'];
+      if (inicioDelPeriodo(fs, '2026-11-18', 'mes') !== 2) throw new Error('mes');
+      if (inicioDelPeriodo(fs, '2026-11-18', 'anio') !== 0) throw new Error('año');
+      if (inicioDelPeriodo(fs, '2026-11-18', 'todo') !== 0) throw new Error('todo');
+      if (inicioDelPeriodo(['2026-11-05', '2026-11-06'], '2026-11-18', 'mes') !== 0) throw new Error('sin dato previo');
+    }],
+
+    ['Historia: antes de los registros diarios se reconstruye con los lotes y precios históricos', async () => {
+      // SPY: 100 → 110 → 121 (+10% por día hábil). Un lote de 2 CEDEAR comprado el 1/1 y otro de 1 el 2/1.
+      // Hoy (4/1) cada CEDEAR vale 13,31 USD (serie 133,1 → factor 0,1). Registros diarios desde el 3/1.
+      const e = {
+        hoy: '2026-01-04',
+        historico: { fechas: ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04'], series: { SPY: [100, 110, 121, 133.1] } },
+        posiciones: [{ ticker: 'SPY', tipo: 'cedear', subyacente: 'SPY', cantidad: 3, valor_usd: 3 * 13.31 }],
+        datos: {
+          lotes_costo: [
+            { ticker: 'SPY', cantidad: 2, fecha_compra: '2026-01-01', precio_compra: 10, moneda: 'USD', mep_dia: 1 },
+            { ticker: 'SPY', cantidad: 1, fecha_compra: '2026-01-02', precio_compra: 11, moneda: 'USD', mep_dia: 1 },
+          ],
+          cashflows_externos_usd: [{ fecha: '2026-01-01', usd: 20 }, { fecha: '2026-01-02', usd: 11 }],
+          snapshots: { '2026-01-03': { t: 3 * 12.1 + 5 }, '2026-01-04': { t: 3 * 13.31 + 5 } }, // con 5 USD de caja
+        },
+      };
+      const h = historiaCartera(e);
+      if (h.puntos.map(p => p.f).join() !== '2026-01-01,2026-01-02,2026-01-03,2026-01-04') throw new Error(h.puntos.map(p => p.f).join());
+      if (!h.puntos[0].rec || !h.puntos[1].rec || h.puntos[2].rec) throw new Error('marcas de reconstrucción');
+      cerca(h.puntos[0].v, 20, 1e-9, 'valor reconstruido 1/1');
+      cerca(h.puntos[1].v, 33, 1e-9, 'valor reconstruido 2/1 (con la segunda compra)');
+      // +10% cada día: la compra del 2/1 y el salto por la caja al empezar los registros no cuentan como ganancia.
+      cerca(h.indice[1], 1.1, 1e-9, 'índice 2/1');
+      cerca(h.indice[2], 1.21, 1e-9, 'índice 3/1');
+      cerca(h.indice[3], 1.21 * (3 * 13.31 + 5) / (3 * 12.1 + 5), 1e-9, 'índice 4/1');
+      cerca(h.ganancia[2], 2 + 3.3, 1e-9, 'ganancia hasta el 3/1');
     }],
 
     ['Vencimientos: lista lo próximo y lo vencido sin registrar, no lo ya cobrado', async () => {

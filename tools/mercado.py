@@ -156,21 +156,32 @@ def yahoo(ticker, desde):
 
 
 def usd_e_historico(hist_anterior):
-    """Cierres en USD de los ETF de referencia. Devuelve (sección usd de market, historico)."""
+    """Cierres en USD de los ETF de referencia y, solo para el histórico, de lo que tenés (historico_extra).
+
+    Devuelve (sección usd de market, historico). Las fechas salen de los ETF de referencia; si un ticker
+    extra falla o le falta algún día, queda con lo anterior o con null, sin frenar al resto.
+    """
     series = {t: yahoo(t, CFG["historico_desde"]) for t in CFG["usd_tickers"]}
     usd = {}
     for t, s in series.items():
         fechas = sorted(s)
         usd[t] = {"c": s[fechas[-1]][0], "prev": s[fechas[-2]][0], "fecha": fechas[-1]}
+    extras = [t for t in CFG.get("historico_extra", []) if t not in CFG["usd_tickers"]]
+    for t in extras:
+        try:
+            series[t] = yahoo(t, CFG["historico_desde"])
+        except Exception as e:  # noqa: BLE001
+            print(f"FALLA historico {t}: {e}", file=sys.stderr)
     # histórico acumulado: se parte de lo guardado y se pisa con lo nuevo (cierre ajustado)
     viejo_f = hist_anterior.get("fechas") or []
     viejo_s = hist_anterior.get("series") or {}
-    acum = {t: dict(zip(viejo_f, viejo_s.get(t) or [])) for t in CFG["usd_tickers"]}
+    todos = list(CFG["usd_tickers"]) + extras
+    acum = {t: {f: v for f, v in zip(viejo_f, viejo_s.get(t) or []) if v is not None} for t in todos}
     for t, s in series.items():
         for f, (_, aj) in s.items():
             acum[t][f] = aj
-    fechas = sorted(set.intersection(*[set(v) for v in acum.values()]))
-    hist = {"fechas": fechas, "series": {t: [acum[t][f] for f in fechas] for t in CFG["usd_tickers"]},
+    fechas = sorted(f for f in set.intersection(*[set(acum[t]) for t in CFG["usd_tickers"]]) if f >= CFG["historico_desde"])
+    hist = {"fechas": fechas, "series": {t: [acum[t].get(f) for f in fechas] for t in todos},
             "nota": "Cierres diarios ajustados por dividendos, en USD (yfinance)."}
     return {"precios": usd}, hist
 

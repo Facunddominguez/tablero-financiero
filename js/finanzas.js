@@ -1,6 +1,13 @@
 // Cálculos financieros puros: costo de lotes, XIRR y benchmark simulado.
 import { fechas, suma } from './util.js';
 
+// Acciones argentinas que cotizan como ADR en EE.UU. con otro ticker. OpenInsider y la SEC usan el del ADR.
+export const ADR_DE_LOCAL = {
+  PAMP: 'PAM', YPFD: 'YPF', TGSU2: 'TGS', TECO2: 'TEO', CRES: 'CRESY', IRSA: 'IRS',
+  GGAL: 'GGAL', BMA: 'BMA', BBAR: 'BBAR', SUPV: 'SUPV', CEPU: 'CEPU', EDN: 'EDN', LOMA: 'LOMA',
+};
+
+
 // Costo de un lote en USD al MEP del día de compra, gastos incluidos (los gastos siempre vienen en ARS).
 export function costoLoteUSD(l) {
   const bruto = l.cantidad * l.precio_compra;
@@ -140,13 +147,100 @@ export function curvaPorcentual(puntos, aportes) {
   return out;
 }
 
-// Puntos del período: arranca en el último registro anterior al inicio (así el primer día cuenta) o en el primero que haya.
-export function puntosDelPeriodo(snapshots, hoy, per) {
-  const todos = Object.entries(snapshots).sort().map(([f, s]) => ({ f, v: s.t }));
-  if (per === 'todo') return todos;
+// ---------- Historia de tu cartera ----------
+// Antes del primer registro diario no hay valores guardados: se reconstruyen con los lotes que tenés hoy,
+// cada uno desde su fecha de compra, valuados con el precio histórico de su subyacente en EE.UU. (escalado
+// para que hoy dé el valor real) o, si no hay serie (ON, FCI), interpolando entre lo que costó y lo que vale hoy.
+// No incluye la caja ni lo vendido antes de empezar a registrar.
+// Devuelve { puntos: [{ f, v, rec }], indice: [factor acumulado], ganancia: [USD acumulados], hastaRec }.
+export function historiaCartera(estado) {
+  const d = estado.datos, hoy = estado.hoy;
+  const snaps = Object.entries(d.snapshots || {}).sort().map(([f, s]) => ({ f, v: s.t }));
+  const primero = snaps.length ? snaps[0].f : hoy;
+  const aportes = d.cashflows_externos_usd || [];
+  const rec = reconstruir(estado, primero);
+
+  const puntos = [], indice = [], ganancia = [];
+  let I = 1, G = 0;
+  if (rec) {
+    rec.puntos.forEach((p, k) => {
+      if (k > 0) {
+        const ant = rec.puntos[k - 1];
+        if (ant.v > 0) { I *= (p.v - p.entra) / ant.v; G += p.v - ant.v - p.entra; }
+      }
+      if (p.f < primero) { puntos.push({ f: p.f, v: p.v, rec: true }); indice.push(I); ganancia.push(G); }
+    });
+  }
+  // Registros diarios: Dietz modificado con los aportes, como curvaPorcentual.
+  snaps.forEach((p, k) => {
+    if (k > 0) {
+      const ant = snaps[k - 1], largo = Math.max(1, fechas.dias(ant.f, p.f));
+      const tramo = aportes.filter(a => a.fecha > ant.f && a.fecha <= p.f);
+      const flujo = suma(tramo, a => a.usd), pond = suma(tramo, a => a.usd * fechas.dias(a.fecha, p.f) / largo);
+      if (ant.v > 0 && ant.v + pond > 0) { I *= 1 + (p.v - ant.v - flujo) / (ant.v + pond); G += p.v - ant.v - flujo; }
+    }
+    puntos.push({ f: p.f, v: p.v, rec: false }); indice.push(I); ganancia.push(G);
+  });
+  return { puntos, indice, ganancia, hastaRec: rec ? primero : null };
+}
+
+// Puntos diarios (días hábiles de la serie histórica) desde la primera compra hasta `hasta` inclusive.
+// Cada punto: { f, v: valor USD, entra: valor de lo comprado ese tramo (cuenta como aporte, no como ganancia) }.
+function reconstruir(estado, hasta) {
+  const d = estado.datos, hist = estado.historico, hoy = estado.hoy;
+  if (!hist?.fechas?.length) return null;
+  const lotes = (d.lotes_costo || []).filter(l => l.fecha_compra && l.fecha_compra < hasta && l.cantidad > 0);
+  if (!lotes.length) return null;
+  const iHoy = indice(hist, hoy, 'valuacion');
+  const precios = lotes.map(l => precioLote(estado, l, iHoy));
+  const desde = lotes.reduce((m, l) => l.fecha_compra < m ? l.fecha_compra : m, hasta);
+  const dias = hist.fechas.filter(f => f >= desde && f < hasta).concat([hasta]);
+  const out = [];
+  let previa = null;
+  for (const f of dias) {
+    let v = 0, entra = 0;
+    lotes.forEach((l, k) => {
+      if (l.fecha_compra > f || !precios[k]) return;
+      const valor = l.cantidad * precios[k](f);
+      v += valor;
+      if (previa === null || l.fecha_compra > previa) entra += valor;
+    });
+    out.push({ f, v, entra });
+    previa = f;
+  }
+  return { puntos: out };
+}
+
+// Precio unitario en USD de un lote en cualquier fecha posterior a su compra.
+function precioLote(estado, l, iHoy) {
+  const p = estado.posiciones.find(x => x.ticker === l.ticker);
+  if (!p || !(p.cantidad > 0) || !(p.valor_usd > 0)) return null;
+  const hoyUnit = p.valor_usd / p.cantidad, hist = estado.historico;
+  const conSerie = p.tipo !== 'on' && p.tipo !== 'fci';
+  const t = conSerie ? [p.ticker_subyacente_usa, p.subyacente, ADR_DE_LOCAL[p.ticker], p.ticker].find(x => x && hist.series[x]) : null;
+  if (t && iHoy >= 0) {
+    const s = hist.series[t];
+    let j = iHoy; while (j >= 0 && s[j] == null) j--;
+    if (j >= 0) {
+      const factor = hoyUnit / s[j];
+      return f => {
+        let i = indice(hist, f, 'valuacion'); while (i > 0 && s[i] == null) i--;
+        return i >= 0 && s[i] != null ? s[i] * factor : hoyUnit;
+      };
+    }
+  }
+  // Sin serie: línea recta entre lo que costó y lo que vale hoy.
+  const costoUnit = costoLoteUSD(l) / l.cantidad, total = Math.max(1, fechas.dias(l.fecha_compra, estado.hoy));
+  return f => costoUnit + (hoyUnit - costoUnit) * Math.min(1, Math.max(0, fechas.dias(l.fecha_compra, f) / total));
+}
+
+// Índice del primer punto de un período: el último anterior al inicio (así el primer día cuenta) o el primero.
+export function inicioDelPeriodo(fechasPuntos, hoy, per) {
+  if (per === 'todo' || !fechasPuntos.length) return 0;
   const inicio = per === 'mes' ? hoy.slice(0, 7) + '-01' : hoy.slice(0, 4) + '-01-01';
-  const antes = todos.filter(p => p.f < inicio).pop();
-  return [...(antes ? [antes] : []), ...todos.filter(p => p.f >= inicio)];
+  let k = 0;
+  fechasPuntos.forEach((f, i) => { if (f < inicio) k = i; });
+  return fechasPuntos[k] < inicio ? k : 0;
 }
 
 // Costos explícitos (gastos de compra y venta) de los últimos 12 meses sobre el patrimonio medio (regla C3).
