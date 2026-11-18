@@ -1,6 +1,6 @@
 // Pantalla Informes: cinco informes de una página, imprimibles (window.print + CSS de impresión).
 import { h, fmt, fechas, suma, poner } from '../util.js';
-import { rendimiento, costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, curvaPorcentual, puntosDelPeriodo } from '../finanzas.js';
+import { rendimiento, costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, curvaPorcentual, historiaCartera, inicioDelPeriodo } from '../finanzas.js';
 import { NOMBRE_GRUPO } from '../estado.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase } from './comun.js';
 
@@ -51,45 +51,58 @@ const PERIODOS = [['mes', 'Este mes'], ['anio', 'Este año'], ['todo', 'Desde el
 
 function bloquePeriodo(e, r) {
   let per = 'todo';
+  const historia = historiaCartera(e); // se calcula una vez; los botones solo recortan
   const caja = h('div');
   const botones = PERIODOS.map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(k === per), onclick: () => {
     per = k;
     botones.forEach((b, i) => b.setAttribute('aria-pressed', String(PERIODOS[i][0] === per)));
-    poner(caja, contenidoPeriodo(e, r, per));
+    poner(caja, contenidoPeriodo(e, r, historia, per));
   } }, t));
-  poner(caja, contenidoPeriodo(e, r, per));
+  poner(caja, contenidoPeriodo(e, r, historia, per));
   return [h('div.conmutador.chico', { role: 'group', 'aria-label': 'Período' }, botones), caja];
 }
 
-function contenidoPeriodo(e, r, per) {
-  const puntos = puntosDelPeriodo(e.datos.snapshots, e.hoy, per);
+function contenidoPeriodo(e, r, historia, per) {
+  const todos = historia.puntos;
+  const k = inicioDelPeriodo(todos.map(p => p.f), e.hoy, per);
+  const puntos = todos.slice(k);
   if (puntos.length < 2) return h('p.nota', { style: 'margin-top:1rem' }, 'Todavía no hay datos de este período: se guarda un punto por cada día que abrís el tablero.');
-  // Si los registros empiezan dentro del período, el mes o el año muestran lo mismo que "Desde el inicio": avisarlo.
-  const primero = puntosDelPeriodo(e.datos.snapshots, e.hoy, 'todo')[0].f;
-  const igual = per !== 'todo' && puntos[0].f === primero;
+  // Si los datos empiezan dentro del período, el mes o el año muestran lo mismo que "Desde el inicio": avisarlo.
+  const igual = per !== 'todo' && k === 0;
   const separa = per === 'mes' ? fechas.sumarMeses(e.hoy.slice(0, 7) + '-01', 1) : `${+e.hoy.slice(0, 4) + 1}-01-01`;
-  const nombrePer = PERIODOS.find(([k]) => k === per)?.[1];
-  const avisoIgual = igual ? h('p.nota.periodo-igual', `Tus registros empiezan el ${fmt.fecha(primero)}, así que por ahora "${nombrePer}" muestra lo mismo que "Desde el inicio". Se van a diferenciar desde el ${fmt.fecha(separa)}.`) : null;
+  const nombrePer = PERIODOS.find(([x]) => x === per)?.[1];
+  const avisoIgual = igual ? h('p.nota.periodo-igual', `Tus datos empiezan el ${fmt.fecha(todos[0].f)}, así que por ahora "${nombrePer}" muestra lo mismo que "Desde el inicio". Se van a diferenciar desde el ${fmt.fecha(separa)}.`) : null;
+
   const aportes = e.datos.cashflows_externos_usd;
   const nombres = ['Tu cartera', ...r.benchmarks.map(b => b.nombre)];
   const usd = [puntos.map(p => p.v), ...r.benchmarks.map(b => puntos.map(p => r.valorEn[b.nombre](p.f)))];
-  const pct = usd.map(vals => curvaPorcentual(puntos.map((p, i) => ({ f: p.f, v: vals[i] })), aportes).map(x => x * 100));
+  // Tu cartera: índice ya encadenado (reconstrucción + registros diarios), rebasado al inicio del período.
+  const base = historia.indice[k];
+  const pctCartera = historia.indice.slice(k).map(x => (x / base - 1) * 100);
+  const pctBench = usd.slice(1).map(vals => curvaPorcentual(puntos.map((p, i) => ({ f: p.f, v: vals[i] })), aportes).map(x => x * 100));
+  const pct = [pctCartera, ...pctBench];
   const f0 = puntos[0].f, fin = puntos[puntos.length - 1];
-  const aportado = suma(aportes.filter(a => a.fecha > f0 && a.fecha <= fin.f), a => a.usd);
-  const ganancia = fin.v - puntos[0].v - aportado;
+  const aportado = suma(aportes.filter(a => (per === 'todo' || a.fecha > f0) && a.fecha <= fin.f), a => a.usd);
+  const ganancia = historia.ganancia[historia.ganancia.length - 1] - historia.ganancia[k];
   const final = i => pct[i][pct[i].length - 1] / 100;
+  // Hasta qué punto del período la línea de tu cartera es reconstruida (va punteada).
+  const ultimoRec = puntos.reduce((m, p, i) => p.rec ? i : m, -1);
+  const notaRec = ultimoRec >= 0
+    ? h('p.nota', { style: 'margin-top:.6rem' }, `La parte punteada de tu cartera (hasta el ${fmt.fecha(puntos[ultimoRec].f)}) está reconstruida: lo que tenés hoy, desde la fecha de cada compra, con precios históricos de EE.UU. (la ON y los FCI, en línea recta entre lo que costaron y lo que valen). No incluye la caja ni lo que vendiste antes, por eso el valor en USD salta cuando empiezan los registros diarios.`)
+    : null;
   return [
     avisoIgual,
     h('div.resumen',
       dato('Tu cartera', color(final(0), fmt.pctSigno(final(0), 1)), `${fmt.signo(ganancia)} USD de ganancia`),
-      ...r.benchmarks.map((b, k) => dato(b.nombre, color(final(k + 1), fmt.pctSigno(final(k + 1), 1)), 'con los mismos aportes')),
+      ...r.benchmarks.map((b, i) => dato(b.nombre, color(final(i + 1), fmt.pctSigno(final(i + 1), 1)), 'con los mismos aportes')),
       dato('Aportes', fmt.usd(aportado), `desde el ${fmt.fecha(f0)}`)),
     sec('Evolución', puntos.length < 3
       ? h('p.nota', `El gráfico aparece a partir del tercer día con datos en el período (hay ${puntos.length}).`)
-      : graficoLineas(puntos, nombres, usd, { aria: 'Evolución del patrimonio contra los benchmarks', y: v => fmt.num(v), tip: v => fmt.usd(v) })),
+      : graficoLineas(puntos, nombres, usd, { aria: 'Evolución del patrimonio contra los benchmarks', y: v => fmt.num(v), tip: v => fmt.usd(v), punteadoHasta: ultimoRec })),
     puntos.length < 3 ? null : sec('Evolución en %', [
-      ...graficoLineas(puntos, nombres, pct, { aria: 'Rendimiento acumulado en % contra los benchmarks', y: v => fmt.num(v, 0) + '%', tip: v => fmt.pctSigno(v / 100, 1), cero: true }),
+      ...graficoLineas(puntos, nombres, pct, { aria: 'Rendimiento acumulado en % contra los benchmarks', y: v => fmt.num(v, 0) + '%', tip: v => fmt.pctSigno(v / 100, 1), cero: true, punteadoHasta: ultimoRec }),
       h('p.nota', { style: 'margin-top:.6rem' }, `Cuánto rindió cada línea desde el ${fmt.fecha(f0)}. Los aportes no cuentan como ganancia: se descuentan el día que entran.`),
+      notaRec,
     ]),
   ];
 }
@@ -101,7 +114,7 @@ function graficoLineas(puntos, nombres, series, op) {
     const c = coloresSeries();
     new Chart(lienzo, {
       type: 'line',
-      data: { labels: puntos.map(p => `${p.f.slice(8, 10)}/${p.f.slice(5, 7)}/${p.f.slice(2, 4)}`), datasets: series.map((data, i) => ({ label: nombres[i], data, borderColor: c.series[i], backgroundColor: c.series[i], borderWidth: 2, pointRadius: puntos.length > 40 ? 0 : 2.5, pointHoverRadius: 5, tension: 0 })) },
+      data: { labels: puntos.map(p => `${p.f.slice(8, 10)}/${p.f.slice(5, 7)}/${p.f.slice(2, 4)}`), datasets: series.map((data, i) => ({ label: nombres[i], data, borderColor: c.series[i], backgroundColor: c.series[i], borderWidth: 2, pointRadius: puntos.length > 40 ? 0 : 2.5, pointHoverRadius: 5, tension: 0, ...(i === 0 && op.punteadoHasta >= 0 ? { segment: { borderDash: g => g.p1DataIndex <= op.punteadoHasta ? [5, 4] : undefined } } : {}) })) },
       options: {
         animation: false, responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ` ${x.dataset.label}: ${op.tip(x.parsed.y)}` }, bodyFont: { family: c.num } } },
