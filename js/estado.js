@@ -6,6 +6,27 @@ const GRUPO = { nucleo: 'nucleo', satelite: 'satelite', satelite_argentina: 'sat
 export const NOMBRE_GRUPO = { nucleo: 'Núcleo', satelite: 'Satélites', ypf: 'YPF', renta_fija: 'Renta fija ARS', emergencia: 'Emergencia', caja: 'Caja' };
 export const grupoDe = bloque => GRUPO[bloque] || 'satelite';
 
+// ¿Tiene la forma de los datos del tablero (un respaldo sin cifrar)?
+export const esRespaldoPlano = o => !!o && Array.isArray(o.posiciones) && Array.isArray(o.reglas) && !!o.meta && !!o.nucleo;
+
+// Acciones argentinas que cotizan como ADR en EE.UU. con otro ticker. OpenInsider y la SEC usan el del ADR.
+export const ADR_DE_LOCAL = {
+  PAMP: 'PAM', YPFD: 'YPF', TGSU2: 'TGS', TECO2: 'TEO', CRES: 'CRESY', IRSA: 'IRS',
+  GGAL: 'GGAL', BMA: 'BMA', BBAR: 'BBAR', SUPV: 'SUPV', CEPU: 'CEPU', EDN: 'EDN', LOMA: 'LOMA',
+};
+
+// Todos los tickers con los que puede aparecer algo que ya tenés: el propio, el subyacente del CEDEAR,
+// el ADR de una acción local y, para el bloque YPF (acciones u ON), el ADR de YPF.
+// Devuelve un Map: ticker con que aparece → ticker con que lo tenés (para decir "como PAMP").
+export function tickersPropios(posiciones) {
+  const m = new Map();
+  for (const p of posiciones) {
+    for (const t of [p.ticker, p.subyacente, p.ticker_subyacente_usa, ADR_DE_LOCAL[p.ticker]]) if (t && !m.has(t)) m.set(t, p.ticker);
+    if ((p.grupo === 'ypf' || p.bloque === 'satelite_ypf') && !m.has('YPF')) m.set('YPF', p.ticker);
+  }
+  return m;
+}
+
 const arsDe = (c, mep) => c.cantidad * c.precio * (c.moneda === 'USD' ? mep : 1) + (c.gastos || 0);
 
 function sumarCompra(d, c, fecha, mep, nota) {

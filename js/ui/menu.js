@@ -3,6 +3,8 @@ import { h, poner, fmt, aNumero } from '../util.js';
 import { fortaleza, generarFrase, bloqueo } from '../seguridad.js';
 import { enlacePermiso, enlacePermisoCron, LISTA_PERMISOS, urlDisparo, cuerpoDisparo } from '../sync.js';
 import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN, botonPrecios } from './comun.js';
+import { esSobreCifrado } from '../cripto.js';
+import { esRespaldoPlano } from '../estado.js';
 
 const descargar = (nombre, texto, tipo = 'application/json') => {
   const a = h('a', { href: URL.createObjectURL(new Blob([texto], { type: tipo })), download: nombre });
@@ -256,6 +258,7 @@ function fuentes(ctx) {
     ['Cuotapartes de fondos', 'argentinadatos.com (datos de CAFCI)', m.fci?.fecha, m.fci?.stale],
     ['ETF en dólares e histórico', 'Yahoo Finance (vía yfinance)', m.usd?.actualizado, m.usd?.stale],
     ['Dólar MEP promedio por mes', 'argentinadatos.com', m.mep_mensual?.actualizado, m.mep_mensual?.stale],
+    ['Inflación de EE.UU. (IPC mensual)', 'FRED, Reserva Federal de St. Louis (serie CPIAUCSL)', m.cpi_usa?.actualizado, m.cpi_usa?.stale],
     ['Compras de directivos', 'OpenInsider (formularios 4 de la SEC)', e.insiders?.actualizado, e.insiders?.stale],
     ['Cupones y amortización de la ON', 'Suplemento de prospecto del emisor', null, false, 'fijo'],
     ['Cantidades, lotes y caja', `Resumen de ${d.meta.broker || 'tu broker'}`, e.fecha_resumen],
@@ -295,24 +298,38 @@ function guiaCron(ctx) {
     h('p.nota', 'El permiso queda guardado en cron-job.org. Si alguien lo obtuviera, lo único que podría hacer es lanzar esta misma actualización. Vence al año: cuando falle, generá otro y reemplazalo ahí.'));
 }
 
-// ---------- Respaldo en JSON plano ----------
+// ---------- Respaldo (cifrado por defecto; en claro solo a pedido) ----------
+
 function respaldo(ctx) {
   const estado = h('p.nota', { role: 'status' });
+  const frase = h('input', { type: 'password', autocomplete: 'off', placeholder: 'La clave con la que se cifró ese respaldo' });
+  const campoFrase = campo('Clave del respaldo', frase, 'Ese respaldo se cifró con otra clave (una anterior). Escribila y volvé a elegir el archivo.');
+  campoFrase.hidden = true;
   const archivo = h('input', {
     type: 'file', accept: '.json,application/json',
     onchange: async () => {
+      estado.textContent = '';
       try {
-        const obj = JSON.parse(await archivo.files[0].text());
-        if (!Array.isArray(obj.posiciones) || !Array.isArray(obj.reglas) || !obj.meta || !obj.nucleo) throw new Error('Ese archivo no parece un respaldo del tablero.');
+        let obj = JSON.parse(await archivo.files[0].text());
+        if (esSobreCifrado(obj)) {
+          const abierto = await ctx.abrirRespaldo(obj, frase.value);
+          if (abierto === null) { campoFrase.hidden = false; estado.textContent = frase.value ? 'Esa clave no abre el respaldo.' : 'Falta la clave de ese respaldo.'; archivo.value = ''; return; }
+          obj = abierto;
+        }
+        if (!esRespaldoPlano(obj)) throw new Error('Ese archivo no parece un respaldo del tablero.');
         if (!confirm('Esto reemplaza todos los datos de este dispositivo por los del respaldo. ¿Seguimos?')) return;
         await ctx.importarPlano(obj); d.close();
-      } catch (err) { estado.textContent = err.message; }
+      } catch (err) { estado.textContent = err.message; archivo.value = ''; }
     },
   });
   const d = dialogo('Respaldo', h('div.formulario',
-    h('div.bloque', h('h3', 'Exportar'), aviso('El respaldo va sin cifrar: cualquiera que abra el archivo ve tus datos. Guardalo en un lugar privado.', 'alerta'),
-      h('div.acciones.izq', boton('Descargar respaldo .json', () => descargar(`tablero-respaldo-${ctx.estado.hoy}.json`, JSON.stringify(ctx.completo(), null, 1))))),
-    h('div.bloque', h('h3', 'Importar'), campo('Archivo de respaldo', archivo), estado)), { ancho: '30rem' });
+    h('div.bloque', h('h3', 'Exportar'),
+      h('p.nota', 'Baja todo (datos, movimientos y valores diarios) cifrado con tu clave: sin la clave no se puede leer. Se vuelve a abrir desde acá o con tools/cripto.py.'),
+      h('div.acciones.izq', boton('Descargar respaldo cifrado', async () => descargar(`tablero-respaldo-${ctx.estado.hoy}.enc.json`, JSON.stringify(await ctx.cifrarDatos(ctx.completo()))))),
+      h('details.otra-forma', h('summary', 'Bajar sin cifrar'),
+        aviso('El archivo queda legible: cualquiera que lo abra ve tus datos. Sirve para revisarlo o editarlo a mano.', 'alerta'),
+        h('div.acciones.izq', boton('Descargar respaldo sin cifrar', () => descargar(`tablero-respaldo-${ctx.estado.hoy}.json`, JSON.stringify(ctx.completo(), null, 1)), 'chico')))),
+    h('div.bloque', h('h3', 'Importar'), h('p.nota', 'Acepta el respaldo cifrado o el que está sin cifrar.'), campoFrase, campo('Archivo de respaldo', archivo), estado)), { ancho: '30rem' });
   return d;
 }
 

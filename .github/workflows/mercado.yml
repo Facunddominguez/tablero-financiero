@@ -55,7 +55,9 @@ jobs:
           python-version: "3.12"
       - name: Dependencias
         if: steps.chequeo.outputs.correr == 'true'
-        run: pip install --quiet yfinance
+        run: |
+          pip install --quiet -r tools/requirements.txt
+          pip show yfinance | grep -i '^version'
       - name: Bajar datos
         if: steps.chequeo.outputs.correr == 'true'
         run: python tools/mercado.py

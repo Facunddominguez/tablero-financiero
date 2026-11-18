@@ -22,3 +22,6 @@ export async function cifrar(obj, clave, saltB64, iter = 600000) {
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, clave, new TextEncoder().encode(JSON.stringify(obj)));
   return { v: 1, kdf: 'PBKDF2-SHA256', iter, salt: saltB64, iv: b64(iv), ct: b64(ct) };
 }
+
+// ¿Es un archivo cifrado por el tablero (o por tools/cripto.py)?
+export const esSobreCifrado = o => !!o && typeof o.ct === 'string' && typeof o.iv === 'string' && typeof o.salt === 'string';

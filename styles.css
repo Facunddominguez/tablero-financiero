@@ -173,6 +173,15 @@ h2.sub { margin-top: 2rem; }
 .activo { min-width: 10.5rem; }
 .activo small { display: block; font-size: .76rem; color: var(--tinta-3); }
 .cartera-tabla td:nth-child(10) { min-width: 11rem; font-size: .84rem; color: var(--tinta-2); }
+.solo-movil { display: none; }
+.vencimientos .tabla { max-width: 36rem; }
+@media (max-width: 43rem) {
+  .cartera-tabla:not(.completa) .ancho { display: none; }
+  .cartera-tabla:not(.completa) .activo { min-width: 0; }
+  .cartera-tabla:not(.completa) th { white-space: normal; padding-inline: .4rem; }
+  .cartera-tabla:not(.completa) td { padding-inline: .4rem; }
+  .solo-movil { display: block; }
+}
 
 /* ---------- Cartera: anillo ---------- */
 .anillo { display: grid; gap: 1.5rem 3rem; align-items: center; margin-bottom: 2.5rem; }
@@ -274,6 +283,7 @@ input[type="file"] { width: 100%; font-size: .9rem; }
 /* ---------- Radar ---------- */
 .radar section { margin-bottom: 2.75rem; }
 .radar .marcas { display: flex; flex-wrap: wrap; gap: .25rem; }
+.radar .marcas:not(:empty) { margin-top: .35rem; }
 .radar .empresa { display: block; font-size: .78rem; color: var(--tinta-3); max-width: 16rem; }
 .allaria-lista { display: flex; flex-wrap: wrap; gap: .4rem; margin: .6rem 0 1rem; }
 .allaria-lista li { border: 1px solid var(--linea-fuerte); border-radius: 8px; padding: .3rem .6rem; font: 600 .86rem var(--f-num); display: flex; gap: .4rem; align-items: center; }

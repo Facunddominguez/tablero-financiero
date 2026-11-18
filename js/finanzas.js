@@ -73,16 +73,40 @@ export function rendimientoHist(hist, ticker, desde, hasta) {
 }
 
 // Resumen de rendimiento: XIRR de la cartera y de los benchmarks con los mismos aportes en las mismas fechas.
+// Factor para llevar dólares de un mes a dólares del último mes con IPC de EE.UU. publicado.
+// meses = { 'AAAA-MM': índice }. Si el mes no está, usa el anterior más cercano; si es posterior al último, 1.
+export function deflactor(meses) {
+  const claves = Object.keys(meses || {}).filter(k => meses[k] > 0).sort();
+  if (claves.length < 2) return null;
+  const ultimo = claves[claves.length - 1], base = meses[ultimo];
+  const factor = fecha => {
+    const m = fecha.slice(0, 7);
+    if (m >= ultimo) return 1;
+    let k = null;
+    for (const c of claves) { if (c <= m) k = c; else break; }
+    return base / meses[k ?? claves[0]];
+  };
+  return { factor, ultimo };
+}
+
 export function rendimiento(estado) {
   const aportes = estado.datos.cashflows_externos_usd;
   const hoy = estado.hoy;
   const flujos = aportes.map(a => ({ fecha: a.fecha, monto: -a.usd }));
   const aportado = suma(aportes, a => a.usd);
+  // Rendimiento real: cada aporte se pasa a dólares de hoy con el IPC de EE.UU. y se recalcula la tasa.
+  const def = deflactor(estado.mercado?.cpi_usa?.meses);
+  const flujosReales = def ? aportes.map(a => ({ fecha: a.fecha, monto: -a.usd * def.factor(a.fecha) })) : null;
   const fila = (nombre, valor) => ({
     nombre, valor, aportado, ganancia: valor - aportado,
     xirr: xirr([...flujos, { fecha: hoy, monto: valor }]),
+    xirr_real: flujosReales ? xirr([...flujosReales, { fecha: hoy, monto: valor }]) : null,
   });
-  const out = { aportado, cartera: fila('Tu cartera', estado.total_usd), benchmarks: [], valorEn: {} };
+  const primero = aportes[0]?.fecha;
+  const out = {
+    aportado, cartera: fila('Tu cartera', estado.total_usd), benchmarks: [], valorEn: {},
+    inflacion: def && primero ? { hasta: def.ultimo, desde: primero.slice(0, 7), acumulada: def.factor(primero) - 1 } : null,
+  };
   const hist = estado.historico;
   const canastas = [['SPY', { SPY: 1 }], ['Núcleo ' + Object.values(estado.datos.nucleo.pesos_internos).map(w => Math.round(w * 100)).join('/'), estado.datos.nucleo.pesos_internos]];
   for (const [nombre, pesos] of canastas) {

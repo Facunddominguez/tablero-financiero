@@ -170,6 +170,14 @@ const ctx = {
     return d;
   },
   cifrarDatos: datos => cifrar(datos, S.clave, S.sobre.salt, S.sobre.iter),
+  // Abre un respaldo cifrado. Con la misma clave de ahora no pide nada; si se cifró con otra, hace falta esa frase.
+  // Devuelve null si no se puede abrir con lo que hay.
+  async abrirRespaldo(sobre, frase) {
+    if (sobre.salt === S.sobre.salt) { const r = await descifrar(sobre, S.clave).catch(() => null); if (r) return r; }
+    if (!frase) return null;
+    const clave = await derivarClave(frase, sobre.salt, sobre.iter || S.sobre.iter).catch(() => null);
+    return clave ? descifrar(sobre, clave).catch(() => null) : null;
+  },
 
   // Lee lo último de GitHub, lo une con lo local y lo sube. Si falla, lo local queda intacto.
   async sincronizarAhora(opciones = {}) {
