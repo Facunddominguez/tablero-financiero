@@ -64,6 +64,12 @@ function bloquePeriodo(e, r) {
 function contenidoPeriodo(e, r, per) {
   const puntos = puntosDelPeriodo(e.datos.snapshots, e.hoy, per);
   if (puntos.length < 2) return h('p.nota', { style: 'margin-top:1rem' }, 'Todavía no hay datos de este período: se guarda un punto por cada día que abrís el tablero.');
+  // Si los registros empiezan dentro del período, el mes o el año muestran lo mismo que "Desde el inicio": avisarlo.
+  const primero = puntosDelPeriodo(e.datos.snapshots, e.hoy, 'todo')[0].f;
+  const igual = per !== 'todo' && puntos[0].f === primero;
+  const separa = per === 'mes' ? fechas.sumarMeses(e.hoy.slice(0, 7) + '-01', 1) : `${+e.hoy.slice(0, 4) + 1}-01-01`;
+  const nombrePer = PERIODOS.find(([k]) => k === per)?.[1];
+  const avisoIgual = igual ? h('p.nota.periodo-igual', `Tus registros empiezan el ${fmt.fecha(primero)}, así que por ahora "${nombrePer}" muestra lo mismo que "Desde el inicio". Se van a diferenciar desde el ${fmt.fecha(separa)}.`) : null;
   const aportes = e.datos.cashflows_externos_usd;
   const nombres = ['Tu cartera', ...r.benchmarks.map(b => b.nombre)];
   const usd = [puntos.map(p => p.v), ...r.benchmarks.map(b => puntos.map(p => r.valorEn[b.nombre](p.f)))];
@@ -73,6 +79,7 @@ function contenidoPeriodo(e, r, per) {
   const ganancia = fin.v - puntos[0].v - aportado;
   const final = i => pct[i][pct[i].length - 1] / 100;
   return [
+    avisoIgual,
     h('div.resumen',
       dato('Tu cartera', color(final(0), fmt.pctSigno(final(0), 1)), `${fmt.signo(ganancia)} USD de ganancia`),
       ...r.benchmarks.map((b, k) => dato(b.nombre, color(final(k + 1), fmt.pctSigno(final(k + 1), 1)), 'con los mismos aportes')),
