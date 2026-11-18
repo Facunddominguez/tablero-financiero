@@ -1,7 +1,7 @@
 // Pruebas que no necesitan tus datos: corren en cada PR (GitHub Actions) y también dentro de tests.html.
 // Devuelve [nombre, fn] como las asincrónicas de js/pruebas.js.
 import { tickersPropios, esRespaldoPlano } from './estado.js';
-import { deflactor, rendimiento, xirr } from './finanzas.js';
+import { deflactor, rendimiento, xirr, curvaPorcentual } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
 
@@ -41,6 +41,19 @@ export function pruebasPublicas() {
       const sin = rendimiento({ ...estado, mercado: null });
       if (sin.cartera.xirr_real !== null || sin.inflacion !== null) throw new Error('sin IPC debería quedar vacío');
       cerca(xirr([{ fecha: '2025-01-01', monto: -100 }, { fecha: '2026-01-01', monto: 110 }]), 0.1, 0.001, 'xirr');
+    }],
+
+    ['Evolución en %: un aporte no cuenta como ganancia', async () => {
+      // 100 → 110 (+10%) → aporta 50 y queda en 176: ganó 16 sobre 110 (+14,5%). Acumulado ≈ 26%, no 76%.
+      const diario = [{ f: '2026-01-01', v: 100 }, { f: '2026-01-02', v: 110 }, { f: '2026-01-03', v: 176 }];
+      const c = curvaPorcentual(diario, [{ fecha: '2026-01-03', usd: 50 }, { fecha: '2025-12-01', usd: 100 }]);
+      cerca(c[0], 0, 1e-12, 'arranca en 0');
+      cerca(c[1], 0.10, 1e-12, 'primer tramo');
+      cerca(c[2], 1.1 * (1 + 16 / 110) - 1, 1e-9, 'acumulado con aporte el último día');
+      // Varios días sin abrir: el aporte del principio del tramo se cuenta como invertido casi todo el tramo.
+      const hueco = [{ f: '2026-01-01', v: 100 }, { f: '2026-01-31', v: 165 }];
+      const h = curvaPorcentual(hueco, [{ fecha: '2026-01-01', usd: 0 }, { fecha: '2026-01-02', usd: 50 }]);
+      cerca(h[1], 15 / (100 + 50 * 29 / 30), 1e-9, 'Dietz modificado');
     }],
 
     ['Vencimientos: lista lo próximo y lo vencido sin registrar, no lo ya cobrado', async () => {

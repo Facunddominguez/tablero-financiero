@@ -118,6 +118,28 @@ export function rendimiento(estado) {
   return out;
 }
 
+// Rendimiento acumulado "por tiempo" (TWR): encadena la variación entre cada par de fechas
+// descontando los aportes que entraron en el medio, así un aporte no se confunde con ganancia.
+// Dentro de cada tramo pondera el aporte por los días que estuvo invertido (Dietz modificado):
+// con un punto por día casi no importa; sirve cuando pasan varios días sin abrir el tablero.
+// puntos: [{ f, v }] ordenados; aportes: [{ fecha, usd }]. Devuelve el % acumulado en cada fecha (0 en la primera).
+export function curvaPorcentual(puntos, aportes) {
+  const out = [];
+  let indice = 1;
+  puntos.forEach((p, i) => {
+    if (i > 0) {
+      const ant = puntos[i - 1], largo = Math.max(1, fechas.dias(ant.f, p.f));
+      const tramo = aportes.filter(a => a.fecha > ant.f && a.fecha <= p.f);
+      const flujo = suma(tramo, a => a.usd);
+      const ponderado = suma(tramo, a => a.usd * fechas.dias(a.fecha, p.f) / largo);
+      const capital = ant.v + ponderado;
+      if (ant.v > 0 && capital > 0 && p.v != null) indice *= 1 + (p.v - ant.v - flujo) / capital;
+    }
+    out.push(indice - 1);
+  });
+  return out;
+}
+
 // Costos explícitos (gastos de compra y venta) de los últimos 12 meses sobre el patrimonio medio (regla C3).
 export function costosAnuales(estado) {
   const desde = fechas.sumar(estado.hoy, -365);
