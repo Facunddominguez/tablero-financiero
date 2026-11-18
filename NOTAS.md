@@ -28,6 +28,8 @@ Cómo funciona: antes de subir lee el archivo directo de la API de GitHub, lo fu
 
 Sin permiso se puede bajar una copia cifrada (⋯ → Sincronizar → "Otra forma"), que sirve de respaldo.
 
+**Respaldo** (⋯ → Respaldo): baja todo cifrado con la clave; se vuelve a abrir desde ahí mismo o con `tools/cripto.py descifrar`. Si se cifró con una clave anterior, pide esa frase. La copia sin cifrar queda plegada en "Bajar sin cifrar".
+
 ## Precios a horario
 
 GitHub atrasa o saltea a veces las corridas programadas (`schedule`): en noviembre de 2026 corría una o dos de las tres por día. Por eso hay dos caminos más, y el workflow evita trabajo repetido:
@@ -84,6 +86,7 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | `js/cripto.js`, `js/db.js` | WebCrypto e IndexedDB. |
 | `js/ui/*.js` | Pantallas, menú y el paso a paso del mes (`mes.js`). |
 | `js/pruebas.js` | Pruebas; corren en `tests.html` y con `node tools/pruebas_node.mjs`. |
+| `js/pruebas_publicas.js` | Pruebas que no usan datos privados (ADR, inflación, vencimientos, respaldo cifrado); también corren en cada PR. |
 | `tools/mercado.py` | Escribe `data/market.json`, `data/insiders.json` y `data/historico.json`. Si una fuente falla, conserva el último dato y lo marca `stale`. |
 | `data/calendario.json` | Cupones y amortización de la ON, por cada 1 de valor nominal. |
 
@@ -99,6 +102,7 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | MEP promedio por mes | api.argentinadatos.com `/v1/cotizaciones/dolares/bolsa` |
 | ETF en USD e histórico | yfinance (cierre ajustado diario) |
 | Compras de directivos | OpenInsider, tabla del filtro configurado en `tools/mercado_config.json` |
+| Inflación de EE.UU. | FRED, serie `CPIAUCSL` (CSV público, sin clave): rendimiento real en Informes |
 
 ## Probar en la computadora
 
@@ -107,5 +111,14 @@ python tools/servidor.py
 ```
 
 y abrir http://localhost:8765. Pruebas: http://localhost:8765/tests.html o `node tools/pruebas_node.mjs` (necesita los datos descifrados en `privado/`).
+
+Sin datos privados (lo mismo que corre GitHub Actions en cada PR, workflow `pruebas.yml`):
+
+```bash
+node tools/chequear_modulos.mjs && node tools/pruebas_publicas.mjs
+python tools/pruebas_alertas.py && python tools/pruebas_mercado.py
+```
+
+El Action de mercado instala `yfinance` desde `tools/requirements.txt` (rango acotado a la versión mayor actual) y deja la versión en el registro de la corrida.
 
 Los cambios de código van por rama y PR; a `main` solo escriben directo el Action de mercado y la sincronización de la app.

@@ -1,6 +1,7 @@
 // Motor: reglas y planificador. Funciones puras que solo leen el estado (los umbrales salen de los datos).
 import { fechas, fmt, suma } from './util.js';
 import { costoEntradaLote, costosAnuales, brechaAportes } from './finanzas.js';
+import { tickersPropios } from './estado.js';
 
 const PRIORIDAD = { emergencia: 1, regla: 2, aporte: 3, flujo: 4, datos: 5, trimestral: 6, pendiente: 7, anual: 8, aviso: 9, senal: 10 };
 
@@ -425,8 +426,8 @@ export function planificador(e, hoy = e.hoy) {
   }
 
   // 9 · Señales externas (solo informativas)
-  const propios = new Set(e.posiciones.map(p => p.subyacente || p.ticker)), watch = new Set((d.watchlist || []).map(w => w.ticker));
-  const donde = t => propios.has(t) ? 'lo tenés en cartera' : watch.has(t) ? 'está en tu watchlist' : null;
+  const propios = tickersPropios(e.posiciones), watch = new Set((d.watchlist || []).map(w => w.ticker));
+  const donde = t => propios.has(t) ? (propios.get(t) === t ? 'lo tenés en cartera' : `lo tenés en cartera (como ${propios.get(t)})`) : watch.has(t) ? 'está en tu watchlist' : null;
   const etiqueta = soloObs ? 'Solo observación' : 'Informativo';
   const porTicker = {};
   for (const f of e.insiders.filas || []) if (donde(f.ticker) && fechas.dias(f.fecha, hoy) <= 10) (porTicker[f.ticker] = porTicker[f.ticker] || []).push(f);
@@ -464,4 +465,19 @@ export function proximaAccion(e, hoy = e.hoy) {
     if ([1, 4, 7, 10].includes(fechas.nMes(f))) { cand.push({ fecha: f, texto: 'revisión trimestral' }); break; }
   }
   return cand.sort((a, b) => a.fecha < b.fecha ? -1 : 1)[0];
+}
+
+// Cupones, dividendos y amortizaciones del calendario para lo que tenés: los próximos y los vencidos sin registrar.
+// Puro. Cada uno: { ticker, fecha, tipo, detalle, usd, cobrado, vencido }.
+export function proximosFlujos(e, hoy = e.hoy) {
+  const cobros = new Set((e.datos.cobros || []).map(c => c.ref));
+  const out = [];
+  for (const f of e.calendario?.flujos || []) {
+    const p = e.posiciones.find(x => x.ticker === f.ticker);
+    if (!p || !p.cantidad) continue;
+    const cobrado = cobros.has(`${f.ticker}-${f.fecha}-${f.tipo}`);
+    if (f.fecha < hoy && cobrado) continue;
+    out.push({ ticker: f.ticker, fecha: f.fecha, tipo: f.tipo, detalle: f.detalle, usd: f.por_vn * p.cantidad, cobrado, vencido: f.fecha < hoy });
+  }
+  return out.sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
 }

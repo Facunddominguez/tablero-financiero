@@ -2,14 +2,15 @@
 import { h, fmt } from '../util.js';
 import { tabla, chip, aviso } from './comun.js';
 import { proyeccion } from '../motor.js';
+import { tickersPropios } from '../estado.js';
 
 export function vistaRadar(ctx) {
   const e = ctx.estado, d = e.datos;
   const cedears = e.mercado?.cedears?.precios || {};
   const watch = new Set((d.watchlist || []).map(w => w.ticker));
-  const mios = new Set(e.posiciones.map(p => p.subyacente || p.ticker));
+  const mios = tickersPropios(e.posiciones);
   const marcas = t => h('span.marcas',
-    mios.has(t) ? chip('En tu cartera', 'acento') : null, cedears[t] ? chip('Hay CEDEAR', 'ok') : null,
+    mios.has(t) ? chip(mios.get(t) === t ? 'En tu cartera' : `En tu cartera (${mios.get(t)})`, 'acento') : null, cedears[t] ? chip('Hay CEDEAR', 'ok') : null,
     watch.has(t) ? chip('En watchlist', 'acento') : null);
   const ins = e.insiders || { filas: [] };
   const filas = (ins.filas || []).slice().sort((a, b) => b.monto - a.monto);
@@ -21,12 +22,12 @@ export function vistaRadar(ctx) {
     h('section',
       h('h2', 'Compras de directivos · últimos 7 días'),
       filas.length ? tabla([
-        { titulo: 'Ticker', celda: f => [h('strong.num', f.ticker), h('span.empresa', f.empresa)] },
+        // Las marcas van debajo del nombre: así se ven en el celular sin deslizar la tabla.
+        { titulo: 'Ticker', celda: f => [h('strong.num', f.ticker), h('span.empresa', f.empresa), marcas(f.ticker)] },
         { titulo: 'Insiders', num: 1, celda: f => fmt.num(f.insiders) },
         { titulo: 'Monto USD', num: 1, celda: f => fmt.num(f.monto) },
         { titulo: 'Δ tenencia', num: 1, celda: f => f.delta_tenencia || '—' },
         { titulo: 'Fecha', num: 1, celda: f => fmt.fecha(f.fecha) },
-        { titulo: '', celda: f => marcas(f.ticker) },
       ], filas) : h('p.nota', 'No hay compras en grupo que cumplan el filtro esta semana.'),
       h('p.nota', { style: 'margin-top:.75rem' },
         `Fuente: OpenInsider (3 o más directivos comprando, por más de USD 400 mil). ${ins.actualizado ? 'Actualizado ' + fmt.hace(ins.actualizado) + '.' : ''}${ins.stale ? ' El último intento falló: se muestra el dato anterior.' : ''} `,

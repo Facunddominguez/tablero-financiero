@@ -1,0 +1,36 @@
+name: Pruebas
+
+# Corre en cada PR y en cada cambio de código en main. Solo lo que no necesita los datos descifrados:
+# la batería completa (con los valores de control) sigue siendo tests.html o node tools/pruebas_node.mjs con la clave.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths: ["js/**", "tools/**", ".github/workflows/pruebas.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Módulos de la app (sintaxis e importaciones)
+        run: |
+          node tools/chequear_modulos.mjs
+          node --input-type=module --check < js/app.js
+          node --input-type=module --check < js/pagina-pruebas.js
+      - name: Pruebas sin datos privados
+        run: node tools/pruebas_publicas.mjs
+      - name: Pruebas de alertas
+        run: python tools/pruebas_alertas.py
+      - name: Pruebas de mercado
+        run: python tools/pruebas_mercado.py

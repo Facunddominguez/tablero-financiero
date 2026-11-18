@@ -1,0 +1,3 @@
+# Dependencias del Action de mercado. Rango acotado: no salta solo a una versión mayor nueva.
+# Para actualizar: cambiar el rango acá y revisar que la corrida siga diciendo "ok usd + historico".
+yfinance>=1.6,<2

@@ -81,8 +81,9 @@ function rendimientoInforme(ctx) {
       tabla([
         { titulo: '', celda: f => h('strong', f.nombre) }, { titulo: 'Aportado', num: 1, celda: f => fmt.num(f.aportado) }, { titulo: 'Valor hoy', num: 1, celda: f => fmt.num(f.valor) },
         { titulo: 'Ganancia', num: 1, celda: f => color(f.ganancia, fmt.signo(f.ganancia)) }, { titulo: 'Anual (XIRR)', num: 1, celda: f => f.xirr == null ? '—' : color(f.xirr, fmt.pctSigno(f.xirr)) },
+        ...(r.inflacion ? [{ titulo: 'Anual real', num: 1, celda: f => f.xirr_real == null ? '—' : color(f.xirr_real, fmt.pctSigno(f.xirr_real)) }] : []),
       ], filas),
-      r.benchmarks.length ? h('p.nota', { style: 'margin-top:.6rem' }, `${dif == null || br.relevante ? '' : `${dif >= 0 ? 'Vas' : 'Venís'} ${fmt.pp(Math.abs(dif)).replace('+', '')} ${dif >= 0 ? 'por encima' : 'por debajo'} de SPY por año. `}Los benchmarks simulan comprar el ETF en USD el día de cada aporte, con dividendos reinvertidos y sin costos.`)
+      r.benchmarks.length ? h('p.nota', { style: 'margin-top:.6rem' }, `${dif == null || br.relevante ? '' : `${dif >= 0 ? 'Vas' : 'Venís'} ${fmt.pp(Math.abs(dif)).replace('+', '')} ${dif >= 0 ? 'por encima' : 'por debajo'} de SPY por año. `}Los benchmarks simulan comprar el ETF en USD el día de cada aporte, con dividendos reinvertidos y sin costos.${r.inflacion ? ` "Anual real" descuenta la inflación de EE.UU. (IPC, FRED): desde ${fmt.mes(r.inflacion.desde)} hasta ${fmt.mes(r.inflacion.hasta)} los precios subieron ${fmt.pct(r.inflacion.acumulada, 1)}.` : ''}`)
         : h('p.nota', 'Todavía no hay precios históricos para simular los benchmarks.')),
     sec('Lo invertido a largo plazo, por bloque', (() => {
       const filas = rendimientoPorBloque(e), pc = x => x == null ? '—' : color(x, fmt.pctSigno(x));

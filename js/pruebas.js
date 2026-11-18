@@ -11,6 +11,7 @@ import { fortaleza, generarFrase } from './seguridad.js';
 import { proyeccion, paraEmergencia, movimientosFuertes } from './motor.js';
 import { rendimientoPorBloque } from './finanzas.js';
 import { brechaAportes } from './finanzas.js';
+import { pruebasPublicas } from './pruebas_publicas.js';
 
 export function correrPruebas(base, ext = {}) {
   const res = [];
@@ -293,7 +294,7 @@ export function correrPruebas(base, ext = {}) {
     catch (err) { if (err.codigo !== 'permiso') throw err; }
     if (local.eventos.length !== 1) throw new Error('tocó lo local');
   }]);
-  if (ext.asincronicas) ext.asincronicas.push(...pruebasPrecios());
+  if (ext.asincronicas) ext.asincronicas.push(...pruebasPrecios(), ...pruebasPublicas());
 
   if (ext.historico?.fechas?.length) prueba('Benchmark simulado con los mismos aportes', () => {
     const r = rendimiento(valuar(aplicarEventos(limpio), { historico: ext.historico }, fechaBase));

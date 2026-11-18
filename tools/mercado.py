@@ -119,6 +119,27 @@ def mep_mensual():
     return {"meses": {m: round(sum(v) / len(v), 2) for m, v in sorted(meses.items())[-36:]}}
 
 
+def cpi_usa():
+    """IPC de EE.UU. (CPIAUCSL, mensual, desestacionalizado) desde FRED: CSV público, sin clave."""
+    texto = bajar("https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL")
+    desde = CFG["historico_desde"][:7]
+    meses = {}
+    for linea in texto.strip().splitlines()[1:]:
+        partes = linea.strip().split(",")
+        if len(partes) != 2:
+            continue
+        fecha, valor = partes
+        try:
+            v = float(valor)
+        except ValueError:  # FRED marca con "." los meses sin dato
+            continue
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", fecha) and fecha[:7] >= desde:
+            meses[fecha[:7]] = round(v, 3)
+    if len(meses) < 6:
+        raise RuntimeError("cpi_usa: sin historia")
+    return {"meses": dict(sorted(meses.items())), "serie": "CPIAUCSL"}
+
+
 def yahoo(ticker, desde):
     """Cierres diarios (cierre, cierre ajustado) con yfinance."""
     import yfinance as yf  # se importa acá para que el resto funcione aunque no esté instalado
@@ -202,6 +223,7 @@ def main():
     mercado["ons"] = seccion("ons", m_prev.get("ons"), lambda: data912("arg_corp", 100))
     mercado["fci"] = seccion("fci", m_prev.get("fci"), fci)
     mercado["mep_mensual"] = seccion("mep_mensual", m_prev.get("mep_mensual"), mep_mensual)
+    mercado["cpi_usa"] = seccion("cpi_usa", m_prev.get("cpi_usa"), cpi_usa)
 
     hist = h_prev
     try:

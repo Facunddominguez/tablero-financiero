@@ -260,7 +260,9 @@ Los valores de R4 (hasta la alerta) y R6 (máximo aceptado) son puntos de partid
 
 ---
 
-## Etapa 6 · Extras (priorizados; nada implementado)
+## Etapa 6 · Extras (priorizados)
+
+Hechos en la rama `mejoras-revision`: 1 (respaldo cifrado), 4 en parte (pruebas sin datos privados en cada PR; la batería completa sigue necesitando la clave), 5 (vencimientos en Cartera). También: Radar reconoce acciones locales por su ADR (PAMP → PAM, YPFD → YPF), Cartera resumida en el celular, rendimiento real con el IPC de EE.UU. (FRED) y `yfinance` acotado a la versión mayor actual. El 7 (repo de datos aparte) queda descartado: los datos no son sensibles para el dueño.
 
 | # | Idea | Valor | Esfuerzo | Nota |
 |---|---|---|---|---|
