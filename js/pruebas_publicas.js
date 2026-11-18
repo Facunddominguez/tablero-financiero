@@ -1,7 +1,7 @@
 // Pruebas que no necesitan tus datos: corren en cada PR (GitHub Actions) y también dentro de tests.html.
 // Devuelve [nombre, fn] como las asincrónicas de js/pruebas.js.
 import { tickersPropios, esRespaldoPlano } from './estado.js';
-import { deflactor, rendimiento, xirr, curvaPorcentual } from './finanzas.js';
+import { deflactor, rendimiento, xirr, curvaPorcentual, puntosDelPeriodo } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
 
@@ -54,6 +54,16 @@ export function pruebasPublicas() {
       const hueco = [{ f: '2026-01-01', v: 100 }, { f: '2026-01-31', v: 165 }];
       const h = curvaPorcentual(hueco, [{ fecha: '2026-01-01', usd: 0 }, { fecha: '2026-01-02', usd: 50 }]);
       cerca(h[1], 15 / (100 + 50 * 29 / 30), 1e-9, 'Dietz modificado');
+    }],
+
+    ['Período: el mes y el año arrancan en el último dato anterior; sin datos previos, en el primero', async () => {
+      const snaps = { '2025-12-20': { t: 90 }, '2026-01-10': { t: 95 }, '2026-10-31': { t: 100 }, '2026-11-05': { t: 104 }, '2026-11-18': { t: 108 } };
+      const fs = per => puntosDelPeriodo(snaps, '2026-11-18', per).map(p => p.f).join();
+      if (fs('mes') !== '2026-10-31,2026-11-05,2026-11-18') throw new Error('mes: ' + fs('mes'));
+      if (fs('anio') !== '2025-12-20,2026-01-10,2026-10-31,2026-11-05,2026-11-18') throw new Error('año: ' + fs('anio'));
+      if (fs('todo').split(',').length !== 5) throw new Error('todo');
+      const sinPrevio = puntosDelPeriodo({ '2026-11-05': { t: 1 }, '2026-11-06': { t: 2 } }, '2026-11-18', 'mes');
+      if (sinPrevio[0].f !== '2026-11-05') throw new Error('sin dato previo');
     }],
 
     ['Vencimientos: lista lo próximo y lo vencido sin registrar, no lo ya cobrado', async () => {

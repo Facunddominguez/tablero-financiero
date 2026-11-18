@@ -140,6 +140,15 @@ export function curvaPorcentual(puntos, aportes) {
   return out;
 }
 
+// Puntos del período: arranca en el último registro anterior al inicio (así el primer día cuenta) o en el primero que haya.
+export function puntosDelPeriodo(snapshots, hoy, per) {
+  const todos = Object.entries(snapshots).sort().map(([f, s]) => ({ f, v: s.t }));
+  if (per === 'todo') return todos;
+  const inicio = per === 'mes' ? hoy.slice(0, 7) + '-01' : hoy.slice(0, 4) + '-01-01';
+  const antes = todos.filter(p => p.f < inicio).pop();
+  return [...(antes ? [antes] : []), ...todos.filter(p => p.f >= inicio)];
+}
+
 // Costos explícitos (gastos de compra y venta) de los últimos 12 meses sobre el patrimonio medio (regla C3).
 export function costosAnuales(estado) {
   const desde = fechas.sumar(estado.hoy, -365);

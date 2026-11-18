@@ -1,6 +1,6 @@
 // Pantalla Informes: cinco informes de una página, imprimibles (window.print + CSS de impresión).
-import { h, fmt, fechas, suma } from '../util.js';
-import { rendimiento, costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, curvaPorcentual } from '../finanzas.js';
+import { h, fmt, fechas, suma, poner } from '../util.js';
+import { rendimiento, costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, curvaPorcentual, puntosDelPeriodo } from '../finanzas.js';
 import { NOMBRE_GRUPO } from '../estado.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase } from './comun.js';
 
@@ -46,25 +46,44 @@ function mensual(ctx) {
 }
 
 // ---------- Rendimiento ----------
-function graficoEvolucion(e, r) {
-  const puntos = Object.entries(e.datos.snapshots).sort().map(([f, s]) => ({ f, v: s.t }));
-  if (puntos.length < 3) return h('p.nota', `La evolución se dibuja con un punto por cada día que abrís el tablero. Por ahora hay ${puntos.length}; a partir del tercero aparece el gráfico.`);
-  const nombres = ['Tu cartera', ...r.benchmarks.map(b => b.nombre)];
-  const series = [puntos.map(p => p.v), ...r.benchmarks.map(b => puntos.map(p => r.valorEn[b.nombre](p.f)))];
-  return graficoLineas(puntos, nombres, series, { aria: 'Evolución del patrimonio contra los benchmarks', y: v => fmt.num(v), tip: v => fmt.usd(v) });
+// ---------- Período: este mes, este año o desde el inicio ----------
+const PERIODOS = [['mes', 'Este mes'], ['anio', 'Este año'], ['todo', 'Desde el inicio']];
+
+function bloquePeriodo(e, r) {
+  let per = 'todo';
+  const caja = h('div');
+  const botones = PERIODOS.map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(k === per), onclick: () => {
+    per = k;
+    botones.forEach((b, i) => b.setAttribute('aria-pressed', String(PERIODOS[i][0] === per)));
+    poner(caja, contenidoPeriodo(e, r, per));
+  } }, t));
+  poner(caja, contenidoPeriodo(e, r, per));
+  return [h('div.conmutador.chico', { role: 'group', 'aria-label': 'Período' }, botones), caja];
 }
 
-// Lo mismo en %: cuánto rindió cada línea desde el primer punto, sin contar los aportes como ganancia.
-function graficoPorcentual(e, r) {
-  const puntos = Object.entries(e.datos.snapshots).sort().map(([f, s]) => ({ f, v: s.t }));
-  if (puntos.length < 3) return null;
+function contenidoPeriodo(e, r, per) {
+  const puntos = puntosDelPeriodo(e.datos.snapshots, e.hoy, per);
+  if (puntos.length < 2) return h('p.nota', { style: 'margin-top:1rem' }, 'Todavía no hay datos de este período: se guarda un punto por cada día que abrís el tablero.');
   const aportes = e.datos.cashflows_externos_usd;
   const nombres = ['Tu cartera', ...r.benchmarks.map(b => b.nombre)];
-  const series = [puntos, ...r.benchmarks.map(b => puntos.map(p => ({ f: p.f, v: r.valorEn[b.nombre](p.f) })))]
-    .map(pts => curvaPorcentual(pts, aportes).map(x => x * 100));
+  const usd = [puntos.map(p => p.v), ...r.benchmarks.map(b => puntos.map(p => r.valorEn[b.nombre](p.f)))];
+  const pct = usd.map(vals => curvaPorcentual(puntos.map((p, i) => ({ f: p.f, v: vals[i] })), aportes).map(x => x * 100));
+  const f0 = puntos[0].f, fin = puntos[puntos.length - 1];
+  const aportado = suma(aportes.filter(a => a.fecha > f0 && a.fecha <= fin.f), a => a.usd);
+  const ganancia = fin.v - puntos[0].v - aportado;
+  const final = i => pct[i][pct[i].length - 1] / 100;
   return [
-    ...graficoLineas(puntos, nombres, series, { aria: 'Rendimiento acumulado en % contra los benchmarks', y: v => fmt.num(v, 0) + '%', tip: v => fmt.pctSigno(v / 100, 1), cero: true }),
-    h('p.nota', { style: 'margin-top:.6rem' }, `Cuánto rindió cada línea desde el ${fmt.fecha(puntos[0].f)}. Los aportes no cuentan como ganancia: se descuentan el día que entran.`),
+    h('div.resumen',
+      dato('Tu cartera', color(final(0), fmt.pctSigno(final(0), 1)), `${fmt.signo(ganancia)} USD de ganancia`),
+      ...r.benchmarks.map((b, k) => dato(b.nombre, color(final(k + 1), fmt.pctSigno(final(k + 1), 1)), 'con los mismos aportes')),
+      dato('Aportes', fmt.usd(aportado), `desde el ${fmt.fecha(f0)}`)),
+    sec('Evolución', puntos.length < 3
+      ? h('p.nota', `El gráfico aparece a partir del tercer día con datos en el período (hay ${puntos.length}).`)
+      : graficoLineas(puntos, nombres, usd, { aria: 'Evolución del patrimonio contra los benchmarks', y: v => fmt.num(v), tip: v => fmt.usd(v) })),
+    puntos.length < 3 ? null : sec('Evolución en %', [
+      ...graficoLineas(puntos, nombres, pct, { aria: 'Rendimiento acumulado en % contra los benchmarks', y: v => fmt.num(v, 0) + '%', tip: v => fmt.pctSigno(v / 100, 1), cero: true }),
+      h('p.nota', { style: 'margin-top:.6rem' }, `Cuánto rindió cada línea desde el ${fmt.fecha(f0)}. Los aportes no cuentan como ganancia: se descuentan el día que entran.`),
+    ]),
   ];
 }
 
@@ -95,7 +114,8 @@ function rendimientoInforme(ctx) {
   const dif = r.benchmarks[0] && r.cartera.xirr != null ? r.cartera.xirr - r.benchmarks[0].xirr : null;
   return hoja('Rendimiento', `en USD MEP · al ${fmt.fecha(e.hoy)}`,
     br.relevante ? aviso(`Ojo: lo que hoy tenés costó ${fmt.usd(br.costo)} y los aportes cargados suman ${fmt.usd(br.aportado)}. Si falta cargar algún aporte, el rendimiento anual de tu cartera está inflado. Revisalo antes de sacar conclusiones.`, 'alerta') : null,
-    sec('Todo el patrimonio, con los mismos aportes en las mismas fechas',
+    bloquePeriodo(e, r),
+    sec('Desde el inicio: todo el patrimonio, con los mismos aportes en las mismas fechas',
       tabla([
         { titulo: '', celda: f => h('strong', f.nombre) }, { titulo: 'Aportado', num: 1, celda: f => fmt.num(f.aportado) }, { titulo: 'Valor hoy', num: 1, celda: f => fmt.num(f.valor) },
         { titulo: 'Ganancia', num: 1, celda: f => color(f.ganancia, fmt.signo(f.ganancia)) }, { titulo: 'Anual (XIRR)', num: 1, celda: f => f.xirr == null ? '—' : color(f.xirr, fmt.pctSigno(f.xirr)) },
@@ -112,8 +132,6 @@ function rendimientoInforme(ctx) {
       ], filas),
       h('p.nota', { style: 'margin-top:.6rem' }, 'Deja afuera el fondo de emergencia, que no está para rendir. Mide lo que hoy tenés desde la compra de cada lote (no cuenta lo ya vendido) y lo compara con haber puesto esa misma plata, esos mismos días, en el núcleo o en SPY. Tu vara es el núcleo: es lo que elegiste como base; SPY es el objetivo declarado. Con menos de tres meses de antigüedad media no se muestra la tasa anual: todavía no dice nada.')];
     })()),
-    sec('Evolución', graficoEvolucion(e, r)),
-    (g => g && sec('Evolución en %', g))(graficoPorcentual(e, r)),
     sec('Costos (regla C3)', h('div.resumen',
       dato('Últimos 12 meses', fmt.usd(c.usd, 2), 'comisiones y gastos de operaciones'),
       dato('Sobre patrimonio medio', fmt.pct(c.pct, 2), C3 ? `alerta ${fmt.pct(C3.alerta, 2)} · auditoría ${fmt.pct(C3.auditoria, 2)}` : ''),
