@@ -1,6 +1,6 @@
 // Pantalla Informes: cinco informes de una página, imprimibles (window.print + CSS de impresión).
 import { h, fmt, fechas, suma } from '../util.js';
-import { rendimiento, costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque } from '../finanzas.js';
+import { rendimiento, costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, curvaPorcentual } from '../finanzas.js';
 import { NOMBRE_GRUPO } from '../estado.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase } from './comun.js';
 
@@ -50,20 +50,38 @@ function graficoEvolucion(e, r) {
   const puntos = Object.entries(e.datos.snapshots).sort().map(([f, s]) => ({ f, v: s.t }));
   if (puntos.length < 3) return h('p.nota', `La evolución se dibuja con un punto por cada día que abrís el tablero. Por ahora hay ${puntos.length}; a partir del tercero aparece el gráfico.`);
   const nombres = ['Tu cartera', ...r.benchmarks.map(b => b.nombre)];
-  const lienzo = h('canvas', { role: 'img', 'aria-label': 'Evolución del patrimonio contra los benchmarks' });
+  const series = [puntos.map(p => p.v), ...r.benchmarks.map(b => puntos.map(p => r.valorEn[b.nombre](p.f)))];
+  return graficoLineas(puntos, nombres, series, { aria: 'Evolución del patrimonio contra los benchmarks', y: v => fmt.num(v), tip: v => fmt.usd(v) });
+}
+
+// Lo mismo en %: cuánto rindió cada línea desde el primer punto, sin contar los aportes como ganancia.
+function graficoPorcentual(e, r) {
+  const puntos = Object.entries(e.datos.snapshots).sort().map(([f, s]) => ({ f, v: s.t }));
+  if (puntos.length < 3) return null;
+  const aportes = e.datos.cashflows_externos_usd;
+  const nombres = ['Tu cartera', ...r.benchmarks.map(b => b.nombre)];
+  const series = [puntos, ...r.benchmarks.map(b => puntos.map(p => ({ f: p.f, v: r.valorEn[b.nombre](p.f) })))]
+    .map(pts => curvaPorcentual(pts, aportes).map(x => x * 100));
+  return [
+    ...graficoLineas(puntos, nombres, series, { aria: 'Rendimiento acumulado en % contra los benchmarks', y: v => fmt.num(v, 0) + '%', tip: v => fmt.pctSigno(v / 100, 1), cero: true }),
+    h('p.nota', { style: 'margin-top:.6rem' }, `Cuánto rindió cada línea desde el ${fmt.fecha(puntos[0].f)}. Los aportes no cuentan como ganancia: se descuentan el día que entran.`),
+  ];
+}
+
+function graficoLineas(puntos, nombres, series, op) {
+  const lienzo = h('canvas', { role: 'img', 'aria-label': op.aria });
   cargarScript(CDN.chart).then(() => {
     if (!lienzo.isConnected) return;
     const c = coloresSeries();
-    const series = [puntos.map(p => p.v), ...r.benchmarks.map(b => puntos.map(p => r.valorEn[b.nombre](p.f)))];
     new Chart(lienzo, {
       type: 'line',
       data: { labels: puntos.map(p => `${p.f.slice(8, 10)}/${p.f.slice(5, 7)}/${p.f.slice(2, 4)}`), datasets: series.map((data, i) => ({ label: nombres[i], data, borderColor: c.series[i], backgroundColor: c.series[i], borderWidth: 2, pointRadius: puntos.length > 40 ? 0 : 2.5, pointHoverRadius: 5, tension: 0 })) },
       options: {
         animation: false, responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ` ${x.dataset.label}: ${fmt.usd(x.parsed.y)}` }, bodyFont: { family: c.num } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ` ${x.dataset.label}: ${op.tip(x.parsed.y)}` }, bodyFont: { family: c.num } } },
         scales: {
           x: { grid: { display: false }, ticks: { color: c.tinta2, maxTicksLimit: 6, font: { family: c.num, size: 11 } }, border: { color: c.linea } },
-          y: { grid: { color: c.linea }, ticks: { color: c.tinta2, font: { family: c.num, size: 11 }, callback: v => fmt.num(v) }, border: { display: false } },
+          y: { grid: { color: op.cero ? (g => g.tick.value === 0 ? c.tinta2 : c.linea) : c.linea }, ticks: { color: c.tinta2, font: { family: c.num, size: 11 }, callback: op.y }, border: { display: false } },
         },
       },
     });
@@ -95,6 +113,7 @@ function rendimientoInforme(ctx) {
       h('p.nota', { style: 'margin-top:.6rem' }, 'Deja afuera el fondo de emergencia, que no está para rendir. Mide lo que hoy tenés desde la compra de cada lote (no cuenta lo ya vendido) y lo compara con haber puesto esa misma plata, esos mismos días, en el núcleo o en SPY. Tu vara es el núcleo: es lo que elegiste como base; SPY es el objetivo declarado. Con menos de tres meses de antigüedad media no se muestra la tasa anual: todavía no dice nada.')];
     })()),
     sec('Evolución', graficoEvolucion(e, r)),
+    (g => g && sec('Evolución en %', g))(graficoPorcentual(e, r)),
     sec('Costos (regla C3)', h('div.resumen',
       dato('Últimos 12 meses', fmt.usd(c.usd, 2), 'comisiones y gastos de operaciones'),
       dato('Sobre patrimonio medio', fmt.pct(c.pct, 2), C3 ? `alerta ${fmt.pct(C3.alerta, 2)} · auditoría ${fmt.pct(C3.auditoria, 2)}` : ''),
