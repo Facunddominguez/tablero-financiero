@@ -148,10 +148,11 @@ export function curvaPorcentual(puntos, aportes) {
 }
 
 // ---------- Historia de tu cartera ----------
-// Antes del primer registro diario no hay valores guardados: se reconstruyen con los lotes que tenés hoy,
-// cada uno desde su fecha de compra, valuados con el precio histórico de su subyacente en EE.UU. (escalado
-// para que hoy dé el valor real) o, si no hay serie (ON, FCI), interpolando entre lo que costó y lo que vale hoy.
-// No incluye la caja ni lo vendido antes de empezar a registrar.
+// Antes del primer registro diario no hay valores guardados: se estiman con los lotes que tenés hoy, cada uno
+// desde su fecha de compra, valuados con el precio histórico de su subyacente en EE.UU. (escalado para que hoy
+// dé el valor real) o, si no hay serie (ON, FCI), en línea recta entre lo que costó y lo que vale hoy. Se suma
+// la caja estimada: aportes cargados menos lo que costaron las compras (si una compra no tiene aporte cargado,
+// se toma como aporte implícito). No incluye lo vendido antes de empezar a registrar.
 // Devuelve { puntos: [{ f, v, rec }], indice: [factor acumulado], ganancia: [USD acumulados], hastaRec }.
 export function historiaCartera(estado) {
   const d = estado.datos, hoy = estado.hoy;
@@ -184,28 +185,39 @@ export function historiaCartera(estado) {
   return { puntos, indice, ganancia, hastaRec: rec ? primero : null };
 }
 
-// Puntos diarios (días hábiles de la serie histórica) desde la primera compra hasta `hasta` inclusive.
-// Cada punto: { f, v: valor USD, entra: valor de lo comprado ese tramo (cuenta como aporte, no como ganancia) }.
+// Puntos diarios (días hábiles de la serie histórica) desde el primer aporte o compra hasta `hasta` inclusive.
+// Cada punto: { f, v: tenencias + caja en USD, entra: lo que entró en el tramo y no es ganancia }.
+// "entra" = aportes del tramo + aportes implícitos + (valor estimado − costo) de lo comprado en el tramo,
+// así la diferencia entre el precio estimado y el que pagaste no se cuenta como ganancia ni pérdida.
 function reconstruir(estado, hasta) {
   const d = estado.datos, hist = estado.historico, hoy = estado.hoy;
   if (!hist?.fechas?.length) return null;
   const lotes = (d.lotes_costo || []).filter(l => l.fecha_compra && l.fecha_compra < hasta && l.cantidad > 0);
-  if (!lotes.length) return null;
+  const aportes = (d.cashflows_externos_usd || []).filter(a => a.fecha < hasta);
+  if (!lotes.length && !aportes.length) return null;
   const iHoy = indice(hist, hoy, 'valuacion');
   const precios = lotes.map(l => precioLote(estado, l, iHoy));
-  const desde = lotes.reduce((m, l) => l.fecha_compra < m ? l.fecha_compra : m, hasta);
+  const costos = lotes.map(l => costoLoteUSD(l));
+  const desde = [...lotes.map(l => l.fecha_compra), ...aportes.map(a => a.fecha)].sort()[0];
   const dias = hist.fechas.filter(f => f >= desde && f < hasta).concat([hasta]);
   const out = [];
-  let previa = null;
+  let previa = null, implicito = 0;
   for (const f of dias) {
-    let v = 0, entra = 0;
+    let tenencia = 0, costoAcum = 0, ajuste = 0;
     lotes.forEach((l, k) => {
-      if (l.fecha_compra > f || !precios[k]) return;
-      const valor = l.cantidad * precios[k](f);
-      v += valor;
-      if (previa === null || l.fecha_compra > previa) entra += valor;
+      if (l.fecha_compra > f) return;
+      costoAcum += costos[k];
+      const valor = precios[k] ? l.cantidad * precios[k](f) : costos[k];
+      tenencia += valor;
+      if (previa === null || l.fecha_compra > previa) ajuste += valor - costos[k];
     });
-    out.push({ f, v, entra });
+    const aportado = suma(aportes.filter(a => a.fecha <= f), a => a.usd);
+    const tramo = suma(aportes.filter(a => a.fecha <= f && (previa === null || a.fecha > previa)), a => a.usd);
+    const nuevoImplicito = Math.max(implicito, costoAcum - aportado);
+    const entraImplicito = nuevoImplicito - implicito;
+    implicito = nuevoImplicito;
+    const caja = aportado - costoAcum + implicito;
+    out.push({ f, v: tenencia + caja, entra: tramo + entraImplicito + ajuste });
     previa = f;
   }
   return { puntos: out };
@@ -232,6 +244,45 @@ function precioLote(estado, l, iHoy) {
   // Sin serie: línea recta entre lo que costó y lo que vale hoy.
   const costoUnit = costoLoteUSD(l) / l.cantidad, total = Math.max(1, fechas.dias(l.fecha_compra, estado.hoy));
   return f => costoUnit + (hoyUnit - costoUnit) * Math.min(1, Math.max(0, fechas.dias(l.fecha_compra, f) / total));
+}
+
+// Todo lo de un período (mes, año o desde el inicio) para tu cartera y los benchmarks, con una sola vara:
+// rendimiento por tiempo (los aportes no cuentan como ganancia), en USD sin ajustar por inflación.
+// Devuelve { puntos, nombres, usd, pct, filas: [{ nombre, rend, anual, real, ganancia }], aportado, inflacion, dias }.
+export function resumenPeriodo(estado, r, historia, per) {
+  const todos = historia.puntos;
+  const k = inicioDelPeriodo(todos.map(p => p.f), estado.hoy, per);
+  const puntos = todos.slice(k);
+  if (puntos.length < 2) return { puntos, k };
+  const aportes = estado.datos.cashflows_externos_usd || [];
+  const f0 = puntos[0].f, fin = puntos[puntos.length - 1].f, dias = fechas.dias(f0, fin);
+  const nombres = ['Tu cartera', ...r.benchmarks.map(b => b.nombre)];
+  const usd = [puntos.map(p => p.v), ...r.benchmarks.map(b => puntos.map(p => r.valorEn[b.nombre](p.f)))];
+  const base = historia.indice[k];
+  const pct = [
+    historia.indice.slice(k).map(x => x / base - 1),
+    ...usd.slice(1).map(vals => curvaPorcentual(puntos.map((p, i) => ({ f: p.f, v: vals[i] })), aportes)),
+  ];
+  const enTramo = a => a.fecha > f0 && a.fecha <= fin;
+  const aportadoTramo = suma(aportes.filter(enTramo), a => a.usd);
+  // Inflación de EE.UU. del período: IPC del último mes publicado contra el del mes en que arranca.
+  // Si todavía no hay un mes publicado posterior al del inicio, no se puede medir.
+  const def = deflactor(estado.mercado?.cpi_usa?.meses);
+  const inflacion = def && def.ultimo > f0.slice(0, 7) ? { valor: def.factor(f0) - 1, desde: f0.slice(0, 7), hasta: def.ultimo } : null;
+  const filas = nombres.map((nombre, i) => {
+    const rend = pct[i][pct[i].length - 1];
+    const ganancia = i === 0
+      ? historia.ganancia[historia.ganancia.length - 1] - historia.ganancia[k]
+      : usd[i][usd[i].length - 1] - usd[i][0] - aportadoTramo;
+    return {
+      nombre, rend, ganancia,
+      anual: dias >= 365 ? Math.pow(1 + rend, 365 / dias) - 1 : null,
+      real: inflacion ? (1 + rend) / (1 + inflacion.valor) - 1 : null,
+    };
+  });
+  // Aportes: en "desde el inicio" van todos (también el primero); en el mes o el año, los que entraron en el período.
+  const aportado = per === 'todo' ? suma(aportes.filter(a => a.fecha <= fin), a => a.usd) : aportadoTramo;
+  return { puntos, k, nombres, usd, pct, filas, aportado, inflacion, dias, f0 };
 }
 
 // Índice del primer punto de un período: el último anterior al inicio (así el primer día cuenta) o el primero.
