@@ -270,6 +270,12 @@ input[type="file"] { width: 100%; font-size: .9rem; }
 .informe .tabla-caja { margin-inline: 0; padding-inline: 0; }
 .informe p + p { margin-top: .5rem; }
 .informe .resumen { margin-top: 0; }
+.informe > .aviso { margin-bottom: 1.75rem; }
+.tabla-periodo .tabla th, .tabla-periodo .tabla th.num { white-space: normal; }
+.tabla-periodo .tabla td:first-child { white-space: nowrap; }
+.tabla-periodo .tabla td:not(:first-child), .tabla-periodo .tabla th:not(:first-child) { padding-inline: .35rem; }
+.tabla-periodo .tabla td:last-child, .tabla-periodo .tabla th:last-child { padding-right: 0; }
+.informe > .aviso + .conmutador { margin-top: 0; }
 .lista-simple { display: grid; gap: .35rem; font-size: .93rem; }
 .lista-simple li { padding-left: 1.1rem; position: relative; }
 .lista-simple li::before { content: "–"; position: absolute; left: 0; color: var(--tinta-3); }
@@ -280,6 +286,7 @@ input[type="file"] { width: 100%; font-size: .9rem; }
 .leyenda-linea { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; font-size: .84rem; color: var(--tinta-2); margin-bottom: .5rem; }
 .leyenda-linea span { display: inline-flex; align-items: center; }
 .leyenda-linea i { width: 1rem; height: 3px; border-radius: 2px; margin-right: .45rem; }
+.leyenda-linea i.punteada { height: 0; border-radius: 0; border-top: 2px dashed var(--tinta-2); }
 .descargo { font-size: .8rem; color: var(--tinta-3); border-top: 1px solid var(--linea); padding-top: .8rem; margin-top: 1.5rem; }
 .barra-informe { display: flex; justify-content: flex-end; margin-bottom: .9rem; }
 

@@ -1,7 +1,7 @@
 // Pruebas que no necesitan tus datos: corren en cada PR (GitHub Actions) y también dentro de tests.html.
 // Devuelve [nombre, fn] como las asincrónicas de js/pruebas.js.
 import { tickersPropios, esRespaldoPlano } from './estado.js';
-import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera } from './finanzas.js';
+import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
 
@@ -90,6 +90,53 @@ export function pruebasPublicas() {
       cerca(h.indice[2], 1.21, 1e-9, 'índice 3/1');
       cerca(h.indice[3], 1.21 * (3 * 13.31 + 5) / (3 * 12.1 + 5), 1e-9, 'índice 4/1');
       cerca(h.ganancia[2], 2 + 3.3, 1e-9, 'ganancia hasta el 3/1');
+    }],
+
+    ['Historia: la caja estimada entra en el valor y una compra sin aporte cargado cuenta como aporte', async () => {
+      const hist = { fechas: ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04'], series: { SPY: [100, 100, 110, 110] } };
+      const pos = [{ ticker: 'SPY', tipo: 'cedear', subyacente: 'SPY', cantidad: 2, valor_usd: 2 * 11 }];
+      // Aporta 30 el 1/1 y compra 1 (10 USD) ese día y otra el 2/1: quedan 10 de caja. SPY sube 10% el 3/1.
+      const a = historiaCartera({ hoy: '2026-01-04', historico: hist, posiciones: pos, datos: {
+        lotes_costo: [{ ticker: 'SPY', cantidad: 1, fecha_compra: '2026-01-01', precio_compra: 10, moneda: 'USD', mep_dia: 1 },
+          { ticker: 'SPY', cantidad: 1, fecha_compra: '2026-01-02', precio_compra: 10, moneda: 'USD', mep_dia: 1 }],
+        cashflows_externos_usd: [{ fecha: '2026-01-01', usd: 30 }], snapshots: { '2026-01-04': { t: 32 } } } });
+      cerca(a.puntos[0].v, 30, 1e-9, 'valor 1/1 con la caja');
+      cerca(a.puntos[2].v, 32, 1e-9, 'valor 3/1');
+      cerca(a.indice[2], 32 / 30, 1e-9, 'la caja diluye la suba');
+      // Sin aportes cargados: cada compra es un aporte implícito y la caja nunca queda negativa.
+      const b = historiaCartera({ hoy: '2026-01-04', historico: hist, posiciones: pos, datos: {
+        lotes_costo: [{ ticker: 'SPY', cantidad: 1, fecha_compra: '2026-01-01', precio_compra: 10, moneda: 'USD', mep_dia: 1 },
+          { ticker: 'SPY', cantidad: 1, fecha_compra: '2026-01-02', precio_compra: 10, moneda: 'USD', mep_dia: 1 }],
+        cashflows_externos_usd: [], snapshots: { '2026-01-04': { t: 22 } } } });
+      cerca(b.puntos[1].v, 20, 1e-9, 'valor 2/1 sin caja negativa');
+      cerca(b.indice[2], 1.1, 1e-9, 'solo la suba de SPY');
+      cerca(b.ganancia[2], 2, 1e-9, 'ganancia 2 USD');
+    }],
+
+    ['Período: tarjetas, tabla y gráficos salen del mismo cálculo', async () => {
+      const hist = { fechas: ['2025-01-02', '2025-07-01', '2026-01-02', '2026-03-02'], series: { SPY: [100, 105, 110, 121] } };
+      const e = {
+        hoy: '2026-03-02', historico: hist, mercado: { cpi_usa: { meses: { '2025-01': 100, '2026-01': 103 } } },
+        posiciones: [{ ticker: 'SPY', tipo: 'cedear', subyacente: 'SPY', cantidad: 1, valor_usd: 12.1 }],
+        datos: { lotes_costo: [{ ticker: 'SPY', cantidad: 1, fecha_compra: '2025-01-02', precio_compra: 10, moneda: 'USD', mep_dia: 1 }],
+          cashflows_externos_usd: [{ fecha: '2025-01-02', usd: 10 }], snapshots: { '2026-03-02': { t: 12.1 } },
+          nucleo: { pesos_internos: { SPY: 1 } } },
+      };
+      const r = rendimiento(e), hc = historiaCartera(e);
+      const t = resumenPeriodo(e, r, hc, 'todo');
+      cerca(t.filas[0].rend, 0.21, 1e-9, 'cartera desde el inicio');
+      cerca(t.filas[0].rend, t.pct[0][t.pct[0].length - 1], 1e-12, 'tabla = gráfico');
+      cerca(t.filas[0].ganancia, 2.1, 1e-9, 'ganancia');
+      cerca(t.filas[0].anual, Math.pow(1.21, 365 / 424) - 1, 1e-9, 'por año');
+      cerca(t.inflacion.valor, 0.03, 1e-9, 'inflación del período');
+      cerca(t.filas[0].real, 1.21 / 1.03 - 1, 1e-9, 'sin inflación');
+      // "Este año" arranca en el último dato de 2025 (acá, el 1/7/2025).
+      const y = resumenPeriodo(e, r, hc, 'anio');
+      if (y.f0 !== '2025-07-01') throw new Error('inicio del año: ' + y.f0);
+      cerca(y.filas[0].rend, 121 / 105 - 1, 1e-9, 'cartera en el año');
+      if (y.filas[0].anual !== null) throw new Error('menos de un año no se anualiza');
+      // Este mes: el IPC de marzo todavía no salió → sin dato de inflación.
+      if (resumenPeriodo(e, r, hc, 'mes').inflacion !== null) throw new Error('mes sin IPC publicado');
     }],
 
     ['Vencimientos: lista lo próximo y lo vencido sin registrar, no lo ya cobrado', async () => {
