@@ -55,7 +55,8 @@ async function guardarSnapshot() {
     const limpio = clon(S.base); limpio.eventos = [];
     S.snaps[base] = snapshotDe(valuar(aplicarEventos(limpio), {}, base));
   }
-  S.snaps[S.estado.hoy] = snapshotDe(S.estado);
+  // Solo con precios de mercado: con los del archivo base el punto del día quedaría corrido (si no cargó el mercado).
+  if (S.estado.precios?.origen === 'mercado') S.snaps[S.estado.hoy] = snapshotDe(S.estado);
   S.estado.datos.snapshots = { ...S.estado.datos.snapshots, ...S.snaps };
   await persistir('snapshots', S.snaps);
 }

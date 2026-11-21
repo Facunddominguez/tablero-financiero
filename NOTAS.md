@@ -79,7 +79,7 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 |---|---|
 | `js/estado.js` | Aplica el registro de eventos sobre los datos base y valúa todo en USD MEP. Puro. |
 | `js/motor.js` | `evaluarReglas`, `planificador`, `repartirAporte`, `recomendarAporte`. Puros: los umbrales salen de los datos. |
-| `js/finanzas.js` | Costo de lotes, XIRR, benchmark simulado, costos anuales. |
+| `js/finanzas.js` | Costo de lotes, XIRR, benchmark simulado, historia de la cartera y rendimiento por período, costos anuales. |
 | `js/extracto.js` | Lectura de extractos (tabla, CSV, texto) y categorización de gastos. Puro. |
 | `js/sync.js` | Leer, fusionar y subir el archivo cifrado a GitHub; pedir precios nuevos (`actualizarMercado`). |
 | `js/seguridad.js` | Fortaleza de la clave, generador de frases, guardado local cifrado, bloqueo. |
@@ -123,3 +123,16 @@ python tools/pruebas_alertas.py && python tools/pruebas_mercado.py
 El Action de mercado instala `yfinance` desde `tools/requirements.txt` (rango acotado a la versión mayor actual) y deja la versión en el registro de la corrida.
 
 Los cambios de código van por rama y PR; a `main` solo escriben directo el Action de mercado y la sincronización de la app.
+
+## Cómo se mide el rendimiento (Informes)
+
+Una sola vara en Rendimiento, Mensual y Trimestral: **rendimiento por tiempo** en USD MEP, sin descontar inflación salvo la columna "Sin inflación".
+
+- **Tu cartera**: encadena la variación de un punto al siguiente descontando lo que entró (los aportes no cuentan como ganancia).
+  - Desde el primer registro diario: los valores guardados cada día que se abre la app (solo con precios de mercado). Un aporte cargado con fecha anterior cuenta el día en que se cargó, que es cuando aparece en los registros.
+  - Antes: estimado con los lotes actuales (precio histórico del subyacente en EE.UU. escalado al valor de hoy; ON y FCI en línea recta entre costo y valor actual) más la caja estimada (aportes + cupones + dividendos + resultados de ventas − compras). Una compra sin plata cargada que la cubra es un aporte implícito. El salto entre lo estimado y el primer registro no cuenta; si supera el 5 % se avisa.
+- **SPY y núcleo**: simulan comprar, al cierre del primer día hábil, exactamente la plata que entró en tu cartera (aportes cargados + implícitos), con dividendos reinvertidos y sin costos.
+- **Períodos**: "Este mes" y "Este año" arrancan en el último punto anterior al día 1. "Por año" solo con un año o más. "Sin inflación" usa el IPC de EE.UU. del último mes publicado contra el del mes de inicio.
+- La tabla "por bloque" es otra cosa a propósito: tasa anual (XIRR) desde cada compra de lo que hoy tenés.
+- Validación: con un mundo de prueba de verdad conocida (precios reales, caja exacta) los tres períodos coinciden con un cálculo independiente; las pruebas de `js/pruebas_publicas.js` fijan los casos (aporte atrasado, aporte de fin de semana, cupones y ventas, aportes implícitos).
+
