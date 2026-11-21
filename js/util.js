@@ -6,6 +6,8 @@ const deUTC = t => new Date(t).toISOString().slice(0, 10);
 
 export const fechas = {
   hoy() { const d = new Date(); return deUTC(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); },
+  // Día local (el mismo que usa hoy()) de un momento ISO como '2026-11-14T02:10:00.000Z'.
+  deMomento(ts) { const d = new Date(ts); return deUTC(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); },
   dias: (desde, hasta) => Math.round((aUTC(hasta) - aUTC(desde)) / DIA),
   sumar: (f, n) => deUTC(aUTC(f) + n * DIA),
   mes: f => f.slice(0, 7),

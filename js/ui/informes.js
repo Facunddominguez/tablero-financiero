@@ -1,6 +1,6 @@
 // Pantalla Informes: cinco informes de una página, imprimibles (window.print + CSS de impresión).
 import { h, fmt, fechas, suma, poner } from '../util.js';
-import { rendimiento, costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, historiaCartera, resumenPeriodo } from '../finanzas.js';
+import { costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, historiaCartera, resumenPeriodo, benchmarks } from '../finanzas.js';
 import { NOMBRE_GRUPO } from '../estado.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase } from './comun.js';
 
@@ -23,23 +23,23 @@ function rendNucleo(e, desde, hasta) {
 // ---------- Mensual ----------
 function mensual(ctx) {
   const e = ctx.estado, d = e.datos, mes = fechas.mes(e.hoy), inicio = mes + '-01';
-  const snaps = Object.entries(d.snapshots).sort();
-  const base = snaps.filter(([f]) => f < inicio).pop() || snaps[0];
-  const [f0, s0] = base || [e.hoy, { t: e.total_usd }];
+  // Mismos números que Informes → Rendimiento → "Este mes".
+  const { historia, bench } = datosRendimiento(e);
+  const R = resumenPeriodo(e, historia, bench, 'mes');
+  const f0 = R.f0 || e.hoy;
+  const rend = R.filas ? R.filas[0].rend : null, spy = R.filas?.[1]?.rend ?? null;
   const aportes = d.cashflows_externos_usd.filter(a => a.fecha > f0 && a.fecha <= e.hoy);
   const aportado = suma(aportes, a => a.usd);
-  const rend = s0.t ? (e.total_usd - s0.t - aportado) / (s0.t + aportado / 2) : null;
-  const spy = rendimientoHist(e.historico, 'SPY', f0, e.hoy);
   const m = d.meses?.[mes];
   const hechos = (d.decisiones || []).filter(x => fechas.mes(x.fecha) === mes);
   const tareas = ctx.plan.pasos.filter(p => !p.informativo);
   return hoja('Informe mensual', `${fmt.mes(e.hoy)} · al ${fmt.fecha(e.hoy)}`,
     h('section', h('div.resumen',
       dato('Patrimonio', fmt.usd(e.total_usd), `${fmt.ars(e.total_ars)}`),
-      dato(`Desde el ${fmt.fecha(f0)}`, color(rend, fmt.pctSigno(rend, 2)), `SPY en USD: ${spy == null ? 'sin datos' : fmt.pctSigno(spy, 2)}`),
+      dato(`Desde el ${fmt.fecha(f0)}`, color(rend, fmt.pctSigno(rend, 1)), `SPY con los mismos aportes: ${spy == null ? 'sin datos' : fmt.pctSigno(spy, 1)}`),
       dato('Aportes del período', fmt.usd(aportado), aportes.length ? aportes.map(a => fmt.fecha(a.fecha)).join(', ') : 'ninguno'),
       dato('Tasa de ahorro', m ? fmt.pct((m.ingreso - m.gasto) / m.ingreso, 0) : '—', m ? `meta ${fmt.pct(d.perfil.meta_tasa_ahorro, 0)}` : 'mes sin cargar')),
-      h('p.nota', `El rendimiento descuenta los aportes del período. ${f0 >= inicio ? 'Todavía no hay un registro anterior al inicio del mes: se mide desde el primer dato guardado.' : ''}`)),
+      h('p.nota', `En USD, sin descontar inflación. Los aportes no cuentan como ganancia; es el mismo número que Rendimiento → "Este mes". ${f0 >= inicio ? 'Todavía no hay un dato anterior al inicio del mes: se mide desde el primero.' : ''}`)),
     sec('Cumplimiento de reglas', tablaReglas(ctx.plan.reglas)),
     sec('Qué se hizo', hechos.length ? h('ul.lista-simple', hechos.map(x => h('li', `${fmt.fecha(x.fecha)} · ${x.texto}`))) : h('p.nota', 'Nada registrado este mes.')),
     sec('Qué sigue', tareas.length ? h('ul.lista-simple', tareas.map(p => h('li', p.titulo))) : h('p', `Todo en orden. Próxima acción: ${fmt.fecha(ctx.plan.proxima.fecha)}, ${ctx.plan.proxima.texto}.`)));
@@ -49,21 +49,27 @@ function mensual(ctx) {
 // ---------- Período: este mes, este año o desde el inicio ----------
 const PERIODOS = [['mes', 'Este mes'], ['anio', 'Este año'], ['todo', 'Desde el inicio']];
 
-function bloquePeriodo(e, r) {
+// Historia de la cartera y benchmarks con la misma plata: una sola vez por pantalla (los botones solo recortan).
+function datosRendimiento(e) {
+  const historia = historiaCartera(e);
+  return { historia, bench: benchmarks(e, historia.flujos) };
+}
+
+function bloquePeriodo(e) {
   let per = 'todo';
-  const historia = historiaCartera(e); // se calcula una vez; los botones solo recortan
+  const { historia, bench } = datosRendimiento(e);
   const caja = h('div');
   const botones = PERIODOS.map(([k, t]) => h('button', { type: 'button', 'aria-pressed': String(k === per), onclick: () => {
     per = k;
     botones.forEach((b, i) => b.setAttribute('aria-pressed', String(PERIODOS[i][0] === per)));
-    poner(caja, contenidoPeriodo(e, r, historia, per));
+    poner(caja, contenidoPeriodo(e, historia, bench, per));
   } }, t));
-  poner(caja, contenidoPeriodo(e, r, historia, per));
+  poner(caja, contenidoPeriodo(e, historia, bench, per));
   return [h('div.conmutador.chico', { role: 'group', 'aria-label': 'Período' }, botones), caja];
 }
 
-function contenidoPeriodo(e, r, historia, per) {
-  const R = resumenPeriodo(e, r, historia, per);
+function contenidoPeriodo(e, historia, bench, per) {
+  const R = resumenPeriodo(e, historia, bench, per);
   const { puntos } = R;
   if (puntos.length < 2) return h('p.nota', { style: 'margin-top:1rem' }, 'Todavía no hay datos de este período.');
   // Si los datos empiezan dentro del período, el mes o el año muestran lo mismo que "Desde el inicio": avisarlo.
@@ -71,8 +77,8 @@ function contenidoPeriodo(e, r, historia, per) {
   const nombrePer = PERIODOS.find(([x]) => x === per)?.[1];
   const avisoIgual = per !== 'todo' && R.k === 0 ? h('p.nota.periodo-igual', `Tus datos empiezan el ${fmt.fecha(R.f0)}, así que por ahora "${nombrePer}" muestra lo mismo que "Desde el inicio". Se van a diferenciar desde el ${fmt.fecha(separa)}.`) : null;
   const pc = x => x == null ? '—' : color(x, fmt.pctSigno(x, 1));
-  const [cartera, ...bench] = R.filas;
-  const spy = bench[0];
+  const [cartera, ...otros] = R.filas;
+  const spy = otros[0];
   const dif = spy ? cartera.rend - spy.rend : null;
   // Hasta qué punto del período la línea de tu cartera es estimada (va punteada).
   const ultimoRec = puntos.reduce((m, p, i) => p.rec ? i : m, -1);
@@ -81,8 +87,8 @@ function contenidoPeriodo(e, r, historia, per) {
     avisoIgual,
     h('div.resumen',
       dato('Tu cartera', pc(cartera.rend), `${fmt.signo(cartera.ganancia)} USD de ganancia`),
-      ...bench.map(b => dato(b.nombre, pc(b.rend), `${fmt.signo(b.ganancia)} USD con los mismos aportes`)),
-      dato('Aportes', fmt.usd(R.aportado), per === 'todo' ? `desde el ${fmt.fecha(R.f0)}` : `del ${fmt.fecha(R.f0)} a hoy`)),
+      ...otros.map(b => dato(b.nombre, pc(b.rend), `${fmt.signo(b.ganancia)} USD con los mismos aportes`)),
+      dato('Aportes', fmt.usd(R.aportado), [per === 'todo' ? `desde el ${fmt.fecha(R.f0)}` : `del ${fmt.fecha(R.f0)} a hoy`, R.implicito > 0.5 ? `; ${fmt.usd(R.implicito)} estimados por compras sin aporte cargado` : ''])),
     sec(`Detalle ${per === 'todo' ? 'desde el inicio' : `desde el ${fmt.fecha(R.f0)}`}`,
       // La tabla solo aparece si suma algo a las tarjetas: la tasa por año (períodos de un año o más) o sin inflación.
       R.dias >= 365 || R.inflacion ? h('div.tabla-periodo', tabla([
@@ -128,11 +134,14 @@ function graficoLineas(puntos, nombres, series, op) {
     op.punteadoHasta >= 0 ? h('span', h('i.punteada'), 'estimado') : null), h('div.grafico', lienzo)];
 }
 function rendimientoInforme(ctx) {
-  const e = ctx.estado, r = rendimiento(e), c = costosAnuales(e), br = brechaAportes(e);
+  const e = ctx.estado, c = costosAnuales(e), br = brechaAportes(e);
   const C3 = e.datos.reglas.find(x => x.id === 'C3');
+  const cierre = historiaCartera(e).cierre;
+  const desfase = cierre ? cierre.registrado - cierre.estimado : 0;
   return hoja('Rendimiento', `en USD MEP · al ${fmt.fecha(e.hoy)}`,
-    br.relevante ? aviso(`Ojo: lo que hoy tenés costó ${fmt.usd(br.costo)} y los aportes cargados suman ${fmt.usd(br.aportado)}. Si falta cargar algún aporte, SPY y el núcleo simulan con menos plata de la que pusiste. Revisalo en Anual para el contador.`, 'alerta') : null,
-    bloquePeriodo(e, r),
+    br.relevante ? aviso(`Ojo: lo que hoy tenés costó ${fmt.usd(br.costo)} y los aportes cargados suman ${fmt.usd(br.aportado)}. Si falta cargar algún aporte, lo anterior a tus registros diarios es menos preciso. Revisalo en Anual para el contador.`, 'alerta') : null,
+    cierre && Math.abs(desfase) > Math.max(50, 0.05 * cierre.registrado) ? aviso(`Lo estimado para antes de tus registros diarios no cierra con el primero (${fmt.fecha(cierre.fecha)}): ${desfase > 0 ? 'faltan' : 'sobran'} ${fmt.usd(Math.abs(desfase))}. Suele ser un aporte, una venta o un cobro anterior sin cargar. Ese salto no cuenta como ganancia, pero lo de antes de esa fecha es menos preciso.`, 'alerta') : null,
+    bloquePeriodo(e),
     sec('Por bloque, desde cada compra (tasa anual)', (() => {
       const filas = rendimientoPorBloque(e), pc = x => x == null ? '—' : color(x, fmt.pctSigno(x));
       return [tabla([
@@ -151,16 +160,20 @@ function rendimientoInforme(ctx) {
 
 // ---------- Trimestral ----------
 function trimestral(ctx) {
-  const e = ctx.estado, d = e.datos, r = rendimiento(e), c = costosAnuales(e), R = Object.fromEntries(ctx.plan.reglas.map(x => [x.id, x]));
+  const e = ctx.estado, d = e.datos, c = costosAnuales(e), R = Object.fromEntries(ctx.plan.reglas.map(x => [x.id, x]));
+  // Mismos números que Informes → Rendimiento → "Desde el inicio".
+  const { historia, bench } = datosRendimiento(e);
+  const T = resumenPeriodo(e, historia, bench, 'todo');
   const br = brechaAportes(e);
-  const spy = r.benchmarks[0];
+  const [yo, spy] = T.filas || [];
+  const tasa = f => f.anual ?? f.rend, cual = T.dias >= 365 ? 'por año' : `en total desde el ${fmt.fecha(T.f0)}`;
   const sat = e.posiciones.filter(p => p.grupo === 'satelite' || p.grupo === 'ypf');
   const fuera = sat.filter(p => { const b = d.objetivos_por_activo[p.ticker]?.banda; return b && (p.pct_lp < b[0] || p.pct_lp > b[1]); });
   const item = (bien, titulo, detalle) => h('li', h('span.' + (bien ? 'sube' : 'baja'), bien ? '✓' : '!'), h('div', h('strong', titulo), h('small', detalle)));
   const t = Math.ceil(fechas.nMes(e.hoy) / 3);
   return hoja('Revisión trimestral', `T${t} ${fechas.anio(e.hoy)} · al ${fmt.fecha(e.hoy)}`,
     sec('Checklist', h('ul.checklist',
-      item(spy && r.cartera.xirr >= spy.xirr, 'Benchmark', spy ? `Tu cartera rinde ${fmt.pctSigno(r.cartera.xirr)} anual y SPY, con los mismos aportes, ${fmt.pctSigno(spy.xirr)}.${br.relevante ? ' Ojo: puede faltar cargar aportes, y eso infla tu número.' : ''}` : 'Sin datos de benchmark todavía.'),
+      item(spy && yo.rend >= spy.rend, 'Benchmark', spy ? `Desde el inicio, tu cartera rinde ${fmt.pctSigno(tasa(yo))} ${cual} y SPY, con los mismos aportes, ${fmt.pctSigno(tasa(spy))}.${br.relevante ? ' Ojo: puede faltar cargar aportes.' : ''}` : 'Sin datos de benchmark todavía.'),
       item(!R.C3?.activa, 'Costos', `${fmt.pct(c.pct, 2)} del patrimonio medio en los últimos 12 meses (${fmt.usd(c.usd, 2)}).`),
       item(!fuera.length && R.R5?.nivel === 'ok', 'Satélites', `${fuera.length ? `Fuera de su banda: ${fuera.map(p => `${p.ticker} ${fmt.pct(p.pct_lp)}`).join(', ')}. ` : 'Todos dentro de su banda. '}En total son ${fmt.pct(e.satelites_lp)} de largo plazo${R.R5 && R.R5.nivel !== 'ok' ? ` (regla R5 ${NIVEL[R.R5.nivel][0].toLowerCase()}: los aportes van solo al núcleo)` : ''}.`),
       item(true, 'Watchlist', `${(d.watchlist || []).length} nombres en seguimiento. ${R.R7?.activa ? 'Bloqueada por la regla R7: solo observación.' : 'Habilitada: máximo inicial por nombre según la tabla.'}`))),

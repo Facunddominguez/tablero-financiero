@@ -1,7 +1,7 @@
 // Pruebas que no necesitan tus datos: corren en cada PR (GitHub Actions) y también dentro de tests.html.
 // Devuelve [nombre, fn] como las asincrónicas de js/pruebas.js.
 import { tickersPropios, esRespaldoPlano } from './estado.js';
-import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo } from './finanzas.js';
+import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo, benchmarks } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
 
@@ -122,8 +122,8 @@ export function pruebasPublicas() {
           cashflows_externos_usd: [{ fecha: '2025-01-02', usd: 10 }], snapshots: { '2026-03-02': { t: 12.1 } },
           nucleo: { pesos_internos: { SPY: 1 } } },
       };
-      const r = rendimiento(e), hc = historiaCartera(e);
-      const t = resumenPeriodo(e, r, hc, 'todo');
+      const hc = historiaCartera(e), b = benchmarks(e, hc.flujos);
+      const t = resumenPeriodo(e, hc, b, 'todo');
       cerca(t.filas[0].rend, 0.21, 1e-9, 'cartera desde el inicio');
       cerca(t.filas[0].rend, t.pct[0][t.pct[0].length - 1], 1e-12, 'tabla = gráfico');
       cerca(t.filas[0].ganancia, 2.1, 1e-9, 'ganancia');
@@ -131,12 +131,52 @@ export function pruebasPublicas() {
       cerca(t.inflacion.valor, 0.03, 1e-9, 'inflación del período');
       cerca(t.filas[0].real, 1.21 / 1.03 - 1, 1e-9, 'sin inflación');
       // "Este año" arranca en el último dato de 2025 (acá, el 1/7/2025).
-      const y = resumenPeriodo(e, r, hc, 'anio');
+      const y = resumenPeriodo(e, hc, b, 'anio');
       if (y.f0 !== '2025-07-01') throw new Error('inicio del año: ' + y.f0);
       cerca(y.filas[0].rend, 121 / 105 - 1, 1e-9, 'cartera en el año');
       if (y.filas[0].anual !== null) throw new Error('menos de un año no se anualiza');
       // Este mes: el IPC de marzo todavía no salió → sin dato de inflación.
-      if (resumenPeriodo(e, r, hc, 'mes').inflacion !== null) throw new Error('mes sin IPC publicado');
+      if (resumenPeriodo(e, hc, b, 'mes').inflacion !== null) throw new Error('mes sin IPC publicado');
+    }],
+
+    ['Rendimiento: un aporte cargado días después cuenta el día en que aparece en los registros', async () => {
+      // 1000 → aporte de 500 con fecha 10/11 cargado el 12/11: el registro del 10 y el 11 no lo tienen. Sin cambio de precios.
+      const e = {
+        hoy: '2026-11-12', historico: { fechas: ['2026-11-09'], series: { SPY: [100] } }, posiciones: [],
+        datos: {
+          lotes_costo: [], cashflows_externos_usd: [{ fecha: '2026-11-10', usd: 500, evento: 'a1' }],
+          eventos: [{ id: 'a1', tipo: 'aporte', fecha: '2026-11-10', ts: '2026-11-12T15:00:00.000Z', usd: 500 }],
+          snapshots: { '2026-11-09': { t: 1000 }, '2026-11-10': { t: 1000 }, '2026-11-11': { t: 1000 }, '2026-11-12': { t: 1500 } },
+        },
+      };
+      const h = historiaCartera(e);
+      cerca(h.indice[h.indice.length - 1], 1, 1e-12, 'sin cambio de precios el rendimiento es 0');
+      cerca(h.ganancia[h.ganancia.length - 1], 0, 1e-9, 'ni ganancia');
+    }],
+
+    ['Benchmarks: un aporte de fin de semana entra el lunes y no distorsiona el %', async () => {
+      const hist = { fechas: ['2026-01-02', '2026-01-05', '2026-01-06'], series: { SPY: [100, 110, 121] } };
+      const sim = benchmarks({ historico: hist, datos: { nucleo: { pesos_internos: { SPY: 1 } } } },
+        [{ fecha: '2026-01-02', usd: 100 }, { fecha: '2026-01-03', usd: 100 }])[0].valorEn;
+      if (sim.flujos[1].fecha !== '2026-01-05') throw new Error('el aporte del sábado debería entrar el lunes');
+      cerca(sim('2026-01-03'), 100, 1e-9, 'el sábado todavía no está invertido');
+      const pts = ['2026-01-02', '2026-01-03', '2026-01-05', '2026-01-06'].map(f => ({ f, v: sim(f) }));
+      cerca(curvaPorcentual(pts, sim.flujos).at(-1), 0.21, 1e-9, 'SPY con aportes rinde lo mismo que SPY');
+    }],
+
+    ['Historia: cupones y resultados de ventas anteriores suman a la caja estimada; amortizaciones no', async () => {
+      const hist = { fechas: ['2026-01-01', '2026-01-02', '2026-01-05'], series: { SPY: [100, 100, 100] } };
+      const e = { hoy: '2026-01-05', historico: hist, posiciones: [{ ticker: 'SPY', tipo: 'cedear', subyacente: 'SPY', cantidad: 1, valor_usd: 10 }],
+        datos: { lotes_costo: [{ ticker: 'SPY', cantidad: 1, fecha_compra: '2026-01-01', precio_compra: 10, moneda: 'USD', mep_dia: 1 }],
+          cashflows_externos_usd: [{ fecha: '2026-01-01', usd: 10 }],
+          cobros: [{ fecha: '2026-01-02', usd: 2, clase: 'cupon' }, { fecha: '2026-01-02', usd: 50, clase: 'amortizacion' }],
+          realizados: [{ fecha: '2026-01-02', resultado_usd: 1 }],
+          snapshots: { '2026-01-05': { t: 13 } } } };
+      const h = historiaCartera(e);
+      cerca(h.puntos[1].v, 13, 1e-9, 'caja con cupón y resultado');
+      cerca(h.indice[1], 1.3, 1e-9, 'cupón y venta son ganancia');
+      if (Math.abs(h.cierre.registrado - h.cierre.estimado) > 1e-9) throw new Error('el cierre debería coincidir');
+      if (h.flujos.some(f => f.implicito)) throw new Error('no hay aportes implícitos');
     }],
 
     ['Vencimientos: lista lo próximo y lo vencido sin registrar, no lo ya cobrado', async () => {
