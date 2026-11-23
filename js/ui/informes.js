@@ -93,14 +93,14 @@ function contenidoPeriodo(e, historia, bench, per) {
       // La tabla solo aparece si suma algo a las tarjetas: la tasa por año (períodos de un año o más) o sin inflación.
       R.dias >= 365 || R.inflacion ? h('div.tabla-periodo', tabla([
         { titulo: '', celda: f => h('strong', f.nombre) },
-        { titulo: 'Total', num: 1, celda: f => pc(f.rend) },
+        { titulo: 'En dólares', num: 1, celda: f => pc(f.rend) },
         ...(R.dias >= 365 ? [{ titulo: 'Por año', num: 1, celda: f => pc(f.anual) }] : []),
-        ...(R.inflacion ? [{ titulo: 'Sin inflación', num: 1, celda: f => pc(f.real) }] : []),
+        ...(R.inflacion ? [{ titulo: 'Descontando inflación', num: 1, celda: f => pc(f.real) }] : []),
       ], R.filas)) : null,
       h('p.nota', { style: 'margin-top:.6rem' }, [
         dif == null ? '' : `${dif >= 0 ? 'Le ganaste' : 'Quedaste'} ${fmt.num(Math.abs(dif) * 100, 1)} puntos ${dif >= 0 ? 'a' : 'debajo de'} SPY en el período. `,
         R.inflacion
-          ? `En dólares MEP. Las tarjetas y los gráficos no descuentan inflación; la columna "Sin inflación" descuenta la de EE.UU. del período (${fmt.pctSigno(R.inflacion.valor, 1)}, IPC hasta ${fmt.mes(R.inflacion.hasta)}). `
+          ? `Las tarjetas, los gráficos y la columna "En dólares" no descuentan la inflación. La columna "Descontando inflación" sí: le resta la inflación de EE.UU. del período (${fmt.pctSigno(R.inflacion.valor, 1)}, según el IPC hasta ${fmt.mes(R.inflacion.hasta)}). `
           : 'En dólares MEP, sin descontar inflación: el IPC de EE.UU. de este período todavía no se publicó. ',
         'Los aportes no cuentan como ganancia; SPY y el núcleo simulan poner cada aporte ese mismo día.',
       ])),

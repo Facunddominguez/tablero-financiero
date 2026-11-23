@@ -126,13 +126,13 @@ Los cambios de código van por rama y PR; a `main` solo escriben directo el Acti
 
 ## Cómo se mide el rendimiento (Informes)
 
-Una sola vara en Rendimiento, Mensual y Trimestral: **rendimiento por tiempo** en USD MEP, sin descontar inflación salvo la columna "Sin inflación".
+Una sola vara en Rendimiento, Mensual y Trimestral: **rendimiento por tiempo** en USD MEP, sin descontar inflación salvo la columna "Descontando inflación".
 
 - **Tu cartera**: encadena la variación de un punto al siguiente descontando lo que entró (los aportes no cuentan como ganancia).
   - Desde el primer registro diario: los valores guardados cada día que se abre la app (solo con precios de mercado). Un aporte cargado con fecha anterior cuenta el día en que se cargó, que es cuando aparece en los registros.
   - Antes: estimado con los lotes actuales (precio histórico del subyacente en EE.UU. escalado al valor de hoy; ON y FCI en línea recta entre costo y valor actual) más la caja estimada (aportes + cupones + dividendos + resultados de ventas − compras). Una compra sin plata cargada que la cubra es un aporte implícito. El salto entre lo estimado y el primer registro no cuenta; si supera el 5 % se avisa.
 - **SPY y núcleo**: simulan comprar, al cierre del primer día hábil, exactamente la plata que entró en tu cartera (aportes cargados + implícitos), con dividendos reinvertidos y sin costos.
-- **Períodos**: "Este mes" y "Este año" arrancan en el último punto anterior al día 1. "Por año" solo con un año o más. "Sin inflación" usa el IPC de EE.UU. del último mes publicado contra el del mes de inicio.
+- **Períodos**: "Este mes" y "Este año" arrancan en el último punto anterior al día 1. "Por año" solo con un año o más. "Descontando inflación" usa el IPC de EE.UU. del último mes publicado contra el del mes de inicio.
 - La tabla "por bloque" es otra cosa a propósito: tasa anual (XIRR) desde cada compra de lo que hoy tenés.
 - Validación: con un mundo de prueba de verdad conocida (precios reales, caja exacta) los tres períodos coinciden con un cálculo independiente; las pruebas de `js/pruebas_publicas.js` fijan los casos (aporte atrasado, aporte de fin de semana, cupones y ventas, aportes implícitos).
 
