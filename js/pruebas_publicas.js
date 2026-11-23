@@ -179,6 +179,34 @@ export function pruebasPublicas() {
       if (h.flujos.some(f => f.implicito)) throw new Error('no hay aportes implícitos');
     }],
 
+    ['Historia: se escala con el precio del resumen base, así lo estimado empalma con el primer registro', async () => {
+      // El CEDEAR hoy vale 12 por unidad, pero el día del resumen (5/1) valía 10,5 con el subyacente en 100 (otra brecha).
+      const hist = { fechas: ['2026-01-02', '2026-01-05', '2026-01-06'], series: { SPY: [100, 100, 110] } };
+      const e = { hoy: '2026-01-06', historico: hist, posiciones: [{ ticker: 'SPY', tipo: 'cedear', subyacente: 'SPY', cantidad: 10, valor_usd: 120 }],
+        datos: { meta: { fecha_snapshot: '2026-01-05', tc_snapshot: { mep: 1000 } },
+          posiciones: [{ ticker: 'SPY', precio: 10500, moneda_precio: 'ARS' }],
+          lotes_costo: [{ ticker: 'SPY', cantidad: 10, fecha_compra: '2026-01-02', precio_compra: 10.5, moneda: 'USD', mep_dia: 1 }],
+          cashflows_externos_usd: [{ fecha: '2026-01-02', usd: 105 }], snapshots: { '2026-01-05': { t: 105 }, '2026-01-06': { t: 120 } } } };
+      const h = historiaCartera(e);
+      cerca(h.cierre.estimado, h.cierre.registrado, 1e-9, 'empalme exacto');
+      cerca(h.puntos[0].v, 105, 1e-9, 'valor estimado con el precio del resumen');
+    }],
+
+    ['Historia: un dividendo en acciones (lote de costo cero) no es aporte y no hace saltar el valor', async () => {
+      // 10 YPFD comprados a 30 USD c/u; el 4/8 entran 90 de regalo (10 a 1). El ADR no cambia de precio.
+      const hist = { fechas: ['2026-08-03', '2026-08-04', '2026-08-05'], series: { YPF: [30, 30, 30] } };
+      const e = { hoy: '2026-08-05', historico: hist, posiciones: [{ ticker: 'YPFD', tipo: 'accion_ar', cantidad: 100, valor_usd: 300 }],
+        datos: { lotes_costo: [
+          { ticker: 'YPFD', cantidad: 10, fecha_compra: '2026-08-03', precio_compra: 30, moneda: 'USD', mep_dia: 1 },
+          { ticker: 'YPFD', cantidad: 90, fecha_compra: '2026-08-04', precio_compra: 0, moneda: 'USD', mep_dia: 1 }],
+          cashflows_externos_usd: [{ fecha: '2026-08-03', usd: 300 }], snapshots: { '2026-08-05': { t: 300 } } } };
+      const h = historiaCartera(e);
+      cerca(h.puntos[0].v, 300, 1e-9, 'antes del dividendo: 10 acciones viejas = 100 de hoy');
+      cerca(h.puntos[1].v, 300, 1e-9, 'después, igual');
+      cerca(h.indice[1], 1, 1e-12, 'sin ganancia ni pérdida inventada');
+      if (h.flujos.some(f => f.implicito)) throw new Error('no es un aporte');
+    }],
+
     ['Vencimientos: lista lo próximo y lo vencido sin registrar, no lo ya cobrado', async () => {
       const e = {
         hoy: '2027-03-01',
