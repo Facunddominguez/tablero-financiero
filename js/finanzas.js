@@ -227,8 +227,27 @@ function reconstruir(estado, hasta) {
   ];
   if (!lotes.length && !aportes.length) return null;
   const iHoy = indice(hist, hoy, 'valuacion');
-  const precios = lotes.map(l => precioLote(estado, l, iHoy));
+  // Ancla: el resumen base tiene el precio real de cada activo el día del primer registro; escalar contra ese
+  // precio (y no contra el de hoy) hace que lo estimado empalme con lo registrado.
+  const meta = d.meta || {}, mepBase = meta.tc_snapshot?.mep;
+  const anclas = new Map();
+  if (meta.fecha_snapshot === hasta && mepBase > 0) {
+    for (const p of d.posiciones || []) if (p.precio > 0) anclas.set(p.ticker, { fecha: hasta, unit: p.moneda_precio === 'USD' ? p.precio : p.precio / mepBase });
+  }
+  const precios = lotes.map(l => precioLote(estado, l, iHoy, anclas.get(l.ticker)));
   const costos = lotes.map(l => costoLoteUSD(l));
+  // Dividendos en acciones (lotes de costo cero, como el de YPFD): no son plata que entra. Antes de esa fecha, los
+  // lotes previos del mismo activo valen por las acciones que se convirtieron después (así el valor no salta).
+  const gratis = lotes.map((l, k) => costos[k] === 0);
+  const multiplicador = (k, f) => {
+    let m = 1;
+    lotes.forEach((e, j) => {
+      if (!gratis[j] || e.ticker !== lotes[k].ticker || e.fecha_compra <= f || e.fecha_compra <= lotes[k].fecha_compra) return;
+      const antes = suma(lotes.filter(x => x.ticker === e.ticker && x.fecha_compra < e.fecha_compra), x => x.cantidad);
+      if (antes > 0) m *= (antes + e.cantidad) / antes;
+    });
+    return m;
+  };
   const desde = [...lotes.map(l => l.fecha_compra), ...aportes.map(a => a.fecha)].sort()[0];
   const dias = hist.fechas.filter(f => f >= desde && f < hasta).concat([hasta]);
   const out = [], implicitos = [];
@@ -238,9 +257,9 @@ function reconstruir(estado, hasta) {
     lotes.forEach((l, k) => {
       if (l.fecha_compra > f) return;
       costoAcum += costos[k];
-      const valor = precios[k] ? l.cantidad * precios[k](f) : costos[k];
+      const valor = precios[k] ? l.cantidad * multiplicador(k, f) * precios[k](f) : costos[k];
       tenencia += valor;
-      if (previa === null || l.fecha_compra > previa) ajuste += valor - costos[k];
+      if (!gratis[k] && (previa === null || l.fecha_compra > previa)) ajuste += valor - costos[k];
     });
     const aportado = suma(aportes.filter(a => a.fecha <= f), a => a.usd);
     const ganado = suma(ganados.filter(g => g.fecha <= f), g => g.usd);
@@ -257,10 +276,13 @@ function reconstruir(estado, hasta) {
 }
 
 // Precio unitario en USD de un lote en cualquier fecha posterior a su compra.
-function precioLote(estado, l, iHoy) {
+// Se escala contra un precio conocido: el del resumen base (el día del primer registro) si lo hay, si no el de hoy.
+function precioLote(estado, l, iHoy, ancla) {
   const p = estado.posiciones.find(x => x.ticker === l.ticker);
   if (!p || !(p.cantidad > 0) || !(p.valor_usd > 0)) return null;
-  const hoyUnit = p.valor_usd / p.cantidad, hist = estado.historico;
+  const hist = estado.historico;
+  const refFecha = ancla ? ancla.fecha : estado.hoy, hoyUnit = ancla ? ancla.unit : p.valor_usd / p.cantidad;
+  if (ancla) iHoy = indice(hist, refFecha, 'valuacion');
   const conSerie = p.tipo !== 'on' && p.tipo !== 'fci';
   const t = conSerie ? [p.ticker_subyacente_usa, p.subyacente, ADR_DE_LOCAL[p.ticker], p.ticker].find(x => x && hist.series[x]) : null;
   if (t && iHoy >= 0) {
@@ -274,8 +296,8 @@ function precioLote(estado, l, iHoy) {
       };
     }
   }
-  // Sin serie: línea recta entre lo que costó y lo que vale hoy.
-  const costoUnit = costoLoteUSD(l) / l.cantidad, total = Math.max(1, fechas.dias(l.fecha_compra, estado.hoy));
+  // Sin serie: línea recta entre lo que costó y lo que valía en la fecha de referencia.
+  const costoUnit = costoLoteUSD(l) / l.cantidad, total = Math.max(1, fechas.dias(l.fecha_compra, refFecha));
   return f => costoUnit + (hoyUnit - costoUnit) * Math.min(1, Math.max(0, fechas.dias(l.fecha_compra, f) / total));
 }
 
