@@ -133,6 +133,24 @@ function graficoLineas(puntos, nombres, series, op) {
   return [h('div.leyenda-linea', nombres.map((n, i) => h('span', h('i', { style: `background:var(--serie-${i + 1})` }), n)),
     op.punteadoHasta >= 0 ? h('span', h('i.punteada'), 'estimado') : null), h('div.grafico', lienzo)];
 }
+// Aviso cuando la historia estimada no cierra con el primer valor real: qué pasa, qué hacer y qué afecta.
+function avisoCierre(ctx, cierre, desfase) {
+  const f = fmt.fecha(cierre.fecha), dif = fmt.usd(Math.abs(desfase));
+  const falta = desfase > 0;
+  return h('div.aviso.alerta.aviso-cierre',
+    h('strong', falta ? `Falta cargar plata en tu historia: ${dif}` : `Hay plata de más en tu historia: ${dif}`),
+    h('p', falta
+      ? `El ${f} tu cuenta valía ${fmt.usd(cierre.registrado)}. Con los aportes y compras que cargaste, debería haber valido ${fmt.usd(cierre.estimado)}. Esos ${dif} entraron a tu cuenta antes del ${f} y el tablero no sabe cuándo.`
+      : `El ${f} tu cuenta valía ${fmt.usd(cierre.registrado)}, pero con lo que cargaste debería haber valido ${fmt.usd(cierre.estimado)}.`),
+    h('p', h('strong', 'Qué hacer: '), falta
+      ? 'en Balanz, buscá los depósitos (pesos o dólares) anteriores a esa fecha que no estén en tu lista de aportes, y cargá cada uno con su fecha y monto. Si sumando todo falta poco, puede ser la ganancia de alguna venta vieja.'
+      : 'revisá en tu lista de aportes si alguno está repetido o con un monto mayor al real.'),
+    h('div.acciones.izq',
+      falta ? boton('Cargar un aporte viejo', () => ctx.menu('movimiento', 'aporte_historico'), 'chico.primario') : null,
+      boton('Ver mis aportes cargados', () => { location.hash = 'informes/anual'; }, 'chico.fantasma')),
+    h('p.nota', `Mientras tanto: tu patrimonio de hoy y "Este mes" están bien. "Este año" y "Desde el inicio" son aproximados.`));
+}
+
 function rendimientoInforme(ctx) {
   const e = ctx.estado, c = costosAnuales(e), br = brechaAportes(e);
   const C3 = e.datos.reglas.find(x => x.id === 'C3');
@@ -140,7 +158,7 @@ function rendimientoInforme(ctx) {
   const desfase = cierre ? cierre.registrado - cierre.estimado : 0;
   return hoja('Rendimiento', `en USD MEP · al ${fmt.fecha(e.hoy)}`,
     br.relevante ? aviso(`Ojo: lo que hoy tenés costó ${fmt.usd(br.costo)} y los aportes cargados suman ${fmt.usd(br.aportado)}. Si falta cargar algún aporte, lo anterior a tus registros diarios es menos preciso. Revisalo en Anual para el contador.`, 'alerta') : null,
-    cierre && Math.abs(desfase) > Math.max(50, 0.05 * cierre.registrado) ? aviso(`Lo estimado para antes de tus registros diarios no cierra con el primero (${fmt.fecha(cierre.fecha)}): ${desfase > 0 ? 'faltan' : 'sobran'} ${fmt.usd(Math.abs(desfase))}. Suele ser un aporte, una venta o un cobro anterior sin cargar. Ese salto no cuenta como ganancia, pero lo de antes de esa fecha es menos preciso.`, 'alerta') : null,
+    cierre && Math.abs(desfase) > Math.max(50, 0.05 * cierre.registrado) ? avisoCierre(ctx, cierre, desfase) : null,
     bloquePeriodo(e),
     sec('Por bloque, desde cada compra (tasa anual)', (() => {
       const filas = rendimientoPorBloque(e), pc = x => x == null ? '—' : color(x, fmt.pctSigno(x));

@@ -271,6 +271,9 @@ input[type="file"] { width: 100%; font-size: .9rem; }
 .informe p + p { margin-top: .5rem; }
 .informe .resumen { margin-top: 0; }
 .informe > .aviso { margin-bottom: 1.75rem; }
+.aviso-cierre p { margin: .5rem 0 0; }
+.aviso-cierre .acciones { margin-top: .75rem; }
+.aviso-cierre .nota { color: inherit; opacity: .85; }
 .tabla-periodo .tabla th, .tabla-periodo .tabla th.num { white-space: normal; }
 .tabla-periodo .tabla td:first-child { white-space: nowrap; }
 .tabla-periodo .tabla td:not(:first-child), .tabla-periodo .tabla th:not(:first-child) { padding-inline: .35rem; }
