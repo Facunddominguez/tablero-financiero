@@ -87,7 +87,7 @@ export function lotesDesdeFilas(filas) {
     const ticker = String(c.ticker ?? '').trim().toUpperCase();
     if (!ticker) return;
     const moneda = /usd|u\$s|dolar|d[oó]lar/i.test(String(c.moneda ?? '')) ? 'USD' : 'ARS';
-    const l = { ticker, cantidad: aNumero(c.cantidad), fecha_compra: fechaExcel(c.fecha), precio_compra: aNumero(c.preciocompra), moneda, gastos: aNumero(c.gastos) || 0, operacion: c.operacion ? String(c.operacion) : 'Excel de Balanz', mep_dia: aNumero(c.dolarmep) };
+    const l = { ticker, cantidad: aNumero(c.cantidad), fecha_compra: fechaExcel(c.fecha), precio_compra: aNumero(c.preciocompra ?? c.preciodecompra), moneda, gastos: aNumero(c.gastos) || 0, operacion: c.operacion ? String(c.operacion) : 'Excel de Balanz', mep_dia: aNumero(c.dolarmep) };
     if (!(l.cantidad > 0) || !l.fecha_compra || !(l.precio_compra >= 0) || !(l.mep_dia > 0)) errores.push(`Fila ${i + 2} (${ticker}): faltan datos`);
     else lotes.push(l);
   });
@@ -97,7 +97,7 @@ function importarExcel(ctx) {
   const e = ctx.estado;
   const salida = h('div');
   const archivo = h('input', {
-    type: 'file', accept: '.xlsx,.xls',
+    type: 'file', accept: '.xlsx,.xls,.csv',
     onchange: async () => {
       const f = archivo.files[0]; if (!f) return;
       poner(salida, h('p.nota', 'Leyendo…'));
@@ -125,8 +125,8 @@ function importarExcel(ctx) {
     },
   });
   const d = dialogo('Importar el Excel de Balanz', h('div.formulario',
-    h('ol.pasos-ayuda', h('li', 'En Balanz web: Reportes → Resultados por lotes.'), h('li', 'Descargalo en Excel.'), h('li', 'Elegilo acá abajo. Vas a ver las diferencias antes de confirmar.')),
-    campo('Archivo "resultados por lotes"', archivo), salida), { ancho: '36rem' });
+    h('ol.pasos-ayuda', h('li', 'En Balanz web, descargá el reporte de resultados por lotes (Excel o CSV).'), h('li', 'Tiene que traer las columnas Cantidad, Ticker, Fecha, Precio de compra, Moneda, Gastos y Dolar MEP.'), h('li', 'Elegilo acá abajo. Vas a ver las diferencias antes de confirmar.')),
+    campo('Archivo de resultados por lotes (.xlsx o .csv)', archivo), salida), { ancho: '36rem' });
   return d;
 }
 
