@@ -1,7 +1,8 @@
 // Pantalla Aportar: calculadora de reparto en unidades enteras.
 import { h, poner, fmt, fechas, aNumero } from '../util.js';
 import { repartirAporte, aporteDelMes } from '../motor.js';
-import { dialogoCompras, boton, aviso } from './comun.js';
+import { conDolares, dolaresEnCaja, textoVentana } from '../precios.js';
+import { dialogoCompras, boton, aviso, tablaCompras } from './comun.js';
 import { vistaMes, entradaMes } from './mes.js';
 
 let moneda = 'USD', texto = null, deCaja = false, sugerido = null;
@@ -22,14 +23,16 @@ export function vistaAportar(ctx, sub) {
     const monto = aNumero(fMonto.value);
     if (!(monto > 0)) { poner(salida, h('p.nota', 'Escribí un monto para ver qué comprar.')); return; }
     const usd = moneda === 'USD' ? monto : monto / e.mep;
-    const r = repartirAporte(e, usd);
-    if (!r.compras.length) { poner(salida, aviso(`Con ${fmt.usd(usd, 2)} no alcanza para una unidad de ningún ETF del núcleo. Queda en caja hasta el próximo aporte.`, 'alerta')); return; }
+    const base = repartirAporte(e, usd);
+    const r = deCaja ? conDolares(e, base, dolaresEnCaja(e)) : base;
+    const salteados = r.salteados.map(s => aviso(s.motivo, 'alerta'));
+    if (!r.compras.length) { poner(salida, salteados, aviso(salteados.length ? 'Hoy no conviene comprar nada con ese monto: queda en caja.' : `Con ${fmt.usd(usd, 2)} no alcanza para una unidad de ningún ETF del núcleo. Queda en caja hasta el próximo aporte.`, 'alerta')); return; }
     const dato = (etq, valor, sub) => h('div', h('p.dato-etq', etq), h('p.dato-valor', valor), sub ? h('p.dato-sub', sub) : null);
-    poner(salida, 
-      h('div.tabla-caja', h('table.tabla',
-        h('thead', h('tr', h('th', 'Comprá'), h('th.num', 'Unidades'), h('th.num', 'Precio $'), h('th.num', 'Monto $'), h('th.num', 'USD'))),
-        h('tbody', r.compras.map(c => h('tr', h('td', h('strong.num', c.ticker)), h('td.num', fmt.cant(c.cantidad)), h('td.num', fmt.num(c.precio)), h('td.num', fmt.num(c.monto_ars)), h('td.num', fmt.num(c.monto_usd, 2))))),
-        h('tfoot', h('tr', h('td', { colspan: 3 }, 'Total'), h('td.num', fmt.num(r.compras.reduce((a, c) => a + c.monto_ars, 0))), h('td.num', fmt.num(r.invertido_usd, 2)))))),
+    poner(salida,
+      h('p.nota.ventana', textoVentana(e.feriados, e.hoy)),
+      tablaCompras(r.compras),
+      r.compras.some(c => c.revisar) ? aviso(`Revisá el ratio de ${r.compras.filter(c => c.revisar).map(c => c.ticker).join(', ')}: los precios no cierran y no hay precio justo.`, 'alerta') : null,
+      salteados,
       h('div.resumen',
         dato('Invertís', fmt.usd(r.invertido_usd, 2), moneda === 'ARS' ? `de ${fmt.ars(monto)}` : `≈ ${fmt.ars(usd * e.mep)}`),
         dato('Costo estimado', fmt.usd(r.costo_usd, 2), `${fmt.pct(r.costo_pct, 2)} del monto`),
@@ -42,7 +45,7 @@ export function vistaAportar(ctx, sub) {
           h('div.peso-barras', h('span', { style: `width:${pc(r.pesos_antes[t])}` }), h('span.despues', { style: `width:${pc(r.pesos_despues[t])}` }), h('i', { style: `left:${pc(obj)}`, title: `objetivo ${fmt.pct(obj, 0)}` })),
           h('span.peso-txt', `${fmt.pct(r.pesos_antes[t])} → ${fmt.pct(r.pesos_despues[t])} · obj. ${fmt.pct(obj, 0)}`));
       })),
-      h('label.casilla', h('input', { type: 'checkbox', checked: deCaja, onchange: ev => { deCaja = ev.target.checked; } }), h('span', 'Es plata que ya estaba en la cuenta'), h('small', 'Marcalo si reinvertís un cupón o dividendo: no cuenta como aporte nuevo.')),
+      h('label.casilla', h('input', { type: 'checkbox', checked: deCaja, onchange: ev => { deCaja = ev.target.checked; pintar(); } }), h('span', 'Es plata que ya estaba en la cuenta'), h('small', 'Marcalo si reinvertís un cupón o dividendo: no cuenta como aporte nuevo. Si tenés dólares, te digo cuándo conviene pagar en dólares.')),
       h('div.acciones.izq', { style: 'margin-top:1.25rem' }, boton('Registrar como ejecutado', () => dialogoCompras(ctx, { titulo: deCaja ? 'Registrar la compra' : 'Registrar el aporte', compras: r.compras, usd, externo: !deCaja }), 'primario')));
   }
   fMonto.addEventListener('input', pintar);

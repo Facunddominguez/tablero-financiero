@@ -28,7 +28,9 @@ const arsDe = (c, mep) => c.cantidad * c.precio * (c.moneda === 'USD' ? mep : 1)
 function sumarCompra(d, c, fecha, mep, nota) {
   let pos = d.posiciones.find(p => p.ticker === c.ticker);
   if (!pos) {
-    pos = { ticker: c.ticker, descripcion: c.ticker, tipo: 'cedear', cantidad: 0, precio: c.precio, moneda_precio: c.moneda || 'ARS', bloque: 'satelite', ticker_subyacente_usa: c.ticker };
+    // una compra en la especie en dólares es el mismo activo: la posición se valúa en pesos
+    const enUSD = c.moneda === 'USD' && !c.especie;
+    pos = { ticker: c.ticker, descripcion: c.ticker, tipo: 'cedear', cantidad: 0, precio: c.especie ? c.precio * mep : c.precio, moneda_precio: enUSD ? 'USD' : 'ARS', bloque: 'satelite', ticker_subyacente_usa: c.ticker };
     d.posiciones.push(pos);
   }
   pos.cantidad += c.cantidad;
@@ -57,7 +59,11 @@ export function aplicarEventos(base, eventosLocales = []) {
       }
       case 'aporte_historico': d.cashflows_externos_usd.push({ fecha: e.fecha, usd: e.usd, evento: e.id }); break; // aporte viejo que faltaba: no mueve la caja
       case 'compra': // con plata que ya estaba en caja
-        for (const c of e.compras || []) { sumarCompra(d, c, e.fecha, e.mep, 'Registrado en la app (desde caja)'); d.caja.ARS -= arsDe(c, e.mep); }
+        for (const c of e.compras || []) {
+          sumarCompra(d, c, e.fecha, e.mep, 'Registrado en la app (desde caja)');
+          if (c.moneda === 'USD') d.caja.USD_MEP -= arsDe(c, e.mep) / e.mep; // se pagó con los dólares de la cuenta
+          else d.caja.ARS -= arsDe(c, e.mep);
+        }
         break;
       case 'cobro': // cupón, dividendo o amortización
         d.caja.USD_MEP += e.usd;
@@ -135,7 +141,7 @@ function precioDeMercado(p, m) {
   return v ? { precio: v[0], variacion: v[1] || 0, viejo: !!tabla.stale } : null;
 }
 
-// Valúa todo en USD MEP. ext = { mercado, calendario, insiders, historico } (cualquiera puede faltar).
+// Valúa todo en USD MEP. ext = { mercado, calendario, insiders, historico, ratios, feriados } (cualquiera puede faltar).
 export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
   const m = ext.mercado || null;
   const mep = m?.fx?.mep || datos.meta.tc_snapshot.mep;
@@ -198,6 +204,7 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     precios: { origen: m ? 'mercado' : 'archivo', generado: m?.generado || null, fecha_archivo: datos.meta.fecha_snapshot, viejos, fecha_fci: m?.fci?.fecha || null },
     fecha_resumen: datos.meta.fecha_resumen || datos.meta.fecha_snapshot,
     mercado: m, calendario: ext.calendario || { flujos: [] }, insiders: ext.insiders || { filas: [] }, historico: ext.historico || null,
+    ratios: ext.ratios?.ratios || null, ratios_fecha: ext.ratios?.fecha || null, feriados: ext.feriados || null,
   };
 }
 

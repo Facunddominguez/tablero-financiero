@@ -2,7 +2,8 @@
 import { h, poner, fmt, fechas, aNumero, suma } from '../util.js';
 import { CATEGORIAS, NO_GASTO, categorizar, patronDe, desdeTabla, detectarColumnas, celdasDeCSV, desdeTexto, mesDe, resumenGastos } from '../extracto.js';
 import { recomendarAporte, repartirAporte } from '../motor.js';
-import { boton, campo, entrada, aviso, cargarScript, bajarVerificado, CDN } from './comun.js';
+import { textoVentana } from '../precios.js';
+import { boton, campo, entrada, aviso, cargarScript, bajarVerificado, CDN, tablaCompras } from './comun.js';
 
 const PASOS = ['Extracto', 'Gastos', 'Ingreso', 'Dólar', 'Cuánto', 'En qué'];
 let B = null; // borrador del cierre en curso (solo en memoria)
@@ -190,11 +191,10 @@ function pasoEnQue(ctx) {
   const r = repartirAporte(e, B.elegido);
   return [
     h('p', `Con ${fmt.usd(B.elegido)}, esto es lo que conviene comprar para acercar la cartera a su distribución objetivo:`),
-    r.compras.length ? h('div.tabla-caja', h('table.tabla',
-      h('thead', h('tr', h('th', 'Comprá'), h('th.num', 'Unidades'), h('th.num', 'Precio $'), h('th.num', 'USD'))),
-      h('tbody', r.compras.map(c => h('tr', h('td', h('strong.num', c.ticker)), h('td.num', fmt.cant(c.cantidad)), h('td.num', fmt.num(c.precio)), h('td.num', fmt.num(c.monto_usd, 2))))),
-      h('tfoot', h('tr', h('td', { colspan: 3 }, 'Total'), h('td.num', fmt.num(r.invertido_usd, 2))))))
-      : aviso('Con ese monto no alcanza para una unidad de ningún ETF del núcleo: queda en caja hasta el próximo aporte.', 'alerta'),
+    r.compras.length ? h('p.nota', textoVentana(e.feriados, e.hoy)) : null,
+    r.salteados.map(s => aviso(s.motivo, 'alerta')),
+    r.compras.length ? tablaCompras(r.compras)
+      : aviso(r.salteados.length ? 'Hoy no conviene comprar con ese monto: queda en caja.' : 'Con ese monto no alcanza para una unidad de ningún ETF del núcleo: queda en caja hasta el próximo aporte.', 'alerta'),
     h('p.nota', `Va todo al núcleo, primero a lo que está más lejos de su peso. Costo estimado ${fmt.usd(r.costo_usd, 2)}; sobran ${fmt.usd(r.sobrante_usd, 2)}. Precios ${e.precios.origen === 'mercado' ? 'actualizados ' + fmt.hace(e.precios.generado) : 'del último resumen'} (data912.com).`),
     h('p.nota', 'Al guardar, en Hoy te queda el paso "Aportá" con estas compras para marcar cuando las hagas.'),
   ];

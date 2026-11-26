@@ -36,6 +36,19 @@ export function tabla(columnas, filas, { clase = '', pie } = {}) {
     pie ? h('tfoot', h('tr', pie.map((p, i) => h('td' + (columnas[i]?.num ? '.num' : ''), p)))) : null));
 }
 
+// Qué comprar: unidades, precio de pantalla y, si se puede calcular, el límite y cuán caro está contra el precio justo.
+export function tablaCompras(compras) {
+  const usd = c => c.moneda === 'USD';
+  const precio = (c, v) => usd(c) ? `USD ${fmt.num(v, 2)}` : `$ ${fmt.num(v)}`;
+  return tabla([
+    { titulo: 'Comprá', celda: c => [h('strong.num', c.especie || c.ticker), usd(c) ? h('small.desglose', 'en dólares') : null] },
+    { titulo: 'Unidades', num: 1, celda: c => fmt.cant(c.cantidad) },
+    { titulo: 'Precio', num: 1, celda: c => [precio(c, c.precio), c.prima == null || usd(c) ? null : h('span.desglose', `${fmt.pct(Math.abs(c.prima))} ${c.prima >= 0 ? 'caro' : 'barato'}`)] },
+    { titulo: 'Límite', num: 1, celda: c => c.limite ? precio(c, c.limite) : '—' },
+    { titulo: 'USD', num: 1, celda: c => fmt.num(c.monto_usd, 2) },
+  ], compras, { pie: ['Total', '', '', '', fmt.num(suma(compras, c => c.monto_usd), 2)] });
+}
+
 // Pide precios nuevos a GitHub. El texto lo mantiene al día app.js (data-precios) mientras dura el pedido.
 export function botonPrecios(ctx, alTerminar) {
   const p = ctx.precios;
@@ -55,19 +68,20 @@ export function dialogoCompras(ctx, { titulo, compras, usd, externo, paso }) {
   const fUsd = entrada({ value: fmt.num(usd, 2) });
   const fMep = entrada({ value: fmt.num(e.mep, 2) });
   const filas = compras.map(c => ({
-    ticker: c.ticker,
+    ticker: c.ticker, moneda: c.moneda, especie: c.especie,
     cant: entrada({ value: String(c.cantidad), inputmode: 'numeric' }),
     precio: entrada({ value: fmt.num(c.precio, 2) }),
     gastos: entrada({ value: fmt.num(c.gastos, 2) }),
   }));
+  const hayDolares = filas.some(f => f.moneda === 'USD');
   const error = h('p.error', { role: 'alert' });
   const form = h('form.formulario', {
     onsubmit: async ev => {
       ev.preventDefault();
       const mep = aNumero(fMep.value), monto = aNumero(fUsd.value);
-      const lista = filas.map(f => ({ ticker: f.ticker, cantidad: aNumero(f.cant.value), precio: aNumero(f.precio.value), gastos: aNumero(f.gastos.value) || 0 })).filter(c => c.cantidad > 0);
+      const lista = filas.map(f => ({ ticker: f.ticker, ...(f.moneda ? { moneda: f.moneda, especie: f.especie } : {}), cantidad: aNumero(f.cant.value), precio: aNumero(f.precio.value), gastos: aNumero(f.gastos.value) || 0 })).filter(c => c.cantidad > 0);
       if (!(mep > 0) || (externo && !(monto > 0)) || lista.some(c => !(c.precio > 0))) { error.textContent = 'Revisá los números: hay algún campo vacío o en cero.'; return; }
-      const gastado = suma(lista, c => c.cantidad * c.precio + c.gastos) / mep;
+      const gastado = suma(lista, c => c.cantidad * c.precio * (c.moneda === 'USD' ? mep : 1) + c.gastos) / mep;
       if (externo && gastado > monto * 1.02) { error.textContent = `Las compras suman ${fmt.usd(gastado, 2)} y el aporte es de ${fmt.usd(monto, 2)}. Corregí el monto aportado.`; return; }
       const ev1 = externo
         ? { tipo: 'aporte', fecha: fFecha.value, usd: monto, mep, compras: lista }
@@ -77,11 +91,11 @@ export function dialogoCompras(ctx, { titulo, compras, usd, externo, paso }) {
       d.close();
     },
   },
-    h('p.nota', 'Cargá lo que realmente se ejecutó. Los precios son por unidad, en pesos; los gastos son comisión más derechos e IVA.'),
+    h('p.nota', `Cargá lo que realmente se ejecutó. Los precios son por unidad, en pesos${hayDolares ? ' (en dólares donde dice USD)' : ''}; los gastos, en pesos: comisión más derechos e IVA.`),
     h('div.fila-campos', campo('Fecha', fFecha), externo ? campo('Aportaste (USD)', fUsd) : null, campo('Dólar MEP', fMep)),
     h('div.tabla-caja', h('table.tabla.compacta',
-      h('thead', h('tr', h('th', 'Activo'), h('th.num', 'Cantidad'), h('th.num', 'Precio $'), h('th.num', 'Gastos $'))),
-      h('tbody', filas.map(f => h('tr', h('td', h('strong', f.ticker)), h('td.num', f.cant), h('td.num', f.precio), h('td.num', f.gastos)))))),
+      h('thead', h('tr', h('th', 'Activo'), h('th.num', 'Cantidad'), h('th.num', hayDolares ? 'Precio' : 'Precio $'), h('th.num', 'Gastos $'))),
+      h('tbody', filas.map(f => h('tr', h('td', h('strong', f.ticker), f.moneda === 'USD' ? h('small', ` ${f.especie || ''} · USD`) : null), h('td.num', f.cant), h('td.num', f.precio), h('td.num', f.gastos)))))),
     error,
     h('div.acciones', boton('Cancelar', () => d.close(), 'fantasma'), h('button.boton.primario', { type: 'submit' }, 'Registrar')));
   const d = dialogo(titulo, form, { ancho: '34rem' });

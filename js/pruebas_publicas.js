@@ -1,6 +1,9 @@
 // Pruebas que no necesitan tus datos: corren en cada PR (GitHub Actions) y también dentro de tests.html.
 // Devuelve [nombre, fn] como las asincrónicas de js/pruebas.js.
-import { tickersPropios, esRespaldoPlano, snapshotDe } from './estado.js';
+import { tickersPropios, esRespaldoPlano, snapshotDe, aplicarEventos, valuar } from './estado.js';
+import { precioJusto, referenciaImplicito, especieD, conDolares, ventanaDelDia, textoVentana } from './precios.js';
+import { repartirAporte, planificador } from './motor.js';
+import { ejemplo } from './ejemplo.js';
 import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo, benchmarks, rendimientoPorBloque, canjeDe } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
@@ -25,8 +28,125 @@ function carteraConCanje(canjes, { precios = [100, 100], registros = false } = {
 }
 const periodoTodo = e => { const h = historiaCartera(e); return resumenPeriodo(e, h, benchmarks(e, h.flujos), 'todo'); };
 
+// Estado mínimo para el reparto: dos ETF del núcleo con el mismo peso objetivo y precios sintéticos.
+// primas = cuánto más caro que su precio justo está cada CEDEAR (null: sin datos de precio justo).
+function estadoReparto({ primas = { AAA: 0, BBB: 0 }, cantidades = { AAA: 10, BBB: 10 }, hoy = '2026-11-30', viejo = false, usdD = null, cajaUSD = 0 } = {}) {
+  const precio = t => Math.round(10000 * (1 + (primas?.[t] ?? 0)));
+  const cedears = { AAA: [precio('AAA'), 0], BBB: [precio('BBB'), 0] };
+  if (usdD) for (const [t, v] of Object.entries(usdD)) cedears[t] = [v, 0];
+  const papeles = Object.fromEntries(['P1', 'P2', 'P3', 'P4', 'P5'].map((t, i) => [t, [1000, 100 - i]]));
+  return {
+    hoy, mep: 1000, ccl: 1000, caja_usd: cajaUSD,
+    ratios: { AAA: { ratio: 10 }, BBB: { ratio: 10 } },
+    mercado: primas && { generado: `${viejo ? '2026-11-20' : hoy}T15:00:00Z`, cedears: { precios: cedears }, implicito: { usa: { precios: { AAA: [100, 0], BBB: [100, 0] } }, ccl: { papeles } } },
+    posiciones: ['AAA', 'BBB'].map(t => ({ ticker: t, cantidad: cantidades[t], precio_ars: precio(t) })),
+    datos: { config: { costo_entrada_estimado: 0 }, caja: { USD_MEP: cajaUSD }, nucleo: { pesos_internos: { AAA: 0.5, BBB: 0.5 }, banda_interna_pp: 0.03 }, reglas: [] },
+  };
+}
+const unidades = r => Object.fromEntries(r.compras.map(c => [c.especie || c.ticker, c.cantidad]));
+const igual = (a, b, que) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${que}: ${JSON.stringify(a)}`); };
+
 export function pruebasPublicas() {
   return [
+    ['Precio justo: subyacente × dólar implícito de referencia ÷ ratio', async () => {
+      const e = estadoReparto({ primas: { AAA: 0.02, BBB: 0 } });
+      // un papel de poco volumen no entra en la mediana
+      e.datos.config.papeles_liquidos = 5; e.mercado.implicito.ccl.papeles.RARO = [5000, 1];
+      cerca(referenciaImplicito(e), 1000, 1e-9, 'mediana');
+      const j = precioJusto(e, 'AAA');
+      cerca(j.justo_ars, 100 * 1000 / 10, 1e-9, 'precio justo'); cerca(j.prima, 0.02, 1e-9, 'prima'); cerca(j.implicito, 1020, 1e-9, 'dólar implícito');
+      if (j.revisar) throw new Error('2% no es para revisar');
+      if (!precioJusto(estadoReparto({ primas: { AAA: 0.2, BBB: 0 } }), 'AAA').revisar) throw new Error('20% hay que revisar el ratio');
+      if (precioJusto(e, 'CCC') !== null) throw new Error('sin ratio no hay precio justo');
+      if (precioJusto(estadoReparto({ viejo: true }), 'AAA') !== null) throw new Error('con precios de hace días no se calcula');
+      const stale = estadoReparto(); stale.mercado.implicito.usa.stale = true;
+      if (precioJusto(stale, 'AAA') !== null) throw new Error('con precios sin actualizar no se calcula');
+    }],
+
+    ['Reparto: a igual déficit va primero el de menor prima', async () => {
+      const uno = primas => unidades(repartirAporte(estadoReparto({ primas, cantidades: { AAA: 10, BBB: 10 } }), 10.2));
+      // los dos pesan igual en pesos solo si valen lo mismo: se ajustan las cantidades para igualar el déficit
+      const e = estadoReparto({ primas: { AAA: 0.008, BBB: -0.008 } });
+      e.posiciones[0].cantidad = 10000 / e.posiciones[0].precio_ars; e.posiciones[1].cantidad = 10000 / e.posiciones[1].precio_ars;
+      igual(unidades(repartirAporte(e, 10.1)), { BBB: 1 }, 'el barato');
+      igual(uno({ AAA: 0, BBB: 0 }), { AAA: 1 }, 'sin diferencia, como siempre');
+    }],
+
+    ['Reparto: un ETF más de 1% caro se saltea ese día, con el motivo y sin cambiar la banda', async () => {
+      const r = repartirAporte(estadoReparto({ primas: { AAA: 0.015, BBB: 0 }, cantidades: { AAA: 5, BBB: 5 } }), 40);
+      // BBB sigue limitado por su banda: recibe una unidad y el resto queda sin invertir
+      igual(unidades(r), { BBB: 1 }, 'no compra el caro ni empuja al otro fuera de banda');
+      if (r.salteados.length !== 1 || r.salteados[0].ticker !== 'AAA' || !/1,5% caro/.test(r.salteados[0].motivo)) throw new Error(JSON.stringify(r.salteados));
+      cerca(r.sobrante_usd + r.invertido_usd, 40, 1e-9, 'lo que no se invierte sobra');
+      const justo = repartirAporte(estadoReparto({ primas: { AAA: 0.0099, BBB: 0 }, cantidades: { AAA: 5, BBB: 10 } }), 40);
+      if (!justo.compras.some(c => c.ticker === 'AAA') || justo.salteados.length) throw new Error('0,99% no se saltea');
+    }],
+
+    ['Reparto: el límite sale del precio justo y sin datos todo queda como antes', async () => {
+      const r = repartirAporte(estadoReparto({ primas: { AAA: 0.005, BBB: -0.01 }, cantidades: { AAA: 5, BBB: 5 } }), 50);
+      const a = r.compras.find(c => c.ticker === 'AAA'), b = r.compras.find(c => c.ticker === 'BBB');
+      cerca(a.limite, 10000 * 1.01, 1e-6, 'precio justo + 1%'); cerca(b.limite, 9900 * 1.01, 1e-6, 'si está barato, desde el precio de pantalla');
+      const sin = repartirAporte(estadoReparto({ primas: null, cantidades: { AAA: 5, BBB: 10 } }), 70);
+      igual(unidades(sin), { AAA: 6, BBB: 1 }, 'primero lo más lejos de su peso');
+      if (sin.compras.some(c => c.limite !== null || c.prima !== null) || sin.salteados.length) throw new Error('sin datos no hay límite ni salteos');
+    }],
+
+    ['Dólares en caja: sugiere la especie D solo si no es más cara', async () => {
+      const barata = estadoReparto({ usdD: { AAAD: 9.9, BBBD: 10.1 }, cantidades: { AAA: 5, BBB: 5 }, cajaUSD: 100 });
+      if (!especieD(barata, 'AAA').conviene || especieD(barata, 'BBB').conviene) throw new Error('comparación mal');
+      const r = conDolares(barata, repartirAporte(barata, 60), 25);
+      igual(unidades(r), { AAAD: 2, AAA: 1, BBB: 3 }, 'paga en dólares lo que alcanza');
+      const d = r.compras.find(c => c.especie === 'AAAD');
+      if (d.moneda !== 'USD' || d.precio !== 9.9 || d.ticker !== 'AAA') throw new Error(JSON.stringify(d));
+      cerca(d.limite, 9.9 * 1.01, 1e-9, 'límite en dólares');
+      // "AM" + "D" es otra empresa
+      const am = { hoy: '2026-11-30', mep: 1000, ratios: { AM: { ratio: 1 }, AMD: { ratio: 1 } }, datos: { config: {} }, mercado: { generado: '2026-11-30T15:00:00Z', cedears: { precios: { AM: [10000, 0], AMD: [9.9, 0] } } } };
+      if (especieD(am, 'AM') !== null) throw new Error('confundió AMD con AM en dólares');
+      am.ratios.AM.d = 'AM.D'; am.mercado.cedears.precios['AM.D'] = [9.9, 0];
+      if (especieD(am, 'AM').especie !== 'AM.D') throw new Error('no usó la especie indicada');
+    }],
+
+    ['Comprar en dólares descuenta los dólares de la cuenta y suma al mismo activo', async () => {
+      const { datos, ext } = ejemplo();
+      const antes = valuar(aplicarEventos(datos), ext, '2026-11-30');
+      const ev = [{ id: 'c', ts: '2026-11-30T15:00:00Z', tipo: 'compra', fecha: '2026-11-30', mep: 1000, compras: [{ ticker: 'SPY', especie: 'SPYD', moneda: 'USD', cantidad: 5, precio: 10, gastos: 340 }] }];
+      const d = aplicarEventos(datos, ev);
+      cerca(d.caja.USD_MEP, 120 - 50 - 0.34, 1e-9, 'dólares'); cerca(d.caja.ARS, datos.caja.ARS, 1e-9, 'pesos intactos');
+      if (d.posiciones.find(p => p.ticker === 'SPY').cantidad !== 155 || d.posiciones.some(p => p.ticker === 'SPYD')) throw new Error('tiene que sumar a SPY');
+      cerca(valuar(d, ext, '2026-11-30').total_usd, antes.total_usd - 50.34 + 5 * ext.mercado.cedears.precios.SPY[0] / 1000, 0.01, 'patrimonio');
+    }],
+
+    ['Ventana para comprar: Wall Street abierto y hasta media hora antes del cierre de BYMA', async () => {
+      const cal = ejemplo().ext.feriados;
+      igual([ventanaDelDia(cal, '2026-11-30').abre, ventanaDelDia(cal, '2026-11-30').cierra], ['11:30', '17:30'], 'invierno en EE.UU.');
+      const media = ventanaDelDia(cal, '2026-11-27');
+      igual([media.abre, media.cierra, media.media], ['11:30', '15:00', 'día después de Acción de Gracias'], 'media rueda');
+      const verano = ventanaDelDia(cal, '2027-03-22');
+      igual([verano.abre, verano.cierra, verano.confirmado], ['10:30', '16:30', false], 'verano en EE.UU.');
+      if (!ventanaDelDia(cal, '2026-11-26').cerrado || !ventanaDelDia(cal, '2026-11-28').cerrado) throw new Error('feriado y sábado');
+      const t = textoVentana(cal, '2026-11-26');
+      if (!/Acción de Gracias/.test(t) || !/viernes 27 de noviembre, de 11:30 a 15:00/.test(t) || !/media rueda/.test(t)) throw new Error(t);
+      if (!/de 11:30 a 17:30/.test(textoVentana(cal, '2026-11-30'))) throw new Error(textoVentana(cal, '2026-11-30'));
+      if (!/no tengo cargados los feriados de EE.UU. de 2028/.test(textoVentana(cal, '2028-03-01'))) throw new Error(textoVentana(cal, '2028-03-01'));
+    }],
+
+    ['Los pasos "Aportá" y "Reinvertí" dicen la ventana, el límite y lo salteado; no aparece ninguna tarea nueva', async () => {
+      const { datos, ext } = ejemplo({ hoy: '2026-12-01' });
+      const plan = planificador(valuar(aplicarEventos(datos), ext, '2026-12-01'), '2026-12-01');
+      for (const tipo of ['aporte', 'flujo']) {
+        const paso = plan.pasos.find(p => p.tipo === tipo);
+        if (!paso) throw new Error('falta el paso ' + tipo);
+        const texto = paso.como.join(' | ');
+        if (!/Comprá hoy de 11:30 a 17:30/.test(texto)) throw new Error(`${tipo} sin ventana: ${texto}`);
+        if (!/precio justo/.test(texto) || !/Hoy salteá EFA/.test(texto)) throw new Error(`${tipo} sin precio justo: ${texto}`);
+        if (paso.accion.compras.some(c => c.ticker === 'EFA')) throw new Error('compra el caro');
+      }
+      const reinv = plan.pasos.find(p => p.id.startsWith('reinvertir'));
+      if (!reinv.accion.compras.some(c => c.moneda === 'USD' && c.especie === 'EEMD')) throw new Error('no sugirió EEMD: ' + reinv.como.join(' | '));
+      const sin = planificador(valuar(aplicarEventos(datos), { ...ext, mercado: null, ratios: null }, '2026-12-01'), '2026-12-01');
+      if (!sin.pasos.some(p => p.tipo === 'aporte' && p.accion.compras.length)) throw new Error('sin datos de data912 el paso tiene que seguir andando');
+    }],
+
     ['Canje: usa CCL ÷ MEP del día y, si falta, el último anterior', async () => {
       const c = canjeDe({ hoy: '2026-01-09', datos: { snapshots: { '2026-01-07': { t: 1, mep: 100, ccl: 108 } } },
         historico: { fechas: ['2026-01-02', '2026-01-05', '2026-01-06'], series: { MEP: [100, null, 100], CCL: [102, 103, 105] } } });

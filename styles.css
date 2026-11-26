@@ -256,6 +256,9 @@ input[type="file"] { width: 100%; font-size: .9rem; }
 .peso-barras i { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--tinta); border-radius: 1px; box-shadow: 0 0 0 2px var(--papel); }
 .peso-txt { font-family: var(--f-num); font-size: .82rem; color: var(--tinta-2); white-space: nowrap; }
 
+.ventana { margin-bottom: .75rem; }
+.aportar .aviso, .paso-mes .aviso { margin-top: .6rem; }
+
 /* ---------- Informes ---------- */
 .selector { display: flex; gap: .35rem; overflow-x: auto; margin: 0 -1rem 1.5rem; padding: 0 1rem .25rem; scrollbar-width: none; }
 .selector a { flex: none; padding: .4rem .85rem; border: 1px solid var(--linea-fuerte); border-radius: 999px; text-decoration: none; font-size: .88rem; color: var(--tinta-2); }

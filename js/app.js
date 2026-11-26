@@ -308,7 +308,7 @@ async function leerLocal(k, frase) {
 
 let vigilando = false;
 async function cargarTodo(frase) {
-  const [mercado, calendario, insiders, historico] = await Promise.all([json('data/market.json'), json('data/calendario.json'), json('data/insiders.json'), json('data/historico.json')]);
+  const [mercado, calendario, insiders, historico, ratios, feriados] = await Promise.all([json('data/market.json'), json('data/calendario.json'), json('data/insiders.json'), json('data/historico.json'), json('tools/cedear_ratios.json'), json('data/feriados_eeuu.json')]);
   const [eventos, snaps, local, gh, sync] = [await leerLocal('eventos', frase), await leerLocal('snapshots', frase), await leerLocal('base_local', frase), await leerLocal('github', frase), await leerLocal('sync', frase)];
   // Un respaldo importado manda hasta que se suba.
   S.localManda = !!(local && (!S.base.meta.sincronizado || S.base.meta.sincronizado < local.guardado));
@@ -317,7 +317,7 @@ async function cargarTodo(frase) {
   S.snaps = snaps || {};
   S.gh = gh?.token ? gh : null;
   S.sync = { fecha: sync?.fecha || null, ids: new Set(sync?.ids || []), error: null, enCurso: false };
-  S.ext = { mercado, calendario, insiders, historico };
+  S.ext = { mercado, calendario, insiders, historico, ratios, feriados };
   recalcular();
   await guardarSnapshot();
   armarMarco();
