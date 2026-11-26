@@ -1,7 +1,7 @@
 // Pantalla Aportar: calculadora de reparto en unidades enteras.
 import { h, poner, fmt, fechas, aNumero } from '../util.js';
 import { repartirAporte, aporteDelMes } from '../motor.js';
-import { conDolares, dolaresEnCaja, textoVentana } from '../precios.js';
+import { conDolares, dolaresEnCaja, textoVentana, avisoPrecioJusto } from '../precios.js';
 import { dialogoCompras, boton, aviso, tablaCompras } from './comun.js';
 import { vistaMes, entradaMes } from './mes.js';
 
@@ -29,7 +29,7 @@ export function vistaAportar(ctx, sub) {
     if (!r.compras.length) { poner(salida, salteados, aviso(salteados.length ? 'Hoy no conviene comprar nada con ese monto: queda en caja.' : `Con ${fmt.usd(usd, 2)} no alcanza para una unidad de ningún ETF del núcleo. Queda en caja hasta el próximo aporte.`, 'alerta')); return; }
     const dato = (etq, valor, sub) => h('div', h('p.dato-etq', etq), h('p.dato-valor', valor), sub ? h('p.dato-sub', sub) : null);
     poner(salida,
-      h('p.nota.ventana', textoVentana(e.feriados, e.hoy)),
+      h('p.nota.ventana', [textoVentana(e.feriados, e.hoy), avisoPrecioJusto(e)].filter(Boolean).join(' ')),
       tablaCompras(r.compras),
       r.compras.some(c => c.revisar) ? aviso(`Revisá el ratio de ${r.compras.filter(c => c.revisar).map(c => c.ticker).join(', ')}: los precios no cierran y no hay precio justo.`, 'alerta') : null,
       salteados,

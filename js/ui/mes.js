@@ -2,7 +2,7 @@
 import { h, poner, fmt, fechas, aNumero, suma } from '../util.js';
 import { CATEGORIAS, NO_GASTO, categorizar, patronDe, desdeTabla, detectarColumnas, celdasDeCSV, desdeTexto, mesDe, resumenGastos } from '../extracto.js';
 import { recomendarAporte, repartirAporte } from '../motor.js';
-import { textoVentana } from '../precios.js';
+import { textoVentana, avisoPrecioJusto } from '../precios.js';
 import { boton, campo, entrada, aviso, cargarScript, bajarVerificado, CDN, tablaCompras } from './comun.js';
 
 const PASOS = ['Extracto', 'Gastos', 'Ingreso', 'Dólar', 'Cuánto', 'En qué'];
@@ -191,7 +191,7 @@ function pasoEnQue(ctx) {
   const r = repartirAporte(e, B.elegido);
   return [
     h('p', `Con ${fmt.usd(B.elegido)}, esto es lo que conviene comprar para acercar la cartera a su distribución objetivo:`),
-    r.compras.length ? h('p.nota', textoVentana(e.feriados, e.hoy)) : null,
+    r.compras.length ? h('p.nota', [textoVentana(e.feriados, e.hoy), avisoPrecioJusto(e)].filter(Boolean).join(' ')) : null,
     r.salteados.map(s => aviso(s.motivo, 'alerta')),
     r.compras.length ? tablaCompras(r.compras)
       : aviso(r.salteados.length ? 'Hoy no conviene comprar con ese monto: queda en caja.' : 'Con ese monto no alcanza para una unidad de ningún ETF del núcleo: queda en caja hasta el próximo aporte.', 'alerta'),

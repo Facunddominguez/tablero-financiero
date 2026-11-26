@@ -36,17 +36,19 @@ export function tabla(columnas, filas, { clase = '', pie } = {}) {
     pie ? h('tfoot', h('tr', pie.map((p, i) => h('td' + (columnas[i]?.num ? '.num' : ''), p)))) : null));
 }
 
-// Qué comprar: unidades, precio de pantalla y, si se puede calcular, el límite y cuán caro está contra el precio justo.
+// Qué comprar: unidades y precio de la orden. Si hay precio justo, el precio de la orden es el límite y debajo va
+// el de pantalla con cuán caro o barato está.
 export function tablaCompras(compras) {
   const usd = c => c.moneda === 'USD';
   const precio = (c, v) => usd(c) ? `USD ${fmt.num(v, 2)}` : `$ ${fmt.num(v)}`;
+  const pantalla = c => !c.limite ? null : h('span.desglose', h('span', `hoy ${precio(c, c.precio)}`),
+    c.prima == null || usd(c) ? null : h('span', `${fmt.pct(Math.abs(c.prima))} ${c.prima >= 0 ? 'caro' : 'barato'}`));
   return tabla([
     { titulo: 'Comprá', celda: c => [h('strong.num', c.especie || c.ticker), usd(c) ? h('small.desglose', 'en dólares') : null] },
     { titulo: 'Unidades', num: 1, celda: c => fmt.cant(c.cantidad) },
-    { titulo: 'Precio', num: 1, celda: c => [precio(c, c.precio), c.prima == null || usd(c) ? null : h('span.desglose', `${fmt.pct(Math.abs(c.prima))} ${c.prima >= 0 ? 'caro' : 'barato'}`)] },
-    { titulo: 'Límite', num: 1, celda: c => c.limite ? precio(c, c.limite) : '—' },
+    { titulo: compras.some(c => c.limite) ? 'Precio límite' : 'Precio', num: 1, celda: c => [precio(c, c.limite || c.precio), pantalla(c)] },
     { titulo: 'USD', num: 1, celda: c => fmt.num(c.monto_usd, 2) },
-  ], compras, { pie: ['Total', '', '', '', fmt.num(suma(compras, c => c.monto_usd), 2)] });
+  ], compras, { pie: ['Total', '', '', fmt.num(suma(compras, c => c.monto_usd), 2)] });
 }
 
 // Pide precios nuevos a GitHub. El texto lo mantiene al día app.js (data-precios) mientras dura el pedido.
@@ -59,6 +61,7 @@ export function botonPrecios(ctx, alTerminar) {
 }
 
 export const signoClase = n => n > 0 ? 'sube' : n < 0 ? 'baja' : '';
+export const parteRiesgo = x => fmt.pct(Math.abs(x) < 5e-4 ? 0 : x); // que no se lea "−0,0%"
 
 // Diálogo para registrar compras ejecutadas (un aporte nuevo o una reinversión desde caja).
 // Prellenado con lo sugerido; el usuario corrige cantidad, precio y gastos reales.

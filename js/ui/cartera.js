@@ -3,7 +3,7 @@ import { h, poner, fmt } from '../util.js';
 import { porGrupo, NOMBRE_GRUPO } from '../estado.js';
 import { accionesPorActivo, objetivoDe, proximosFlujos } from '../motor.js';
 import { riesgo } from '../riesgo.js';
-import { cargarScript, CDN, coloresSeries, signoClase, tabla, chip } from './comun.js';
+import { cargarScript, CDN, coloresSeries, signoClase, tabla, chip, parteRiesgo } from './comun.js';
 
 let orden = { col: 'valor_usd', asc: false };
 let grafico;
@@ -45,7 +45,7 @@ export function vistaCartera(ctx) {
     { k: 'cantidad', t: 'Cantidad', num: 1, celda: f => fmt.cant(f.cantidad) },
     { k: 'valor_usd', t: 'Valor USD', num: 1, movil: 1, celda: f => fmt.num(f.valor_usd) },
     { k: 'pct_lp', t: '% LP', num: 1, movil: 1, celda: f => f.pct_lp == null ? '—' : fmt.pct(f.pct_lp) },
-    { k: 'pct_riesgo', t: '% del riesgo', num: 1, movil: 1, celda: f => f.pct_riesgo == null ? '—' : fmt.pct(f.pct_riesgo) },
+    { k: 'pct_riesgo', t: '% del riesgo', num: 1, movil: 1, celda: f => f.pct_riesgo == null ? '—' : parteRiesgo(f.pct_riesgo) },
     { k: 'objetivo', t: 'Objetivo', num: 1, celda: f => f.objetivo == null ? '—' : fmt.pct(f.objetivo) },
     { k: 'desvio', t: 'Desvío', num: 1, celda: f => f.desvio == null ? '—' : fmt.pp(f.desvio) },
     { k: 'pnl_usd', t: 'Resultado USD', num: 1, celda: f => f.pnl_usd == null ? '—' : h('span.' + (signoClase(f.pnl_usd) || 'plano'), fmt.signo(f.pnl_usd)) },

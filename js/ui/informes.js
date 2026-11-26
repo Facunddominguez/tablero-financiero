@@ -5,7 +5,7 @@ import { NOMBRE_GRUPO } from '../estado.js';
 import { riesgo } from '../riesgo.js';
 import { puntajePredicciones, compararFantasmas, contraReferencia, HORIZONTES } from '../diario.js';
 import { nuevaPrediccion, nuevaRotacion } from './diario.js';
-import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase } from './comun.js';
+import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase, parteRiesgo } from './comun.js';
 
 const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['trimestral', 'Trimestral'], ['diario', 'Predicciones y fantasmas'], ['anual', 'Anual para el contador'], ['allaria', 'Contraste con Allaria']];
 const dato = (etq, valor, sub) => h('div', h('p.dato-etq', etq), h('p.dato-valor', valor), sub ? h('p.dato-sub', sub) : null);
@@ -50,7 +50,7 @@ function seccionRiesgo(e) {
   return sec('Riesgo',
     tabla([
       { titulo: 'Bloque', celda: b => h('strong', b.nombre) }, { titulo: 'Peso', num: 1, celda: b => fmt.pct(b.peso) },
-      { titulo: '% del riesgo', num: 1, celda: b => fmt.pct(b.riesgo) }, { titulo: 'USD', num: 1, celda: b => fmt.num(b.usd) },
+      { titulo: '% del riesgo', num: 1, celda: b => parteRiesgo(b.riesgo) }, { titulo: 'USD', num: 1, celda: b => fmt.num(b.usd) },
     ], r.bloques, { pie: ['Total', fmt.pct(1, 0), fmt.pct(1, 0), fmt.num(r.valor)] }),
     h('div.resumen', { style: 'margin:1rem 0' },
       dato('Un mes malo', fmt.usd(r.mes_malo_usd), `${fmt.pct(r.mes_malo_pct)}: de cada ${Math.round(1 / r.percentil)} meses, uno sería así de malo o peor`),
@@ -89,16 +89,16 @@ function diario(ctx) {
   const cerradas = (d.predicciones || []).filter(x => typeof x.cumplio === 'boolean').sort(orden).reverse();
   const fantasmas = compararFantasmas(e);
   const columnas = [
-    { titulo: 'Predicción', celda: x => [x.ticker ? h('strong.num', x.ticker + ' ') : null, x.texto, h('small.desglose', `cambiaría de idea si: ${x.cambio}`)] },
+    { titulo: 'Predicción', celda: x => [x.ticker && !x.texto.includes(x.ticker) ? h('strong.num', x.ticker + ' ') : null, x.texto, h('small.desglose', `cambiaría de idea si: ${x.cambio}`)] },
     { titulo: 'Prob.', num: 1, celda: x => fmt.pct(x.probabilidad, 0) },
-    { titulo: 'Vence', num: 1, celda: x => fmt.fecha(x.vence) },
+    { titulo: 'Vence', num: 1, celda: x => [fmt.fecha(x.vence), typeof x.cumplio !== 'boolean' && x.vence <= e.hoy ? h('div', chip('Falta marcarla', 'alerta')) : null] },
   ];
   return hoja('Predicciones y fantasmas', `al ${fmt.fecha(e.hoy)}`,
     sec('Qué tan bien predecís',
       p.resueltas ? [
         h('div.resumen',
           dato('Puntaje de Brier', fmt.num(p.brier, 3), '0 es perfecto; decir siempre 50% da 0,250'),
-          dato('Resueltas', fmt.num(p.resueltas), `${p.pendientes} abiertas`)),
+          dato('Resueltas', fmt.num(p.resueltas), `${p.pendientes} ${p.pendientes === 1 ? 'abierta' : 'abiertas'}`)),
         tabla([
           { titulo: 'Cuando dijiste', celda: r => `${fmt.num(r.desde * 100)} a ${fmt.num(r.hasta * 100)}%` },
           { titulo: 'Cuántas', num: 1, celda: r => fmt.num(r.cantidad) },

@@ -20,10 +20,18 @@ export function referenciaImplicito(e) {
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
 }
 
+// Si los precios se tomaron sin Wall Street abierto, el de EE.UU. es de otro momento que el del CEDEAR.
+// Devuelve la explicación para mostrar (o '' si no hay nada que aclarar).
+export function avisoPrecioJusto(e) {
+  const m = e.mercado;
+  if (!e.ratios || !m?.implicito || !wallStreet(m.generado, e.feriados)) return '';
+  return 'Los precios se tomaron sin Wall Street abierto, así que no hay precio justo. Actualizalos dentro de la ventana para verlo.';
+}
+
 // Precio justo en pesos de un CEDEAR = subyacente en EE.UU. × dólar de referencia ÷ ratio.
 // prima = cuánto más caro (o barato, si es negativa) está contra ese precio.
 // revisar = los precios no cierran con el ratio oficial: no usar el precio justo hasta revisarlo.
-// Devuelve null si falta algún dato o está sin actualizar.
+// Devuelve null si falta algún dato, está sin actualizar o no es del mismo momento (Wall Street cerrado).
 export function precioJusto(e, ticker) {
   const info = e.ratios?.[ticker], m = e.mercado;
   if (!info || !(info.ratio > 0)) return null;
@@ -32,6 +40,7 @@ export function precioJusto(e, ticker) {
   const afuera = m?.implicito?.usa?.stale ? null : m?.implicito?.usa?.precios?.[subyacente];
   const ref = referenciaImplicito(e);
   if (!local?.[0] || !afuera?.[0] || !ref) return null;
+  if (wallStreet(m.generado, e.feriados) || (afuera[2] && afuera[2] !== m.generado.slice(0, 10))) return null;
   const precio = local[0], justo = afuera[0] * ref / info.ratio;
   return {
     ticker, subyacente, ratio: info.ratio, subyacente_usd: afuera[0], ccl_ref: ref, precio_ars: precio, justo_ars: justo,

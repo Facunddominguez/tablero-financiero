@@ -56,10 +56,10 @@ def volatilidad(historico, serie, hasta, lam=PARAMETROS["lambda"], minimo=PARAME
     return math.sqrt(var)
 
 
-def serie_de(activo):
+def serie_de(activo, ratios=None):
     """Serie del histórico con la que se mide un activo de la configuración (None: sin serie, como las ON)."""
     if activo["tabla"] == "cedears":
-        return activo["t"]
+        return ((ratios or {}).get(activo["t"]) or {}).get("usa", activo["t"])  # el subyacente puede llamarse distinto
     if activo["tabla"] == "acciones":
         return ADR_DE_LOCAL.get(activo["t"])
     return None
@@ -136,7 +136,7 @@ def explicar_acumulado(mercado, historico, ticker, desde, total):
 
 # ---------- evaluación ----------
 
-def evaluar(cfg, mercado, estado, hoy, historico=None, feriados=None, parametros=None):
+def evaluar(cfg, mercado, estado, hoy, historico=None, feriados=None, parametros=None, ratios=None):
     """Devuelve (alertas, estado nuevo). Cada alerta: {titulo, cuerpo, prioridad}. Función pura."""
     estado = json.loads(json.dumps(estado or {}))
     e = estado.setdefault("e", {})
@@ -165,15 +165,16 @@ def evaluar(cfg, mercado, estado, hoy, historico=None, feriados=None, parametros
         s = e.setdefault(clave(a["t"]), {})
         sufijo = "El próximo aporte va al núcleo como siempre." if a["g"] == "nucleo" else "Tus reglas no operan por un movimiento de precio: cualquier cambio espera 48 horas."
         es_cedear = a["tabla"] == "cedears"
+        serie = serie_de(a, ratios)
 
         # 1 · Movimiento del día, en dólares (precio en pesos corregido por el movimiento del MEP)
-        propio = umbral(historico, serie_de(a), a["g"], hoy, parametros=parametros)
+        propio = umbral(historico, serie, a["g"], hoy, parametros=parametros)
         u = propio or cfg["dia"].get(a["g"])
         dia_usd = (1 + (fila[1] or 0) / 100) / (1 + cambio_mep) - 1
         if u and abs(dia_usd) >= u and s.get("d") != hoy and s.get("p") != fila[1]:
             s["d"], s["p"] = hoy, fila[1]
             vara = f"Es mucho para lo que suele moverse (tu umbral hoy es ±{_num(u * 100)}%)." if propio else f"Movimiento fuerte en dólares (tu umbral es ±{_num(u * 100)}%)."
-            porque = explicar_dia(mercado, a["t"], dia_usd, feriados) if es_cedear else ""
+            porque = explicar_dia(mercado, serie, dia_usd, feriados) if es_cedear and serie else ""
             alertas.append({"titulo": f"{a['t']} {_pct(dia_usd)} hoy", "cuerpo": " ".join(x for x in (vara, porque, sufijo) if x), "prioridad": 4})
 
         # 2 · Acumulado desde el precio de referencia, por escalones
@@ -187,7 +188,7 @@ def evaluar(cfg, mercado, estado, hoy, historico=None, feriados=None, parametros
                 s["n"] = hoy
                 total = precio_usd / a["ref"] - 1
                 base = f"Desde el {cfg.get('fecha', 'precio de referencia')}, en dólares (escalones de {u * 100:.0f}%)."
-                porque = explicar_acumulado(mercado, historico, a["t"], cfg.get("fecha"), total) if es_cedear else ""
+                porque = explicar_acumulado(mercado, historico, serie, cfg.get("fecha"), total) if es_cedear and serie else ""
                 alertas.append({"titulo": f"{a['t']} acumula {_pct(total)}",
                                 "cuerpo": " ".join(x for x in (base, porque, sufijo) if x), "prioridad": 4})
             s["k"] = banda
@@ -227,7 +228,8 @@ def correr(mercado):
     estado = _leer(ESTADO)
     hoy = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=3)).strftime("%Y-%m-%d")  # fecha de Argentina
     alertas, estado = evaluar(cfg, mercado, estado, hoy, historico=_leer(RAIZ / "data" / "historico.json"),
-                              feriados=_leer(RAIZ / "data" / "feriados_eeuu.json"))
+                              feriados=_leer(RAIZ / "data" / "feriados_eeuu.json"),
+                              ratios=_leer(RAIZ / "tools" / "cedear_ratios.json").get("ratios"))
     topic, enviadas = os.environ.get("NTFY_TOPIC"), 0
     for a in alertas:
         try:

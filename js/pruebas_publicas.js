@@ -243,6 +243,23 @@ export function pruebasPublicas() {
       if (precioJusto(stale, 'AAA') !== null) throw new Error('con precios sin actualizar no se calcula');
     }],
 
+    ['Precio justo: solo con precios tomados con Wall Street abierto', async () => {
+      const con = (generado, extra = {}) => { const e = estadoReparto({ hoy: generado.slice(0, 10), primas: { AAA: 0.03, BBB: 0 }, cantidades: { AAA: 5, BBB: 5 } }); e.mercado.generado = generado; return Object.assign(e, extra); };
+      if (!precioJusto(con('2026-11-30T14:31:00Z'), 'AAA')) throw new Error('abierto: tiene que haber precio justo');
+      for (const [g, que] of [['2026-11-30T14:20:00Z', 'antes de abrir'], ['2026-11-28T15:00:00Z', 'sábado']]) {
+        if (precioJusto(con(g), 'AAA') !== null) throw new Error(que);
+        const r = repartirAporte(con(g), 40);
+        if (r.salteados.length || r.compras.some(c => c.limite !== null)) throw new Error(`${que}: no hay que saltear ni poner límite`);
+      }
+      if (precioJusto(con('2026-11-26T15:00:00Z', { feriados: { feriados: { '2026-11-26': 'x' } } }), 'AAA') !== null) throw new Error('feriado');
+      const ayer = con('2026-11-30T15:00:00Z'); ayer.mercado.implicito.usa.precios.AAA = [100, 0, '2026-11-27'];
+      if (precioJusto(ayer, 'AAA') !== null || !precioJusto(ayer, 'BBB')) throw new Error('precio de EE.UU. de otro día');
+      const { datos, ext } = ejemplo({ hoy: '2026-12-01' });
+      ext.mercado.generado = '2026-12-01T14:20:00Z';
+      const paso = planificador(valuar(aplicarEventos(datos), ext, '2026-12-01'), '2026-12-01').pasos.find(p => p.tipo === 'aporte');
+      if (!paso.como.some(c => /no hay precio justo/.test(c)) || paso.como.some(c => /salteá/.test(c))) throw new Error(paso.como.join(' | '));
+    }],
+
     ['Reparto: a igual déficit va primero el de menor prima', async () => {
       const uno = primas => unidades(repartirAporte(estadoReparto({ primas, cantidades: { AAA: 10, BBB: 10 } }), 10.2));
       // los dos pesan igual en pesos solo si valen lo mismo: se ajustan las cantidades para igualar el déficit
@@ -294,6 +311,18 @@ export function pruebasPublicas() {
       cerca(d.caja.USD_MEP, 120 - 50 - 0.34, 1e-9, 'dólares'); cerca(d.caja.ARS, datos.caja.ARS, 1e-9, 'pesos intactos');
       if (d.posiciones.find(p => p.ticker === 'SPY').cantidad !== 155 || d.posiciones.some(p => p.ticker === 'SPYD')) throw new Error('tiene que sumar a SPY');
       cerca(valuar(d, ext, '2026-11-30').total_usd, antes.total_usd - 50.34 + 5 * ext.mercado.cedears.precios.SPY[0] / 1000, 0.01, 'patrimonio');
+    }],
+
+    ['Reinvertir: si hoy todo está caro, el paso avisa y marcarlo vale solo por ese día', async () => {
+      const caro = ejemplo({ hoy: '2026-12-01' });
+      for (const t of ['SPY', 'EFA', 'EEM', 'IWM']) caro.ext.mercado.cedears.precios[t][0] = Math.round(caro.ext.mercado.cedears.precios[t][0] * 1.03);
+      const hecho = [{ id: 'x', ts: '2026-12-01T12:00:00Z', tipo: 'paso', paso_id: 'reinvertir-espera-2026-12-01', estado: 'hecho', titulo: 'x', fecha: '2026-12-01' }];
+      const paso = (datos, ext, hoy, ev = []) => planificador(valuar(aplicarEventos(datos, ev), ext, hoy), hoy).pasos.find(p => p.id.startsWith('reinvertir'));
+      const p = paso(caro.datos, caro.ext, '2026-12-01');
+      if (!p || !/hoy conviene esperar/.test(p.titulo) || p.accion || !p.como.some(c => /Hoy salteá/.test(c))) throw new Error(JSON.stringify(p));
+      if (paso(caro.datos, caro.ext, '2026-12-01', hecho)) throw new Error('hoy ya no debería estar');
+      const otro = ejemplo({ hoy: '2026-12-02' });
+      if (paso(otro.datos, otro.ext, '2026-12-02', hecho)?.id !== 'reinvertir-2026-12') throw new Error('al otro día vuelve con las compras');
     }],
 
     ['Ventana para comprar: Wall Street abierto y hasta media hora antes del cierre de BYMA', async () => {

@@ -275,7 +275,7 @@ function fuentes(ctx) {
     !e.mercado ? aviso('No se pudieron cargar los precios en vivo: se están usando los del último resumen.', 'alerta') : null,
     h('div.tabla-caja', h('table.tabla.compacta', h('thead', h('tr', h('th', 'Dato'), h('th', 'Fuente'), h('th', 'Fecha del dato'))),
       h('tbody', filas.map(([dato, fuente, fecha, viejo, fijo]) => h('tr', h('td', dato), h('td', fuente), h('td', fijo || cuando(fecha), viejo ? chip('sin actualizar', 'alerta') : null)))))),
-    h('p.nota', 'Los precios se actualizan solos tres veces por día hábil (11:30, 14:30 y 17:30 de Argentina). Si una fuente falla, se conserva el último dato y se marca "sin actualizar".'),
+    h('p.nota', 'Los precios se actualizan solos tres veces por día hábil (alrededor de las 11:40, 14:40 y 17:40 de Argentina). Si una fuente falla, se conserva el último dato y se marca "sin actualizar".'),
     h('div.bloque', h('h3', 'Actualizar ahora'),
       ctx.permiso
         ? h('div.fuentes-accion', botonPrecios(ctx, () => { if (dlg.open) { dlg.close(); fuentes(ctx); } }), h('small', 'Lo pide a GitHub y en alrededor de un minuto aparecen los precios de este momento.'))
@@ -296,7 +296,7 @@ function guiaCron(ctx) {
       h('li', h('p', 'Creá un permiso solo para esto (únicamente puede lanzar la actualización; no ve ni toca tus datos). Elegí "Only select repositories" → ', h('code', repo.split('/')[1]), ', "Generate token" y copiá el texto.'),
         h('a.boton.chico', { href: enlacePermisoCron(), target: '_blank', rel: 'noopener noreferrer' }, 'Abrir GitHub ↗')),
       h('li', h('p', 'Entrá a ', h('a', { href: 'https://console.cron-job.org/jobs/create', target: '_blank', rel: 'noopener noreferrer' }, 'cron-job.org ↗'), ' (cuenta gratis) → "Create cronjob". En URL pegá:'), copiable(urlDisparo(repo))),
-      h('li', h('p', 'Horario: "Custom". Días: lunes a viernes. Horas: 11, 14 y 17. Minuto: 30. Zona horaria: ', h('code', 'America/Argentina/Buenos_Aires'), '.')),
+      h('li', h('p', 'Horario: "Custom". Días: lunes a viernes. Horas: 11, 14 y 17. Minuto: 40 (después de que abre Wall Street, para tener precio justo). Zona horaria: ', h('code', 'America/Argentina/Buenos_Aires'), '.')),
       h('li', h('p', 'En "Advanced": método ', h('code', 'POST'), ' y estos encabezados (en Authorization va el permiso del paso 1):'),
         copiable('Accept: application/vnd.github+json'), copiable('X-GitHub-Api-Version: 2022-11-28'), copiable('Content-Type: application/json'), h('p', h('code', 'Authorization: Bearer github_pat_…'))),
       h('li', h('p', 'Cuerpo (Request body):'), copiable(cuerpoDisparo('cron'))),

@@ -85,6 +85,13 @@ al, _ = alertas.evaluar(cfg3, m2(0, 0.0, 0, 0, usa_pct=0.0), {}, HOY, historico=
 acum = al[0]["cuerpo"] if al else ""
 res.append(ok(al and "acumula" in al[0]["titulo"] and "En EE.UU. BBB" in acum and "escalones de 25%" in acum, "el acumulado no cambia y explica el CEDEAR: " + acum))
 
+# Un CEDEAR cuyo subyacente se llama distinto en EE.UU. (como BRKB / BRK.B)
+H["series"]["AAA.B"] = H["series"]["BBB"]
+cfg4 = dict(cfg2, activos=[{"t": "AAAB", "tabla": "cedears", "g": "satelite"}])
+m4 = {"generado": HOY + "T18:00:00Z", "fx": {"mep": 1000.0, "mep_prev": 1000.0}, "cedears": {"precios": {"AAAB": [10000, -4.5]}}, "implicito": {"usa": {"precios": {"AAA.B": [100, -3.0]}}}}
+al, _ = alertas.evaluar(cfg4, m4, {}, HOY, historico=H, ratios={"AAAB": {"ratio": 1, "usa": "AAA.B"}})
+res.append(ok(al and "En EE.UU. AAA.B se movió −3,0%" in al[0]["cuerpo"] and "±4,0%" in al[0]["cuerpo"], "subyacente con otro nombre: usa su serie y su precio"))
+
 # La app usa los mismos parámetros que el aviso al teléfono
 js = (pathlib.Path(__file__).resolve().parent.parent / "js" / "motor.js").read_text(encoding="utf-8")
 js_par = re.search(r"VOLATILIDAD = \{ lambda: ([\d.]+), aviso: ([\d.]+), critico: ([\d.]+), grupo: \{ nucleo: ([\d.]+) \}, min_datos: (\d+) \}", js)

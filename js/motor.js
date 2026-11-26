@@ -2,7 +2,7 @@
 import { fechas, fmt, suma } from './util.js';
 import { costoEntradaLote, costosAnuales, brechaAportes, volatilidadReciente, ADR_DE_LOCAL } from './finanzas.js';
 import { tickersPropios } from './estado.js';
-import { precioJusto, precioLimite, primaMaxima, conDolares, dolaresEnCaja, textoVentana, porQueSeMovio } from './precios.js';
+import { precioJusto, precioLimite, primaMaxima, conDolares, dolaresEnCaja, textoVentana, porQueSeMovio, avisoPrecioJusto } from './precios.js';
 
 const PRIORIDAD = { emergencia: 1, regla: 2, aporte: 3, flujo: 4, datos: 5, trimestral: 6, pendiente: 7, prediccion: 7, anual: 8, aviso: 9, senal: 10 };
 
@@ -173,14 +173,14 @@ export function movimientosFuertes(e) {
   for (const p of e.posiciones) {
     const g = p.tipo === 'on' ? 'on' : p.grupo === 'nucleo' ? 'nucleo' : (p.grupo === 'satelite' || p.grupo === 'ypf') && p.tipo !== 'fci' ? 'satelite' : null;
     if (!g) continue;
-    const serie = p.tipo === 'cedear' ? p.subyacente || p.ticker : p.tipo === 'accion_ar' ? ADR_DE_LOCAL[p.ticker] : null;
+    const serie = p.tipo === 'cedear' ? e.ratios?.[p.ticker]?.usa || p.subyacente || p.ticker : p.tipo === 'accion_ar' ? ADR_DE_LOCAL[p.ticker] : null;
     revisar(p.ticker, p.dia_usd_pct, g, serie, ['critico', 'aviso'], p.tipo === 'cedear' ? () => porQueSeMovio(e, p.ticker, p.dia_usd_pct) : null);
   }
   const cedears = e.mercado?.cedears?.precios || {}, mios = new Set(e.posiciones.map(p => p.ticker));
   for (const w of e.datos.watchlist || []) {
     const f = cedears[w.ticker]; if (!f || mios.has(w.ticker)) continue;
     const x = (1 + (f[1] || 0) / 100) / (1 + e.cambio_mep) - 1;
-    revisar(w.ticker, x, 'watchlist', w.ticker, ['aviso'], () => porQueSeMovio(e, w.ticker, x));
+    revisar(w.ticker, x, 'watchlist', e.ratios?.[w.ticker]?.usa || w.ticker, ['aviso'], () => porQueSeMovio(e, w.ticker, x));
   }
   revisar('Dólar MEP', e.cambio_mep, 'mep', 'MEP', ['critico', 'aviso']);
   return out.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
@@ -266,7 +266,8 @@ export function textoCompra(c) {
   if (c.limite) return `${base} (precio justo ${fmt.ars(c.justo_ars)}; en pantalla ${fmt.ars(c.precio)}, ${caro(c.prima)})`;
   return c.revisar ? `${base}. Antes revisá el ratio de ${c.ticker}: los precios no cierran y no hay precio justo` : base;
 }
-const textoCompras = rep => [...rep.compras.map(textoCompra), ...(rep.salteados || []).map(s => s.motivo)];
+// La ventana, las compras, lo salteado por precio y, si no hay precio justo por el horario, por qué.
+const comoComprar = (e, hoy, rep) => [textoVentana(e.feriados, hoy), ...rep.compras.map(textoCompra), ...(rep.salteados || []).map(s => s.motivo), avisoPrecioJusto(e)].filter(Boolean);
 
 // Cierre del mes anterior (extracto cargado y monto elegido), si existe.
 export function cierreDe(e, mes) {
@@ -383,7 +384,7 @@ export function planificador(e, hoy = e.hoy) {
       if (R['R3B-E']?.activa) motivos.push(`Regla R3B-E: ${R['R3B-E'].accion}.`);
       agregar({
         id: `aporte-${mes}`, tipo: 'aporte', titulo: `Aportá ${fmt.usd(paraNucleo)}`, porque: motivos.join(' '),
-        como: [`Transferí ${fmt.usd(paraNucleo)} a Balanz (≈ ${fmt.ars(paraNucleo * e.mep)})`, textoVentana(e.feriados, hoy), ...textoCompras(rep),
+        como: [`Transferí ${fmt.usd(paraNucleo)} a Balanz (≈ ${fmt.ars(paraNucleo * e.mep)})`, ...comoComprar(e, hoy, rep),
           `Costo estimado ${fmt.usd(rep.costo_usd, 2)} (${fmt.pct(rep.costo_pct, 2)}) · sobran ≈ ${fmt.usd(rep.sobrante_usd, 2)} en caja`],
         accion: { tipo: 'aporte', usd: paraNucleo, compras: rep.compras, extra: cierre ? null : { destino: '#aportar/mes', etiqueta: 'Calcular con el extracto' } },
       });
@@ -412,10 +413,11 @@ export function planificador(e, hoy = e.hoy) {
   if (e.caja_usd >= cfg.caja_minima_reinversion_usd) {
     const rep = conDolares(e, repartirAporte(e, e.caja_usd), dolaresEnCaja(e));
     if (rep.compras.length || rep.salteados.length) agregar({
-      id: `reinvertir-${mes}`, tipo: 'flujo',
+      // si hoy no conviene nada, marcarlo solo vale por hoy: el paso con las compras vuelve otro día
+      id: rep.compras.length ? `reinvertir-${mes}` : `reinvertir-espera-${hoy}`, tipo: 'flujo',
       titulo: rep.compras.length ? `Reinvertí ${fmt.usd(rep.invertido_usd)} de caja en el núcleo` : `Reinvertí ${fmt.usd(e.caja_usd)} de caja: hoy conviene esperar`,
       porque: `Hay ${fmt.usd(e.caja_usd, 2)} sin invertir en la cuenta (cupones, dividendos o sobrantes). Cupones y dividendos van al núcleo.`,
-      como: [textoVentana(e.feriados, hoy), ...textoCompras(rep)], accion: { tipo: 'compra', usd: e.caja_usd, compras: rep.compras },
+      como: comoComprar(e, hoy, rep), accion: rep.compras.length ? { tipo: 'compra', usd: e.caja_usd, compras: rep.compras } : undefined,
     });
   }
 
@@ -458,7 +460,7 @@ export function planificador(e, hoy = e.hoy) {
   for (const p of d.predicciones || []) {
     if (typeof p.cumplio === 'boolean' || !(p.vence <= hoy)) continue;
     agregar({
-      id: `prediccion-${p.id}`, tipo: 'prediccion', titulo: `¿Se cumplió? ${p.ticker ? p.ticker + ': ' : ''}${p.texto.length > 70 ? p.texto.slice(0, 70).trimEnd() + '…' : p.texto}`,
+      id: `prediccion-${p.id}`, tipo: 'prediccion', titulo: `¿Se cumplió? ${p.ticker && !p.texto.includes(p.ticker) ? p.ticker + ': ' : ''}${p.texto.length > 70 ? p.texto.slice(0, 70).trimEnd() + '…' : p.texto}`,
       porque: `El ${fmt.fecha(p.fecha)} anotaste, con ${fmt.pct(p.probabilidad, 0)} de probabilidad: "${p.texto}". Venció el ${fmt.fecha(p.vence)}.`,
       como: [p.cambio ? `Dijiste que cambiarías de idea si: ${p.cambio}` : null, 'Marcá Hecho y elegí si se cumplió'].filter(Boolean),
       accion: { tipo: 'prediccion', ref: p.id },
