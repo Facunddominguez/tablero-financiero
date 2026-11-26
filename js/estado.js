@@ -202,7 +202,7 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
 }
 
 // Valores del día para guardar como snapshot (un punto por día en que se abre la app).
-export const snapshotDe = e => ({ t: Math.round(e.total_usd * 100) / 100, lp: Math.round(e.lp_usd * 100) / 100, n: Math.round(e.nucleo_usd * 100) / 100, mep: e.mep });
+export const snapshotDe = e => ({ t: Math.round(e.total_usd * 100) / 100, lp: Math.round(e.lp_usd * 100) / 100, n: Math.round(e.nucleo_usd * 100) / 100, mep: e.mep, ccl: e.ccl });
 
 // Totales por grupo para el anillo de Cartera.
 export function porGrupo(e) {

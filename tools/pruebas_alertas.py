@@ -3,6 +3,7 @@ import sys, json
 import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import alertas
+sys.stdout.reconfigure(encoding="utf-8")  # en Windows la consola no siempre es UTF-8
 
 cfg = {"sal": "x", "fecha": "13/11/2026", "dia": {"nucleo": 0.05, "satelite": 0.10, "on": 0.04, "mep": 0.05}, "nivel": {"nucleo": 0.10, "satelite": 0.25, "on": 0.08},
        "activos": [{"t": "AAA", "tabla": "cedears", "g": "nucleo", "ref": 10.0}, {"t": "BBB", "tabla": "cedears", "g": "satelite", "ref": 5.0, "tope": 5.5}, {"t": "CCC", "tabla": "ons", "g": "on", "ref": 1.0}]}

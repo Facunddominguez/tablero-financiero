@@ -11,6 +11,7 @@ import html
 import json
 import pathlib
 import re
+import statistics
 import sys
 import time
 import urllib.request
@@ -19,6 +20,10 @@ RAIZ = pathlib.Path(__file__).resolve().parent.parent
 DATA = RAIZ / "data"
 CFG = json.loads((RAIZ / "tools" / "mercado_config.json").read_text(encoding="utf-8"))
 UA = "tablero-mercado/1.0 (script personal de seguimiento; python-urllib)"
+RATIOS = RAIZ / "tools" / "cedear_ratios.json"
+PAPELES_LIQUIDOS = 30    # cuántos papeles (los de más volumen) forman la mediana del dólar implícito
+MINIMO_PAPELES = 5       # con menos no hay mediana confiable
+TOLERANCIA_RATIO = 0.05  # diferencia entre ratio oficial e inferido a partir de la cual hay que revisar
 
 
 def ahora():
@@ -81,8 +86,20 @@ def fx():
     }
 
 
+_filas = {}  # lo ya bajado de data912 en esta corrida (se vacía al empezar main)
+
+
+def data912_filas(ruta):
+    if ruta not in _filas:
+        filas = json.loads(bajar(f"https://data912.com/live/{ruta}"))
+        if not isinstance(filas, list):
+            raise RuntimeError(f"{ruta}: respuesta inesperada")
+        _filas[ruta] = filas
+    return _filas[ruta]
+
+
 def data912(ruta, divisor=1):
-    filas = json.loads(bajar(f"https://data912.com/live/{ruta}"))
+    filas = data912_filas(ruta)
     precios = {}
     for f in filas:
         c = f.get("c")
@@ -107,13 +124,25 @@ def fci():
     return {"precios": precios, "fecha": fecha}
 
 
+_cotizaciones = {}  # históricos ya bajados en esta corrida
+
+
+def cotizaciones(casa):
+    """Histórico diario de un dólar en ArgentinaDatos: {fecha: punto medio compra/venta}."""
+    if casa not in _cotizaciones:
+        filas = json.loads(bajar(f"https://api.argentinadatos.com/v1/cotizaciones/dolares/{casa}"))
+        out = {f["fecha"]: (f["compra"] + f["venta"]) / 2 for f in filas if f.get("compra") and f.get("venta") and f.get("fecha")}
+        if len(out) < 3:
+            raise RuntimeError(f"cotizaciones {casa}: sin historia")
+        _cotizaciones[casa] = out
+    return _cotizaciones[casa]
+
+
 def mep_mensual():
     """Promedio mensual del dólar MEP (punto medio compra/venta) de los últimos 36 meses."""
-    filas = json.loads(bajar("https://api.argentinadatos.com/v1/cotizaciones/dolares/bolsa"))
     meses = {}
-    for f in filas:
-        if f.get("compra") and f.get("venta") and f.get("fecha"):
-            meses.setdefault(f["fecha"][:7], []).append((f["compra"] + f["venta"]) / 2)
+    for fecha, medio in sorted(cotizaciones("bolsa").items()):
+        meses.setdefault(fecha[:7], []).append(medio)
     if len(meses) < 3:
         raise RuntimeError("mep_mensual: sin historia")
     return {"meses": {m: round(sum(v) / len(v), 2) for m, v in sorted(meses.items())[-36:]}}
@@ -186,6 +215,153 @@ def usd_e_historico(hist_anterior):
     return {"precios": usd}, hist
 
 
+# ---------- dólar implícito, precios de EE.UU. del momento y ratios ----------
+
+def ratios_cedear():
+    """Ratios oficiales (tools/cedear_ratios.json). {} si el archivo no se puede leer."""
+    try:
+        return json.loads(RATIOS.read_text(encoding="utf-8"))["ratios"]
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def ticker_usa(t, info):
+    """Ticker del subyacente en EE.UU. (None si no cotiza allá)."""
+    return info["usa"] if "usa" in info else t
+
+
+def mediana_implicito(papeles):
+    """Mediana del dólar implícito de los papeles de más volumen. papeles = {ticker: [dólar, volumen en pesos]}."""
+    liquidos = sorted((v for v in (papeles or {}).values() if v[0] > 0 and v[1] > 0), key=lambda v: -v[1])[:PAPELES_LIQUIDOS]
+    return statistics.median(v[0] for v in liquidos) if len(liquidos) >= MINIMO_PAPELES else None
+
+
+def yahoo_vivo(ticker):
+    """Último precio y cierre anterior con yfinance (velas de 5 minutos): [precio, variación %, fecha]."""
+    import yfinance as yf
+    h = yf.Ticker(ticker).history(period="5d", interval="5m", auto_adjust=False)
+    puntos = [(f.strftime("%Y-%m-%d"), float(c)) for f, c in zip(h.index, h["Close"]) if c == c]
+    if not puntos:
+        raise RuntimeError(f"{ticker}: sin precio del momento")
+    fecha, precio = puntos[-1]
+    previos = [c for f, c in puntos if f < fecha]
+    if not previos:
+        raise RuntimeError(f"{ticker}: sin cierre anterior")
+    return [round(precio, 4), round((precio / previos[-1] - 1) * 100, 2), fecha]
+
+
+def usa_vivo():
+    """Precios de EE.UU. del mismo momento que los CEDEARs: data912 para acciones y ADR; yfinance para los ETF que no trae."""
+    quiero = {ticker_usa(t, i) for t, i in ratios_cedear().items()} - {None}
+    propios = list(dict.fromkeys(CFG["usd_tickers"] + CFG.get("historico_extra", [])))
+    quiero |= set(propios)
+    precios = {}
+    for ruta in ("usa_stocks", "usa_adrs"):
+        try:
+            for f in data912_filas(ruta):
+                s, c = f.get("symbol"), f.get("c")
+                if s in quiero and c and c > 0:
+                    precios[s] = [round(float(c), 4), f.get("pct_change") or 0]
+        except Exception as e:  # noqa: BLE001
+            print(f"FALLA {ruta}: {e}", file=sys.stderr)
+    for t in propios:
+        if t not in precios:
+            try:
+                precios[t] = yahoo_vivo(t)
+            except Exception as e:  # noqa: BLE001
+                print(f"FALLA precio {t}: {e}", file=sys.stderr)
+    faltan = [t for t in CFG["usd_tickers"] if t not in precios]
+    if faltan:
+        raise RuntimeError("usa: faltan " + ", ".join(faltan))
+    return {"precios": precios}
+
+
+def ccl_calculado(filas, ratios, usa):
+    """Dólar implícito de cada CEDEAR: precio en pesos × ratio ÷ precio en EE.UU."""
+    papeles = {}
+    for f in filas:
+        t, c = f.get("symbol"), f.get("c")
+        info = ratios.get(t)
+        u = ticker_usa(t, info) if info else None
+        if u in usa and c and c > 0:
+            papeles[t] = [round(c * info["ratio"] / usa[u][0], 2), round((f.get("v") or 0) * c)]
+    return papeles
+
+
+def ccl_implicito(usa):
+    """Dólar implícito por papel: data912 /live/ccl y, si viene vacío, calculado con los ratios oficiales."""
+    papeles = {}
+    try:
+        for f in json.loads(bajar("https://data912.com/live/ccl")):
+            t, x = f.get("ticker_ar"), f.get("CCL_mark") or f.get("CCL_close")
+            if t and x and x > 0:
+                papeles[t] = [round(float(x), 2), round(f.get("ars_volume") or 0)]
+    except Exception as e:  # noqa: BLE001
+        print(f"FALLA live/ccl: {e}", file=sys.stderr)
+    fuente = "data912"
+    if mediana_implicito(papeles) is None:
+        papeles = ccl_calculado(data912_filas("arg_cedears"), ratios_cedear(), usa)
+        fuente = "calculado"
+    mediana = mediana_implicito(papeles)
+    if mediana is None:
+        raise RuntimeError("ccl implícito: sin papeles suficientes")
+    return {"papeles": papeles, "mediana": round(mediana, 2), "fuente": fuente}
+
+
+def revisar_ratios(ratios, cedears, usa, ccl_ref, tolerancia=TOLERANCIA_RATIO):
+    """CEDEARs cuyo ratio inferido (subyacente × dólar ÷ precio en pesos) difiere del oficial: {t: [oficial, inferido]}."""
+    out = {}
+    for t, info in ratios.items():
+        u = ticker_usa(t, info)
+        local, afuera = cedears.get(t), usa.get(u) if u else None
+        if not local or not afuera or not ccl_ref or local[0] <= 0:
+            continue
+        inferido = afuera[0] * ccl_ref / local[0]
+        if abs(inferido / info["ratio"] - 1) > tolerancia:
+            out[t] = [info["ratio"], round(inferido, 3)]
+    return out
+
+
+def implicito(anterior, mercado):
+    """Sección nueva de market.json. Cada parte falla por separado y conserva su dato anterior marcado como viejo."""
+    anterior = anterior or {}
+    usa = seccion("usa_vivo", anterior.get("usa"), usa_vivo)
+    # El dólar implícito calculado necesita precios de EE.UU. de ahora: con precios viejos no se calcula.
+    ccl = seccion("ccl_implicito", anterior.get("ccl"), lambda: ccl_implicito({} if usa["stale"] else usa["precios"]))
+    revisar = anterior.get("revisar_ratios") or {}
+    cedears = mercado.get("cedears") or {}
+    if not (usa["stale"] or cedears.get("stale")):
+        ref = (mercado.get("fx") or {}).get("ccl") if ccl["stale"] else ccl.get("mediana")
+        revisar = revisar_ratios(ratios_cedear(), cedears.get("precios") or {}, usa.get("precios") or {}, ref)
+    return {"usa": usa, "ccl": ccl, "revisar_ratios": revisar}
+
+
+# ---------- dólar MEP y contado con liqui dentro del histórico ----------
+
+def sumar_canje(hist, anterior):
+    """Agrega las series MEP y CCL alineadas con hist["fechas"] (null si ese día no hay cotización).
+
+    Si la fuente falla conserva lo anterior y lo marca viejo en hist["canje"].
+    """
+    prev_f, prev_s = anterior.get("fechas") or [], anterior.get("series") or {}
+    try:
+        nuevas = {"MEP": cotizaciones("bolsa"), "CCL": cotizaciones("contadoconliqui")}
+        meta = {"stale": False, "actualizado": ahora()}
+        print("ok   canje (MEP y CCL históricos)")
+    except Exception as e:  # noqa: BLE001
+        print(f"FALLA canje: {e}", file=sys.stderr)
+        nuevas, meta = {}, dict(anterior.get("canje") or {}, stale=True, intento=ahora(), error=str(e)[:160])
+    series = dict(hist.get("series") or {})
+    for n in ("MEP", "CCL"):
+        acum = {f: v for f, v in zip(prev_f, prev_s.get(n) or []) if v is not None}
+        acum.update(nuevas.get(n, {}))
+        if acum:
+            series[n] = [round(acum[f], 2) if f in acum else None for f in hist.get("fechas") or []]
+    hist["series"] = series
+    hist["canje"] = meta
+    return hist
+
+
 def insiders():
     pagina = bajar(CFG["insiders_url"])
     m = re.search(r'<table[^>]*class="tinytable".*?</table>', pagina, re.S)
@@ -219,6 +395,8 @@ def insiders():
 
 def main():
     DATA.mkdir(exist_ok=True)
+    _filas.clear()
+    _cotizaciones.clear()
     m_prev, i_prev, h_prev = leer("market.json"), leer("insiders.json"), leer("historico.json")
 
     mercado = {"generado": ahora()}
@@ -235,6 +413,7 @@ def main():
     mercado["fci"] = seccion("fci", m_prev.get("fci"), fci)
     mercado["mep_mensual"] = seccion("mep_mensual", m_prev.get("mep_mensual"), mep_mensual)
     mercado["cpi_usa"] = seccion("cpi_usa", m_prev.get("cpi_usa"), cpi_usa)
+    mercado["implicito"] = implicito(m_prev.get("implicito"), mercado)
 
     hist = h_prev
     try:
@@ -247,6 +426,8 @@ def main():
         usd = dict(m_prev.get("usd") or {}, stale=True, intento=ahora(), error=str(e)[:160])
         hist = dict(h_prev, stale=True, intento=ahora())
     mercado["usd"] = usd
+    if hist.get("fechas"):
+        hist = sumar_canje(hist, h_prev)
 
     escribir("market.json", mercado)
     escribir("historico.json", hist)

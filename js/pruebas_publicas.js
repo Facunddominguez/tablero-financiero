@@ -1,6 +1,6 @@
 // Pruebas que no necesitan tus datos: corren en cada PR (GitHub Actions) y también dentro de tests.html.
 // Devuelve [nombre, fn] como las asincrónicas de js/pruebas.js.
-import { tickersPropios, esRespaldoPlano } from './estado.js';
+import { tickersPropios, esRespaldoPlano, snapshotDe } from './estado.js';
 import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo, benchmarks } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
@@ -223,6 +223,11 @@ export function pruebasPublicas() {
       if (f.length !== 2) throw new Error(`esperaba 2, hay ${f.length}`);
       if (!f[0].vencido || f[0].fecha !== '2026-07-14') throw new Error('falta el vencido sin registrar');
       cerca(f[1].usd, 30, 1e-9, 'monto del próximo');
+    }],
+
+    ['El registro diario guarda también el contado con liqui', async () => {
+      const s = snapshotDe({ total_usd: 100.004, lp_usd: 80, nucleo_usd: 40, mep: 1000, ccl: 1050 });
+      if (s.mep !== 1000 || s.ccl !== 1050 || s.t !== 100) throw new Error(JSON.stringify(s));
     }],
 
     ['Respaldo cifrado: ida y vuelta, y se distingue del respaldo sin cifrar', async () => {
