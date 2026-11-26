@@ -1,6 +1,7 @@
 // Pantalla Radar: compras de insiders, watchlist y cartera modelo de referencia.
 import { h, fmt } from '../util.js';
-import { tabla, chip, aviso } from './comun.js';
+import { tabla, chip, aviso, boton } from './comun.js';
+import { botonFantasma, nuevaPrediccion } from './diario.js';
 import { proyeccion } from '../motor.js';
 import { tickersPropios } from '../estado.js';
 
@@ -23,7 +24,7 @@ export function vistaRadar(ctx) {
       h('h2', 'Compras de directivos · últimos 7 días'),
       filas.length ? tabla([
         // Las marcas van debajo del nombre: así se ven en el celular sin deslizar la tabla.
-        { titulo: 'Ticker', celda: f => [h('strong.num', f.ticker), h('span.empresa', f.empresa), marcas(f.ticker)] },
+        { titulo: 'Ticker', celda: f => [h('strong.num', f.ticker), h('span.empresa', f.empresa), marcas(f.ticker), botonFantasma(ctx, 'radar', f.ticker)] },
         { titulo: 'Insiders', num: 1, celda: f => fmt.num(f.insiders) },
         { titulo: 'Monto USD', num: 1, celda: f => fmt.num(f.monto) },
         { titulo: 'Δ tenencia', num: 1, celda: f => f.delta_tenencia || '—' },
@@ -36,7 +37,7 @@ export function vistaRadar(ctx) {
     h('section',
       h('h2', 'Watchlist'),
       tabla([
-        { titulo: 'Ticker', celda: w => h('strong.num', w.ticker) }, { titulo: 'Tema', celda: w => w.tema }, { titulo: 'Prioridad', celda: w => w.prioridad },
+        { titulo: 'Ticker', celda: w => [h('strong.num', w.ticker), h('div', botonFantasma(ctx, 'watchlist', w.ticker))] }, { titulo: 'Tema', celda: w => w.tema }, { titulo: 'Prioridad', celda: w => w.prioridad },
         { titulo: 'Máx. inicial', num: 1, celda: w => fmt.pct(w.max_inicial, 0) },
         { titulo: 'CEDEAR', num: 1, celda: w => cedears[w.ticker] ? fmt.ars(cedears[w.ticker][0]) : '—' },
         { titulo: '', celda: w => h('span.marcas', w.solapamiento ? chip('Solapa: ' + w.solapamiento, 'alerta') : null) },
@@ -51,10 +52,14 @@ export function vistaRadar(ctx) {
         if (enSpy) partes.push(`${enSpy} de los ${d.watchlist.length} nombres ya están dentro de SPY.`);
         return h('p.nota', partes.join(' '));
       })(),
-      d.reglas_tesis ? h('details.otra-forma', h('summary', 'Antes de abrir una tesis nueva'),
-        h('p.nota', `Esperar ${d.reglas_tesis.espera_horas} horas desde que la escribís (${d.reglas_tesis.espera_cambio_estrategico_horas} si cambia la estrategia). La pérdida prevista si sale mal no puede pasar de ${fmt.pct(d.reglas_tesis.riesgo_normal, 1)} del patrimonio (${fmt.usd(e.total_usd * d.reglas_tesis.riesgo_normal)} hoy); nunca más de ${fmt.pct(d.reglas_tesis.riesgo_max, 0)}.`),
-        h('ol.pasos-ayuda', d.reglas_tesis.checklist.map(x => h('li', x))),
-        h('p.nota', `Nunca: ${d.reglas_tesis.prohibido.map(x => x.toLowerCase()).join('; ')}.`)) : null),
+      h('details.otra-forma', h('summary', 'Antes de abrir una tesis nueva'),
+        d.reglas_tesis ? [
+          h('p.nota', `Esperar ${d.reglas_tesis.espera_horas} horas desde que la escribís (${d.reglas_tesis.espera_cambio_estrategico_horas} si cambia la estrategia). La pérdida prevista si sale mal no puede pasar de ${fmt.pct(d.reglas_tesis.riesgo_normal, 1)} del patrimonio (${fmt.usd(e.total_usd * d.reglas_tesis.riesgo_normal)} hoy); nunca más de ${fmt.pct(d.reglas_tesis.riesgo_max, 0)}.`),
+          h('ol.pasos-ayuda', d.reglas_tesis.checklist.map(x => h('li', x))),
+          h('p.nota', `Nunca: ${d.reglas_tesis.prohibido.map(x => x.toLowerCase()).join('; ')}.`),
+        ] : null,
+        h('p.nota', 'Escribí qué tiene que pasar para que la tesis esté bien, y qué te haría cambiar de idea.'),
+        h('div.acciones.izq', boton('Anotar la predicción', () => nuevaPrediccion(ctx), 'chico')))),
 
     d.cartera_modelo_allaria ? h('section',
       h('h2', `Cartera modelo de referencia · Allaria ${d.cartera_modelo_allaria.rotacion}, ${fmt.fecha(d.cartera_modelo_allaria.fecha)}`),

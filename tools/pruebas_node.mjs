@@ -7,7 +7,7 @@ import { planificador } from '../js/motor.js';
 import { rendimiento } from '../js/finanzas.js';
 const leer = p => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
 const base = leer('../privado/datos_iniciales.json');
-const ext = { calendario: leer('../data/calendario.json'), historico: leer('../data/historico.json'), mercado: leer('../data/market.json'), insiders: leer('../data/insiders.json') };
+const ext = { calendario: leer('../data/calendario.json'), historico: leer('../data/historico.json'), mercado: leer('../data/market.json'), insiders: leer('../data/insiders.json'), feriados: leer('../data/feriados_eeuu.json'), ratios: leer('./cedear_ratios.json') };
 ext.asincronicas = [];
 const res = correrPruebas(base, ext);
 for (const [nombre, fn] of ext.asincronicas) { try { await fn(); res.push({ nombre, ok: true, detalle: '' }); } catch (err) { res.push({ nombre, ok: false, detalle: String(err.message || err) }); } }

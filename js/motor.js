@@ -1,9 +1,10 @@
 // Motor: reglas y planificador. Funciones puras que solo leen el estado (los umbrales salen de los datos).
 import { fechas, fmt, suma } from './util.js';
-import { costoEntradaLote, costosAnuales, brechaAportes } from './finanzas.js';
+import { costoEntradaLote, costosAnuales, brechaAportes, volatilidadReciente, ADR_DE_LOCAL } from './finanzas.js';
 import { tickersPropios } from './estado.js';
+import { precioJusto, precioLimite, primaMaxima, conDolares, dolaresEnCaja, textoVentana, porQueSeMovio, avisoPrecioJusto } from './precios.js';
 
-const PRIORIDAD = { emergencia: 1, regla: 2, aporte: 3, flujo: 4, datos: 5, trimestral: 6, pendiente: 7, anual: 8, aviso: 9, senal: 10 };
+const PRIORIDAD = { emergencia: 1, regla: 2, aporte: 3, flujo: 4, datos: 5, trimestral: 6, pendiente: 7, prediccion: 7, anual: 8, aviso: 9, senal: 10 };
 
 // ---------- Reglas ----------
 // Devuelve una fila por regla: { id, politica, nivel: ok|alerta|violada|sin_datos|info, activa, valor, detalle, accion }
@@ -150,25 +151,40 @@ export function proyeccion(e, hoy = e.hoy) {
   };
 }
 
-// Movimientos fuertes de precio del día, en dólares, según los umbrales de `alertas` (los mismos que usa el aviso al teléfono).
+// Cuántas veces lo habitual tiene que moverse algo para avisar, y el máximo del umbral (`tope` veces el fijo).
+// Editable en los datos (alertas.volatilidad). Los mismos valores que usa el aviso al teléfono (tools/alertas.py).
+export const VOLATILIDAD = { lambda: 0.94, aviso: 2.5, critico: 4, grupo: { nucleo: 1.25 }, min_datos: 40, tope: 1.5 };
+
+// Movimientos fuertes de precio del día, en dólares. El umbral de cada activo es un múltiplo de su volatilidad
+// reciente, con un máximo sobre el umbral fijo de `alertas`; sin historia (por ejemplo las ON) se usa el fijo.
+// { ticker, pct, nivel, umbral, propio, topeado, grupo, porque }
 export function movimientosFuertes(e) {
   const al = e.datos.alertas;
   if (!al || e.precios.origen !== 'mercado') return [];
+  const par = { ...VOLATILIDAD, ...al.volatilidad, grupo: { ...VOLATILIDAD.grupo, ...al.volatilidad?.grupo } };
   const out = [];
-  const nivel = (x, g) => { const c = al.critico?.dia?.[g], a = al.aviso?.dia?.[g]; return c && Math.abs(x) >= c ? 'critico' : a && Math.abs(x) >= a ? 'aviso' : null; };
+  const revisar = (ticker, pct, grupo, serie, niveles, porque) => {
+    const v = serie ? volatilidadReciente(e.historico, serie, e.hoy, par.lambda, par.min_datos) : null;
+    for (const nivel of niveles) {
+      const fijo = al[nivel]?.dia?.[grupo], propio = v != null ? par[nivel] * (par.grupo[grupo] ?? 1) * v : null;
+      const topeado = propio != null && !!par.tope && !!fijo && propio > par.tope * fijo;
+      const umbral = propio == null ? fijo : topeado ? par.tope * fijo : propio;
+      if (umbral && Math.abs(pct) >= umbral) { out.push({ ticker, pct, nivel, umbral, propio: propio != null, topeado, grupo, porque: porque?.() || '' }); return; }
+    }
+  };
   for (const p of e.posiciones) {
     const g = p.tipo === 'on' ? 'on' : p.grupo === 'nucleo' ? 'nucleo' : (p.grupo === 'satelite' || p.grupo === 'ypf') && p.tipo !== 'fci' ? 'satelite' : null;
-    const n = g && nivel(p.dia_usd_pct, g);
-    if (n) out.push({ ticker: p.ticker, pct: p.dia_usd_pct, nivel: n, umbral: al[n].dia[g], grupo: g });
+    if (!g) continue;
+    const serie = p.tipo === 'cedear' ? e.ratios?.[p.ticker]?.usa || p.subyacente || p.ticker : p.tipo === 'accion_ar' ? ADR_DE_LOCAL[p.ticker] : null;
+    revisar(p.ticker, p.dia_usd_pct, g, serie, ['critico', 'aviso'], p.tipo === 'cedear' ? () => porQueSeMovio(e, p.ticker, p.dia_usd_pct) : null);
   }
   const cedears = e.mercado?.cedears?.precios || {}, mios = new Set(e.posiciones.map(p => p.ticker));
   for (const w of e.datos.watchlist || []) {
     const f = cedears[w.ticker]; if (!f || mios.has(w.ticker)) continue;
-    const x = (1 + (f[1] || 0) / 100) / (1 + e.cambio_mep) - 1, u = al.aviso?.dia?.watchlist;
-    if (u && Math.abs(x) >= u) out.push({ ticker: w.ticker, pct: x, nivel: 'aviso', umbral: u, grupo: 'watchlist' });
+    const x = (1 + (f[1] || 0) / 100) / (1 + e.cambio_mep) - 1;
+    revisar(w.ticker, x, 'watchlist', e.ratios?.[w.ticker]?.usa || w.ticker, ['aviso'], () => porQueSeMovio(e, w.ticker, x));
   }
-  const um = al.critico?.dia?.mep, ua = al.aviso?.dia?.mep, cm = e.cambio_mep;
-  if (ua && Math.abs(cm) >= ua) out.push({ ticker: 'Dólar MEP', pct: cm, nivel: um && Math.abs(cm) >= um ? 'critico' : 'aviso', umbral: um && Math.abs(cm) >= um ? um : ua, grupo: 'mep' });
+  revisar('Dólar MEP', e.cambio_mep, 'mep', 'MEP', ['critico', 'aviso']);
   return out.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
 }
 
@@ -195,39 +211,65 @@ export function objetivoDe(e, p) {
 
 // ---------- Aporte ----------
 // Reparte `usd` en unidades enteras entre los activos habilitados (el núcleo), priorizando el más subponderado.
+// Entre dos igual de subponderados va primero el que está más barato contra su precio justo, y el que está más
+// de un 1% caro se saltea ese día. Sin datos para calcular el precio justo, no cambia nada.
 export function repartirAporte(e, usd) {
   const d = e.datos, c = d.config.costo_entrada_estimado, banda = d.nucleo.banda_interna_pp;
+  const empate = d.config.empate_deficit ?? 0.001; // déficits que difieren menos que esto se consideran iguales
+  const maxPrima = primaMaxima(e);
   const activos = Object.entries(d.nucleo.pesos_internos).map(([t, obj]) => {
     const p = e.posiciones.find(x => x.ticker === t);
-    return { t, obj, precio: p ? p.precio_ars : null, cant0: p ? p.cantidad : 0, cant: 0 };
+    const j = precioJusto(e, t), justo = j && !j.revisar ? j : null;
+    return { t, obj, precio: p ? p.precio_ars : null, cant0: p ? p.cantidad : 0, cant: 0, j, justo, caro: !!justo && justo.prima > maxPrima };
   }).filter(a => a.precio > 0);
   const valor = a => (a.cant0 + a.cant) * a.precio;
-  const pesos = () => { const tot = suma(activos, valor); return Object.fromEntries(activos.map(a => [a.t, tot ? valor(a) / tot : 0])); };
+  const total = () => suma(activos, valor);
+  const pesos = () => { const tot = total(); return Object.fromEntries(activos.map(a => [a.t, tot ? valor(a) / tot : 0])); };
   const antes = pesos();
   let ars = Math.max(0, usd) * e.mep;
+  const deficit = (a, tot) => a.obj - (tot ? valor(a) / tot : 0);
+  // Los salteados por precio: solo los que, de no estar caros, habrían podido recibir algo.
+  const tot0 = total();
+  const salteados = activos.filter(a => a.caro && a.precio * (1 + c) <= ars && deficit(a, tot0) > -banda).map(a => ({
+    ticker: a.t, prima: a.justo.prima, justo_ars: a.justo.justo_ars,
+    motivo: `Hoy salteá ${a.t}: está ${fmt.pct(a.justo.prima)} caro contra su precio justo (${fmt.ars(a.justo.justo_ars)}; en pantalla ${fmt.ars(a.precio)}). El máximo es ${fmt.pct(maxPrima)}.`,
+  }));
   for (let i = 0; i < 100000; i++) {
-    const tot = suma(activos, valor);
-    const cand = activos.filter(a => a.precio * (1 + c) <= ars)
-      .map(a => ({ a, deficit: a.obj - (tot ? valor(a) / tot : 0) }))
+    const tot = total();
+    const cand = activos.filter(a => !a.caro && a.precio * (1 + c) <= ars)
+      .map(a => ({ a, deficit: deficit(a, tot) }))
       .filter(x => x.deficit > -banda) // nunca empujar a un ETF fuera de su banda por arriba
       .sort((x, y) => y.deficit - x.deficit);
     if (!cand.length) break;
-    cand[0].a.cant++;
-    ars -= cand[0].a.precio * (1 + c);
+    const elegido = cand.filter(x => cand[0].deficit - x.deficit <= empate)
+      .sort((x, y) => (x.a.justo?.prima ?? 0) - (y.a.justo?.prima ?? 0))[0].a;
+    elegido.cant++;
+    ars -= elegido.precio * (1 + c);
   }
   const compras = activos.filter(a => a.cant > 0).map(a => ({
     ticker: a.t, cantidad: a.cant, precio: a.precio, monto_ars: a.cant * a.precio, monto_usd: a.cant * a.precio / e.mep, gastos: Math.round(a.cant * a.precio * c * 100) / 100,
+    justo_ars: a.justo?.justo_ars ?? null, prima: a.justo?.prima ?? null, limite: a.justo ? precioLimite(e, a.justo.justo_ars, a.precio) : null,
+    revisar: !!a.j?.revisar,
   }));
   const invertido = suma(compras, x => x.monto_usd);
   const C1 = d.reglas.find(r => r.id === 'C1');
   return {
-    usd, compras, invertido_usd: invertido, costo_usd: invertido * c, costo_pct: c, supera_c1: C1 ? c > C1.max : false,
+    usd, compras, salteados, invertido_usd: invertido, costo_usd: invertido * c, costo_pct: c, supera_c1: C1 ? c > C1.max : false,
     sobrante_usd: ars / e.mep, pesos_antes: antes, pesos_despues: pesos(), objetivo: d.nucleo.pesos_internos,
     habilitados: activos.map(a => a.t),
   };
 }
 
-const textoCompras = (compras) => compras.map(c => `Comprá ${fmt.cant(c.cantidad)} ${c.ticker} · orden límite a ≈ ${fmt.ars(c.precio)} · plazo 24 hs`);
+const caro = p => `${fmt.pct(Math.abs(p))} ${p >= 0 ? 'caro' : 'barato'}`;
+// Una línea por compra, con el precio límite que sale del precio justo (o el de pantalla si no se puede calcular).
+export function textoCompra(c) {
+  if (c.moneda === 'USD') return `Comprá ${fmt.cant(c.cantidad)} ${c.especie} con tus dólares · orden límite a ${c.limite ? '' : '≈ '}USD ${fmt.num(c.limite || c.precio, 2)} · plazo 24 hs (es ${c.ticker} en dólares: no sale más cara que en pesos)`;
+  const base = `Comprá ${fmt.cant(c.cantidad)} ${c.ticker} · orden límite a ${c.limite ? '' : '≈ '}${fmt.ars(c.limite || c.precio)} · plazo 24 hs`;
+  if (c.limite) return `${base} (precio justo ${fmt.ars(c.justo_ars)}; en pantalla ${fmt.ars(c.precio)}, ${caro(c.prima)})`;
+  return c.revisar ? `${base}. Antes revisá el ratio de ${c.ticker}: los precios no cierran y no hay precio justo` : base;
+}
+// La ventana, las compras, lo salteado por precio y, si no hay precio justo por el horario, por qué.
+const comoComprar = (e, hoy, rep) => [textoVentana(e.feriados, hoy), ...rep.compras.map(textoCompra), ...(rep.salteados || []).map(s => s.motivo), avisoPrecioJusto(e)].filter(Boolean);
 
 // Cierre del mes anterior (extracto cargado y monto elegido), si existe.
 export function cierreDe(e, mes) {
@@ -344,7 +386,7 @@ export function planificador(e, hoy = e.hoy) {
       if (R['R3B-E']?.activa) motivos.push(`Regla R3B-E: ${R['R3B-E'].accion}.`);
       agregar({
         id: `aporte-${mes}`, tipo: 'aporte', titulo: `Aportá ${fmt.usd(paraNucleo)}`, porque: motivos.join(' '),
-        como: [`Transferí ${fmt.usd(paraNucleo)} a Balanz (≈ ${fmt.ars(paraNucleo * e.mep)})`, ...textoCompras(rep.compras),
+        como: [`Transferí ${fmt.usd(paraNucleo)} a Balanz (≈ ${fmt.ars(paraNucleo * e.mep)})`, ...comoComprar(e, hoy, rep),
           `Costo estimado ${fmt.usd(rep.costo_usd, 2)} (${fmt.pct(rep.costo_pct, 2)}) · sobran ≈ ${fmt.usd(rep.sobrante_usd, 2)} en caja`],
         accion: { tipo: 'aporte', usd: paraNucleo, compras: rep.compras, extra: cierre ? null : { destino: '#aportar/mes', etiqueta: 'Calcular con el extracto' } },
       });
@@ -371,11 +413,13 @@ export function planificador(e, hoy = e.hoy) {
     });
   }
   if (e.caja_usd >= cfg.caja_minima_reinversion_usd) {
-    const rep = repartirAporte(e, e.caja_usd);
-    if (rep.compras.length) agregar({
-      id: `reinvertir-${mes}`, tipo: 'flujo', titulo: `Reinvertí ${fmt.usd(rep.invertido_usd)} de caja en el núcleo`,
+    const rep = conDolares(e, repartirAporte(e, e.caja_usd), dolaresEnCaja(e));
+    if (rep.compras.length || rep.salteados.length) agregar({
+      // si hoy no conviene nada, marcarlo solo vale por hoy: el paso con las compras vuelve otro día
+      id: rep.compras.length ? `reinvertir-${mes}` : `reinvertir-espera-${hoy}`, tipo: 'flujo',
+      titulo: rep.compras.length ? `Reinvertí ${fmt.usd(rep.invertido_usd)} de caja en el núcleo` : `Reinvertí ${fmt.usd(e.caja_usd)} de caja: hoy conviene esperar`,
       porque: `Hay ${fmt.usd(e.caja_usd, 2)} sin invertir en la cuenta (cupones, dividendos o sobrantes). Cupones y dividendos van al núcleo.`,
-      como: textoCompras(rep.compras), accion: { tipo: 'compra', usd: e.caja_usd, compras: rep.compras },
+      como: comoComprar(e, hoy, rep), accion: rep.compras.length ? { tipo: 'compra', usd: e.caja_usd, compras: rep.compras } : undefined,
     });
   }
 
@@ -414,6 +458,17 @@ export function planificador(e, hoy = e.hoy) {
     accion: { tipo: 'menu', seccion: 'movimiento', arg: 'aporte_historico', etiqueta: 'Cargar un aporte' },
   });
 
+  // Predicciones vencidas sin marcar
+  for (const p of d.predicciones || []) {
+    if (typeof p.cumplio === 'boolean' || !(p.vence <= hoy)) continue;
+    agregar({
+      id: `prediccion-${p.id}`, tipo: 'prediccion', titulo: `¿Se cumplió? ${p.ticker && !p.texto.includes(p.ticker) ? p.ticker + ': ' : ''}${p.texto.length > 70 ? p.texto.slice(0, 70).trimEnd() + '…' : p.texto}`,
+      porque: `El ${fmt.fecha(p.fecha)} anotaste, con ${fmt.pct(p.probabilidad, 0)} de probabilidad: "${p.texto}". Venció el ${fmt.fecha(p.vence)}.`,
+      como: [p.cambio ? `Dijiste que cambiarías de idea si: ${p.cambio}` : null, 'Marcá Hecho y elegí si se cumplió'].filter(Boolean),
+      accion: { tipo: 'prediccion', ref: p.id },
+    });
+  }
+
   // 10 · Fin de año
   if (nMes === 12 || nMes === 1) {
     const ej = nMes === 12 ? anio : anio - 1;
@@ -439,11 +494,16 @@ export function planificador(e, hoy = e.hoy) {
     });
   }
 
-  for (const mv of movimientosFuertes(e)) agregar({
-    id: `precio-${mv.ticker}-${hoy}`, tipo: 'aviso', informativo: true, etiqueta: mv.nivel === 'critico' ? 'Movimiento crítico' : 'Movimiento fuerte',
-    titulo: `${mv.ticker} ${fmt.pctSigno(mv.pct)} hoy, en dólares`,
-    porque: `Pasa tu umbral de ±${fmt.num(mv.umbral * 100, 0)}% para ${{ nucleo: 'el núcleo', satelite: 'los satélites', on: 'la ON', watchlist: 'la watchlist', mep: 'el dólar' }[mv.grupo]}. ${mv.grupo === 'nucleo' ? 'No cambia nada: el próximo aporte va al núcleo como siempre.' : 'Las reglas no operan por un movimiento de precio; cualquier cambio espera 48 horas.'}`,
-  });
+  for (const mv of movimientosFuertes(e)) {
+    const vara = mv.topeado ? `Pasa el máximo de tu umbral (±${fmt.num(mv.umbral * 100, 1)}%).`
+      : mv.propio ? `Es mucho para lo que suele moverse (tu umbral hoy es ±${fmt.num(mv.umbral * 100, 1)}%).`
+        : `Pasa tu umbral de ±${fmt.num(mv.umbral * 100, 0)}% para ${{ nucleo: 'el núcleo', satelite: 'los satélites', on: 'la ON', watchlist: 'la watchlist', mep: 'el dólar' }[mv.grupo]}.`;
+    agregar({
+      id: `precio-${mv.ticker}-${hoy}`, tipo: 'aviso', informativo: true, etiqueta: mv.nivel === 'critico' ? 'Movimiento crítico' : 'Movimiento fuerte',
+      titulo: `${mv.ticker} ${fmt.pctSigno(mv.pct)} hoy, en dólares`,
+      porque: [vara, mv.porque, mv.grupo === 'nucleo' ? 'No cambia nada: el próximo aporte va al núcleo como siempre.' : 'Las reglas no operan por un movimiento de precio; cualquier cambio espera 48 horas.'].filter(Boolean).join(' '),
+    });
+  }
 
   pasos.sort((a, b) => a.prioridad - b.prioridad);
   return { pasos, reglas, vigentes: reglas.filter(r => r.activa), proxima: proximaAccion(e, hoy), solo_observacion: soloObs };
@@ -460,6 +520,7 @@ export function proximaAccion(e, hoy = e.hoy) {
   }
   const vence = fechas.sumar(e.fecha_resumen, cfg.dias_resumen_viejo + 1);
   if (vence > hoy) cand.push({ fecha: vence, texto: 'subir el Excel de Balanz' });
+  for (const p of d.predicciones || []) if (typeof p.cumplio !== 'boolean' && p.vence > hoy) cand.push({ fecha: p.vence, texto: 'revisar una predicción' });
   for (let i = 1; i <= 12; i++) {
     const f = fechas.sumarMeses(fechas.diaDelMes(hoy, 1), i);
     if ([1, 4, 7, 10].includes(fechas.nMes(f))) { cand.push({ fecha: f, texto: 'revisión trimestral' }); break; }

@@ -5,6 +5,7 @@ import { enlacePermiso, enlacePermisoCron, LISTA_PERMISOS, urlDisparo, cuerpoDis
 import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN, botonPrecios } from './comun.js';
 import { esSobreCifrado } from '../cripto.js';
 import { esRespaldoPlano } from '../estado.js';
+import { nuevaPrediccion } from './diario.js';
 
 const descargar = (nombre, texto, tipo = 'application/json') => {
   const a = h('a', { href: URL.createObjectURL(new Blob([texto], { type: tipo })), download: nombre });
@@ -257,6 +258,11 @@ function fuentes(ctx) {
     ['Obligaciones negociables', 'data912.com', m.ons?.actualizado, m.ons?.stale],
     ['Cuotapartes de fondos', 'argentinadatos.com (datos de CAFCI)', m.fci?.fecha, m.fci?.stale],
     ['ETF en dólares e histórico', 'Yahoo Finance (vía yfinance)', m.usd?.actualizado, m.usd?.stale],
+    ['Precios de EE.UU. del momento', 'data912.com y Yahoo Finance', m.implicito?.usa?.actualizado, m.implicito?.usa?.stale],
+    ['Dólar implícito de cada CEDEAR', m.implicito?.ccl?.fuente === 'calculado' ? 'Calculado con precios de data912 y ratios de BYMA' : 'data912.com', m.implicito?.ccl?.actualizado, m.implicito?.ccl?.stale],
+    ['Dólar MEP y contado con liqui de cada día', 'argentinadatos.com', e.historico?.canje?.actualizado, e.historico?.canje?.stale],
+    ['Ratios de CEDEARs', 'BYMA, lista oficial', e.ratios_fecha],
+    ['Feriados de EE.UU. y horario de BYMA', 'NYSE y BYMA', e.feriados?.consultado],
     ['Dólar MEP promedio por mes', 'argentinadatos.com', m.mep_mensual?.actualizado, m.mep_mensual?.stale],
     ['Inflación de EE.UU. (IPC mensual)', 'FRED, Reserva Federal de St. Louis (serie CPIAUCSL)', m.cpi_usa?.actualizado, m.cpi_usa?.stale],
     ['Compras de directivos', 'OpenInsider (formularios 4 de la SEC)', e.insiders?.actualizado, e.insiders?.stale],
@@ -269,7 +275,7 @@ function fuentes(ctx) {
     !e.mercado ? aviso('No se pudieron cargar los precios en vivo: se están usando los del último resumen.', 'alerta') : null,
     h('div.tabla-caja', h('table.tabla.compacta', h('thead', h('tr', h('th', 'Dato'), h('th', 'Fuente'), h('th', 'Fecha del dato'))),
       h('tbody', filas.map(([dato, fuente, fecha, viejo, fijo]) => h('tr', h('td', dato), h('td', fuente), h('td', fijo || cuando(fecha), viejo ? chip('sin actualizar', 'alerta') : null)))))),
-    h('p.nota', 'Los precios se actualizan solos tres veces por día hábil (11:30, 14:30 y 17:30 de Argentina). Si una fuente falla, se conserva el último dato y se marca "sin actualizar".'),
+    h('p.nota', 'Los precios se actualizan solos tres veces por día hábil (alrededor de las 11:40, 14:40 y 17:40 de Argentina). Si una fuente falla, se conserva el último dato y se marca "sin actualizar".'),
     h('div.bloque', h('h3', 'Actualizar ahora'),
       ctx.permiso
         ? h('div.fuentes-accion', botonPrecios(ctx, () => { if (dlg.open) { dlg.close(); fuentes(ctx); } }), h('small', 'Lo pide a GitHub y en alrededor de un minuto aparecen los precios de este momento.'))
@@ -290,7 +296,7 @@ function guiaCron(ctx) {
       h('li', h('p', 'Creá un permiso solo para esto (únicamente puede lanzar la actualización; no ve ni toca tus datos). Elegí "Only select repositories" → ', h('code', repo.split('/')[1]), ', "Generate token" y copiá el texto.'),
         h('a.boton.chico', { href: enlacePermisoCron(), target: '_blank', rel: 'noopener noreferrer' }, 'Abrir GitHub ↗')),
       h('li', h('p', 'Entrá a ', h('a', { href: 'https://console.cron-job.org/jobs/create', target: '_blank', rel: 'noopener noreferrer' }, 'cron-job.org ↗'), ' (cuenta gratis) → "Create cronjob". En URL pegá:'), copiable(urlDisparo(repo))),
-      h('li', h('p', 'Horario: "Custom". Días: lunes a viernes. Horas: 11, 14 y 17. Minuto: 30. Zona horaria: ', h('code', 'America/Argentina/Buenos_Aires'), '.')),
+      h('li', h('p', 'Horario: "Custom". Días: lunes a viernes. Horas: 11, 14 y 17. Minuto: 40 (después de que abre Wall Street, para tener precio justo). Zona horaria: ', h('code', 'America/Argentina/Buenos_Aires'), '.')),
       h('li', h('p', 'En "Advanced": método ', h('code', 'POST'), ' y estos encabezados (en Authorization va el permiso del paso 1):'),
         copiable('Accept: application/vnd.github+json'), copiable('X-GitHub-Api-Version: 2022-11-28'), copiable('Content-Type: application/json'), h('p', h('code', 'Authorization: Bearer github_pat_…'))),
       h('li', h('p', 'Cuerpo (Request body):'), copiable(cuerpoDisparo('cron'))),
@@ -338,6 +344,7 @@ const SECCIONES = {
   importar: ['Importar el Excel de Balanz', 'Actualiza lotes y cantidades', importarExcel],
   movimiento: ['Registrar un movimiento', 'Dividendo, cupón, venta o un aporte viejo', registrarMovimiento],
   decisiones: ['Registro de decisiones', 'Qué hiciste y por qué', decisiones],
+  prediccion: ['Anotar una predicción', 'Qué esperás, con qué probabilidad y hasta cuándo', nuevaPrediccion],
   fuentes: ['Fuentes y fechas', 'De dónde sale cada dato y de cuándo es', fuentes],
   configuracion: ['Configuración', 'Ingreso, día de cobro, apariencia', configuracion],
   seguridad: ['Seguridad', 'Bloqueo, clave y este dispositivo', seguridad],

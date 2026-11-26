@@ -2,7 +2,8 @@
 import { h, poner, fmt } from '../util.js';
 import { porGrupo, NOMBRE_GRUPO } from '../estado.js';
 import { accionesPorActivo, objetivoDe, proximosFlujos } from '../motor.js';
-import { cargarScript, CDN, coloresSeries, signoClase, tabla, chip } from './comun.js';
+import { riesgo } from '../riesgo.js';
+import { cargarScript, CDN, coloresSeries, signoClase, tabla, chip, parteRiesgo } from './comun.js';
 
 let orden = { col: 'valor_usd', asc: false };
 let grafico;
@@ -33,9 +34,10 @@ function anillo(e) {
 export function vistaCartera(ctx) {
   const e = ctx.estado;
   const acciones = accionesPorActivo(e, ctx.plan.reglas);
+  const r = riesgo(e);
   const filas = e.posiciones.map(p => {
     const objetivo = objetivoDe(e, p);
-    return { ...p, objetivo, desvio: objetivo != null && p.pct_lp != null ? p.pct_lp - objetivo : null, accion: acciones[p.ticker], nombre_grupo: NOMBRE_GRUPO[p.grupo] };
+    return { ...p, objetivo, desvio: objetivo != null && p.pct_lp != null ? p.pct_lp - objetivo : null, accion: acciones[p.ticker], nombre_grupo: NOMBRE_GRUPO[p.grupo], pct_riesgo: p.grupo === 'emergencia' ? null : r?.posiciones[p.ticker]?.parte ?? null };
   });
   const cols = [
     { k: 'ticker', t: 'Activo', movil: 1, celda: f => h('div.activo', h('strong', f.ticker), h('small', f.descripcion)) },
@@ -43,6 +45,7 @@ export function vistaCartera(ctx) {
     { k: 'cantidad', t: 'Cantidad', num: 1, celda: f => fmt.cant(f.cantidad) },
     { k: 'valor_usd', t: 'Valor USD', num: 1, movil: 1, celda: f => fmt.num(f.valor_usd) },
     { k: 'pct_lp', t: '% LP', num: 1, movil: 1, celda: f => f.pct_lp == null ? '—' : fmt.pct(f.pct_lp) },
+    { k: 'pct_riesgo', t: '% del riesgo', num: 1, movil: 1, celda: f => f.pct_riesgo == null ? '—' : parteRiesgo(f.pct_riesgo) },
     { k: 'objetivo', t: 'Objetivo', num: 1, celda: f => f.objetivo == null ? '—' : fmt.pct(f.objetivo) },
     { k: 'desvio', t: 'Desvío', num: 1, celda: f => f.desvio == null ? '—' : fmt.pp(f.desvio) },
     { k: 'pnl_usd', t: 'Resultado USD', num: 1, celda: f => f.pnl_usd == null ? '—' : h('span.' + (signoClase(f.pnl_usd) || 'plano'), fmt.signo(f.pnl_usd)) },
@@ -78,7 +81,8 @@ export function vistaCartera(ctx) {
     }),
     vencimientos(e),
     h('p.nota', h('button.enlace', { type: 'button', onclick: () => ctx.menu('fuentes') }, `Precios ${e.precios.origen === 'mercado' ? 'actualizados ' + fmt.hace(e.precios.generado) : 'del resumen del ' + fmt.fecha(e.precios.fecha_archivo)} · ver fuentes`)),
-    h('p.nota', 'Resultado = valor de hoy menos el costo de cada lote, en dólares al MEP del día de compra y con gastos incluidos. % LP y objetivo son sobre la cartera de largo plazo; la emergencia queda afuera.'));
+    h('p.nota', 'Resultado = valor de hoy menos el costo de cada lote, en dólares al MEP del día de compra y con gastos incluidos. % LP y objetivo son sobre la cartera de largo plazo; la emergencia queda afuera.'),
+    r ? h('p.nota', '"% del riesgo" es cuánto de los altibajos de la cartera de largo plazo explica cada cosa, según cómo se movieron los precios. Comparalo con su peso. El detalle está en ', h('a', { href: '#informes/trimestral' }, 'Informes → Trimestral'), '.') : null);
 }
 
 // Tabla con el pie alineado columna por columna (así se puede ocultar cualquiera) y el botón para ver todo en el celular.

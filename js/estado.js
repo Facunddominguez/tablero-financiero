@@ -1,6 +1,6 @@
 // Estado = datos base (descifrados) + registro de eventos locales + precios. Todo puro: no toca red ni DOM.
 import { clon, suma, fechas } from './util.js';
-import { costoLoteUSD, ADR_DE_LOCAL } from './finanzas.js';
+import { costoLoteUSD, expuestoAlCanje, ADR_DE_LOCAL } from './finanzas.js';
 export { ADR_DE_LOCAL };
 
 const GRUPO = { nucleo: 'nucleo', satelite: 'satelite', satelite_argentina: 'satelite', satelite_volatil: 'satelite', satelite_ypf: 'ypf', renta_fija_ars: 'renta_fija', emergencia: 'emergencia' };
@@ -28,7 +28,9 @@ const arsDe = (c, mep) => c.cantidad * c.precio * (c.moneda === 'USD' ? mep : 1)
 function sumarCompra(d, c, fecha, mep, nota) {
   let pos = d.posiciones.find(p => p.ticker === c.ticker);
   if (!pos) {
-    pos = { ticker: c.ticker, descripcion: c.ticker, tipo: 'cedear', cantidad: 0, precio: c.precio, moneda_precio: c.moneda || 'ARS', bloque: 'satelite', ticker_subyacente_usa: c.ticker };
+    // una compra en la especie en dólares es el mismo activo: la posición se valúa en pesos
+    const enUSD = c.moneda === 'USD' && !c.especie;
+    pos = { ticker: c.ticker, descripcion: c.ticker, tipo: 'cedear', cantidad: 0, precio: c.especie ? c.precio * mep : c.precio, moneda_precio: enUSD ? 'USD' : 'ARS', bloque: 'satelite', ticker_subyacente_usa: c.ticker };
     d.posiciones.push(pos);
   }
   pos.cantidad += c.cantidad;
@@ -40,6 +42,7 @@ export function aplicarEventos(base, eventosLocales = []) {
   const d = clon(base);
   d.pasos = d.pasos || {}; d.meses = d.meses || {}; d.decisiones = d.decisiones || [];
   d.cobros = d.cobros || []; d.realizados = d.realizados || []; d.snapshots = d.snapshots || {};
+  d.predicciones = d.predicciones || []; d.fantasmas = d.fantasmas || [];
   const vistos = new Set();
   const todos = [...(base.eventos || []), ...eventosLocales]
     .filter(e => !vistos.has(e.id) && vistos.add(e.id))
@@ -57,7 +60,11 @@ export function aplicarEventos(base, eventosLocales = []) {
       }
       case 'aporte_historico': d.cashflows_externos_usd.push({ fecha: e.fecha, usd: e.usd, evento: e.id }); break; // aporte viejo que faltaba: no mueve la caja
       case 'compra': // con plata que ya estaba en caja
-        for (const c of e.compras || []) { sumarCompra(d, c, e.fecha, e.mep, 'Registrado en la app (desde caja)'); d.caja.ARS -= arsDe(c, e.mep); }
+        for (const c of e.compras || []) {
+          sumarCompra(d, c, e.fecha, e.mep, 'Registrado en la app (desde caja)');
+          if (c.moneda === 'USD') d.caja.USD_MEP -= arsDe(c, e.mep) / e.mep; // se pagó con los dólares de la cuenta
+          else d.caja.ARS -= arsDe(c, e.mep);
+        }
         break;
       case 'cobro': // cupón, dividendo o amortización
         d.caja.USD_MEP += e.usd;
@@ -98,6 +105,29 @@ export function aplicarEventos(base, eventosLocales = []) {
         d.decisiones.push({ fecha: e.fecha, texto: `${{ hecho: 'Hecho', pospuesto: 'Pospuesto', descartado: 'Descartado' }[e.estado]}: ${e.titulo}${e.nota ? ' — ' + e.nota : ''}` });
         break;
       case 'decision': d.decisiones.push({ fecha: e.fecha, texto: e.texto }); break;
+      case 'prediccion': { // qué esperás que pase, con qué probabilidad y hasta cuándo
+        const { tipo, ts, ...p } = e;
+        d.predicciones.push(p);
+        break;
+      }
+      case 'prediccion_resultado': {
+        const p = d.predicciones.find(x => x.id === e.ref);
+        if (p) { p.cumplio = !!e.cumplio; p.resuelta = e.fecha; }
+        break;
+      }
+      case 'fantasma': // algo que no compraste, para ver después cómo le fue contra SPY
+        if (!d.fantasmas.some(f => f.origen === e.origen && f.ticker === e.ticker && f.fecha === e.fecha)) d.fantasmas.push({ origen: e.origen, ticker: e.ticker, fecha: e.fecha, grupo: e.grupo });
+        break;
+      case 'rotacion_allaria': {
+        const a = d.cartera_modelo_allaria = d.cartera_modelo_allaria || { activos: [] };
+        const activos = (a.activos || []).filter(x => !e.sale.includes(x.ticker));
+        for (const t of e.entra) if (!activos.some(x => x.ticker === t)) activos.push({ ticker: t, desde: e.fecha });
+        a.activos = activos;
+        a.ultimos_cambios = [{ fecha: e.fecha, entra: e.entra.join(', ') || '—', sale: e.sale.join(', ') || '—' }, ...(a.ultimos_cambios || [])];
+        a.rotaciones = [...(a.rotaciones || []), { rotacion: e.rotacion, fecha: e.fecha }];
+        a.rotacion = e.rotacion; a.fecha = e.fecha;
+        break;
+      }
       case 'config': Object.assign(d.config, e.cambios); break;
       case 'perfil': Object.assign(d.perfil, e.cambios); break;
       case 'fecha_aporte': { // se busca por monto y fecha original; el índice queda como respaldo para eventos viejos
@@ -135,7 +165,7 @@ function precioDeMercado(p, m) {
   return v ? { precio: v[0], variacion: v[1] || 0, viejo: !!tabla.stale } : null;
 }
 
-// Valúa todo en USD MEP. ext = { mercado, calendario, insiders, historico } (cualquiera puede faltar).
+// Valúa todo en USD MEP. ext = { mercado, calendario, insiders, historico, ratios, feriados } (cualquiera puede faltar).
 export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
   const m = ext.mercado || null;
   const mep = m?.fx?.mep || datos.meta.tc_snapshot.mep;
@@ -198,11 +228,16 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     precios: { origen: m ? 'mercado' : 'archivo', generado: m?.generado || null, fecha_archivo: datos.meta.fecha_snapshot, viejos, fecha_fci: m?.fci?.fecha || null },
     fecha_resumen: datos.meta.fecha_resumen || datos.meta.fecha_snapshot,
     mercado: m, calendario: ext.calendario || { flujos: [] }, insiders: ext.insiders || { filas: [] }, historico: ext.historico || null,
+    ratios: ext.ratios?.ratios || null, ratios_fecha: ext.ratios?.fecha || null, feriados: ext.feriados || null,
   };
 }
 
 // Valores del día para guardar como snapshot (un punto por día en que se abre la app).
-export const snapshotDe = e => ({ t: Math.round(e.total_usd * 100) / 100, lp: Math.round(e.lp_usd * 100) / 100, n: Math.round(e.nucleo_usd * 100) / 100, mep: e.mep });
+// x = lo que está en CEDEARs y acciones locales (lo que se mueve con el canje).
+export const snapshotDe = e => {
+  const r = v => Math.round(v * 100) / 100;
+  return { t: r(e.total_usd), lp: r(e.lp_usd), n: r(e.nucleo_usd), x: r(suma((e.posiciones || []).filter(expuestoAlCanje), p => p.valor_usd)), mep: e.mep, ccl: e.ccl };
+};
 
 // Totales por grupo para el anillo de Cartera.
 export function porGrupo(e) {

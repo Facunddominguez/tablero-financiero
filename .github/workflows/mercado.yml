@@ -2,9 +2,10 @@ name: Datos de mercado
 
 on:
   schedule:
-    # Respaldo: lunes a viernes ~11:20, 14:20 y 17:20 de Argentina (UTC-3). GitHub las atrasa o saltea a veces;
+    # Respaldo: lunes a viernes ~11:40, 14:40 y 17:40 de Argentina (UTC-3). La primera va después de la apertura de
+    # Wall Street (11:30 en invierno de EE.UU.): sin eso no hay precio justo. GitHub las atrasa o saltea a veces;
     # el horario confiable lo da un cron externo (cron-job.org) que llama a workflow_dispatch con origen "cron".
-    - cron: "20 14,17,20 * * 1-5"
+    - cron: "40 14,17,20 * * 1-5"
   workflow_dispatch:
     inputs:
       origen:

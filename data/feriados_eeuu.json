@@ -1,0 +1,43 @@
+{
+  "fuente": "NYSE · Holidays & Trading Hours",
+  "url": "https://www.nyse.com/trade/hours-calendars",
+  "consultado": "2026-11-26",
+  "nota": "Feriados y medias ruedas (cierre 13:00 de Nueva York) del mercado de EE.UU. Para sumar un año, agregarlo en \"anios\" y cargar sus fechas.",
+  "anios": [2026, 2027],
+  "feriados": {
+    "2026-01-01": "Año Nuevo",
+    "2026-01-19": "Día de Martin Luther King",
+    "2026-02-16": "Día de Washington",
+    "2026-04-03": "Viernes Santo",
+    "2026-05-25": "Día de los Caídos",
+    "2026-06-19": "Juneteenth",
+    "2026-07-03": "Día de la Independencia",
+    "2026-09-07": "Día del Trabajo",
+    "2026-11-26": "Acción de Gracias",
+    "2026-12-25": "Navidad",
+    "2027-01-01": "Año Nuevo",
+    "2027-01-18": "Día de Martin Luther King",
+    "2027-02-15": "Día de Washington",
+    "2027-03-26": "Viernes Santo",
+    "2027-05-31": "Día de los Caídos",
+    "2027-06-18": "Juneteenth",
+    "2027-07-05": "Día de la Independencia",
+    "2027-09-06": "Día del Trabajo",
+    "2027-11-25": "Acción de Gracias",
+    "2027-12-24": "Navidad"
+  },
+  "medias_ruedas": {
+    "2026-11-27": "día después de Acción de Gracias",
+    "2026-12-24": "Nochebuena",
+    "2027-11-26": "día después de Acción de Gracias"
+  },
+  "byma": {
+    "fuente": "BYMA, Comunicado 19031 (28/10/2026): renta variable con liquidación a 24 horas de 10:30 a 18:00 desde el 02/11/2026",
+    "url": "https://www.byma.com.ar/comunicados/com19031-horarios",
+    "nota": "BYMA todavía no publicó el horario para cuando EE.UU. vuelva al horario de verano (14/03/2027): hasta confirmarlo se asume el cierre a las 17:00, que es el supuesto prudente. Revisar en marzo de 2027.",
+    "horarios": [
+      { "desde": "2026-11-02", "apertura": "10:30", "cierre": "18:00" },
+      { "desde": "2027-03-14", "apertura": "10:30", "cierre": "17:00", "confirmado": false }
+    ]
+  }
+}

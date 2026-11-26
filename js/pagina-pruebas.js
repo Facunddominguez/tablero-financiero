@@ -9,9 +9,9 @@ const json = url => fetch(url, { cache: 'no-store' }).then(r => r.ok ? r.json() 
 const sobre = await json('data/cartera.enc.json');
 
 async function correr(base) {
-  const [calendario, historico] = await Promise.all([json('data/calendario.json'), json('data/historico.json')]);
+  const [calendario, historico, feriados] = await Promise.all([json('data/calendario.json'), json('data/historico.json'), json('data/feriados_eeuu.json')]);
   const asincronicas = [];
-  const res = correrPruebas(base, { calendario, historico, asincronicas });
+  const res = correrPruebas(base, { calendario, historico, feriados, asincronicas });
   for (const [nombre, fn] of asincronicas) { try { await fn(); res.push({ nombre, ok: true, detalle: '' }); } catch (err) { res.push({ nombre, ok: false, detalle: String(err.message || err) }); } }
   const bien = res.filter(r => r.ok).length;
   window.__resultado = { total: res.length, bien, fallas: res.filter(r => !r.ok).map(r => r.nombre + ': ' + r.detalle) };
