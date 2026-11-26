@@ -7,6 +7,7 @@ import { paraVender, textoPrima, textoVentana, avisoPrecioJusto } from '../preci
 import { esSobreCifrado } from '../cripto.js';
 import { esRespaldoPlano } from '../estado.js';
 import { nuevaPrediccion } from './diario.js';
+import { supuestos, EDITABLES } from '../supuestos.js';
 
 const descargar = (nombre, texto, tipo = 'application/json') => {
   const a = h('a', { href: URL.createObjectURL(new Blob([texto], { type: tipo })), download: nombre });
@@ -223,6 +224,50 @@ function configuracion(ctx) {
   return d;
 }
 
+// ---------- Supuestos ----------
+// Los números que no salen de ningún dato (retornos esperados, umbrales): se cambian acá y se guardan en tus datos.
+function editarSupuestos(ctx) {
+  const e = ctx.estado, s = supuestos(e);
+  const mostrar = (v, f) => f === 'pct' ? fmt.num(v * 100, Math.abs(v * 100 - Math.round(v * 100)) < 1e-9 ? 0 : 2) : fmt.num(v, Number.isInteger(v) ? 0 : 2);
+  const filas = [];
+  const bloques = EDITABLES.filter(([g]) => s[g]).map(([g, titulo, campos]) => h('div.bloque', h('h3', titulo),
+    h('div.fila-campos', campos.map(([k, etq, f]) => {
+      const actual = k.split('.').reduce((o, p) => o?.[p], s[g]);
+      const input = entrada({ value: actual == null ? '' : mostrar(actual, f) });
+      filas.push({ g, k, f, input, actual });
+      return campo(etq, input);
+    })),
+    s[g].fuente ? h('small', `${s[g].fuente} (${fmt.fecha(s[g].fecha)})`) : null));
+  const error = h('p.error', { role: 'alert' });
+  const d = dialogo('Supuestos', h('form.formulario', {
+    onsubmit: async ev => {
+      ev.preventDefault();
+      const cambios = {};
+      for (const x of filas) {
+        const n = aNumero(x.input.value);
+        if (!Number.isFinite(n)) { error.textContent = 'Hay un campo vacío o que no es un número.'; return; }
+        const v = x.f === 'pct' ? n / 100 : n;
+        if (x.actual != null && Math.abs(v - x.actual) < 1e-12) continue;
+        const ruta = x.k.split('.');
+        let o = cambios[x.g] = cambios[x.g] || {};
+        for (const p of ruta.slice(0, -1)) o = o[p] = o[p] || {};
+        o[ruta.at(-1)] = v;
+        // lo editado queda marcado como tuyo, con la fecha de hoy
+        Object.assign(cambios[x.g], { fuente: `Editado por vos. Original: ${(e.supuestos?.[x.g]?.fuente) || 'sin fuente'}`, fecha: e.hoy });
+      }
+      if (Object.keys(cambios).length) await ctx.registrar({ tipo: 'supuestos', fecha: e.hoy, cambios }, { tipo: 'decision', fecha: e.hoy, texto: `Cambiados los supuestos: ${Object.keys(cambios).join(', ')}` });
+      d.close();
+    },
+  },
+    h('p.nota', 'Son supuestos, no pronósticos: cambian las proyecciones y los colores del semáforo y del clima. Las reglas no cambian.'),
+    bloques, error,
+    h('div.acciones', e.datos.supuestos && Object.keys(e.datos.supuestos).length ? boton('Volver a los originales', async () => {
+      await ctx.registrar({ tipo: 'supuestos', fecha: e.hoy, restaurar: true }, { tipo: 'decision', fecha: e.hoy, texto: 'Supuestos vueltos a los originales' });
+      d.close();
+    }, 'fantasma') : null, boton('Cancelar', () => d.close(), 'fantasma'), h('button.boton.primario', { type: 'submit' }, 'Guardar'))), { ancho: '36rem' });
+  return d;
+}
+
 // ---------- Seguridad ----------
 function seguridad(ctx) {
   const min = bloqueo.minutos();
@@ -377,6 +422,7 @@ const SECCIONES = {
   prediccion: ['Anotar una predicción', 'Qué esperás, con qué probabilidad y hasta cuándo', nuevaPrediccion],
   fuentes: ['Fuentes y fechas', 'De dónde sale cada dato y de cuándo es', fuentes],
   configuracion: ['Configuración', 'Ingreso, día de cobro, apariencia', configuracion],
+  supuestos: ['Supuestos', 'Retornos esperados y umbrales, con su fuente', editarSupuestos],
   seguridad: ['Seguridad', 'Bloqueo, clave y este dispositivo', seguridad],
   respaldo: ['Respaldo', 'Exportar o importar los datos', respaldo],
 };

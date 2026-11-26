@@ -3,6 +3,7 @@ import { h, fmt, fechas, aNumero } from '../util.js';
 import { dialogo, campo, entrada, boton, chip, medidor, dialogoCompras, signoClase, NIVEL, proximaFecha, botonPrecios, notaPrecios } from './comun.js';
 import { proyeccion } from '../motor.js';
 import { marcarPrediccion } from './diario.js';
+import { simular, textoHito } from '../simulacion.js';
 
 function antiguedad(e) {
   if (e.precios.origen === 'archivo') return `precios del resumen del ${fmt.fecha(e.precios.fecha_archivo)}`;
@@ -96,14 +97,20 @@ function tarjetaPaso(ctx, paso, n) {
 
 function indicadores(e) {
   const d = e.datos, [nMin, nMax] = d.nucleo.rango_LP, R6 = d.reglas.find(r => r.id === 'R6');
-  const pr = proyeccion(e);
+  const pr = proyeccion(e), sim = simular(e);
+  // Con la simulación, un rango de fechas; sin ella, la fecha "si los precios no cambian".
+  const cuando = (id, verbo) => {
+    const rango = textoHito(sim?.hitos[id], sim?.horizonte);
+    if (rango) return h('a.indicador-rango', { href: '#informes/proyeccion' }, `${verbo}: ${rango}`);
+    return !sim && pr[id] ? h('span.indicador-rango', `${verbo} en ${fmt.mes(pr[id].fecha)}, si los precios no cambian`) : null;
+  };
   const ind = (titulo, valor, meta, med) => h('div.indicador', h('p.indicador-etq', titulo), h('p.indicador-valor', valor), med, h('p.indicador-meta', meta));
   return h('section.indicadores', { 'aria-label': 'Indicadores' },
-    ind('Núcleo en largo plazo', fmt.pct(e.nucleo_lp), `objetivo ${fmt.pct(d.nucleo.peso_en_LP_objetivo, 0)} · rango ${fmt.pct(nMin, 0)}–${fmt.pct(nMax, 0)}${pr.nucleo ? ` · a este ritmo llega al ${fmt.pct(nMin, 0)} en ${fmt.mes(pr.nucleo.fecha)}` : ''}`,
+    ind('Núcleo en largo plazo', fmt.pct(e.nucleo_lp), [`objetivo ${fmt.pct(d.nucleo.peso_en_LP_objetivo, 0)} · rango ${fmt.pct(nMin, 0)}–${fmt.pct(nMax, 0)}`, e.nucleo_lp < nMin ? cuando('nucleo', `Llega al ${fmt.pct(nMin, 0)}`) : null],
       medidor({ valor: e.nucleo_lp, objetivo: d.nucleo.peso_en_LP_objetivo, rango: [nMin, nMax], max: 1, estado: e.nucleo_lp < nMin ? 'alerta' : 'ok' })),
     ind('Fondo de emergencia', fmt.num(e.meses_emergencia, 1) + ' meses', `objetivo ${d.emergencia.meses_obj} meses · ${fmt.usd(e.emergencia_usd)} de ${fmt.usd(d.emergencia.objetivo_usd)}`,
       medidor({ valor: e.meses_emergencia, objetivo: d.emergencia.meses_obj, rango: [d.emergencia.meses_min, d.emergencia.meses_obj * 4 / 3], max: d.emergencia.meses_obj * 4 / 3, estado: e.meses_emergencia < d.emergencia.meses_min ? 'mal' : 'ok' })),
-    ind('YPF consolidada', fmt.pct(e.ypf_lp), `objetivo ${fmt.pct(R6?.objetivo ?? 0.1, 0)} de largo plazo · bono + acción`,
+    ind('YPF consolidada', fmt.pct(e.ypf_lp), [`objetivo ${fmt.pct(R6?.objetivo ?? 0.1, 0)} de largo plazo · bono + acción`, e.ypf_lp > (R6?.objetivo ?? 0.1) ? cuando('ypf', 'Llega al objetivo') : null],
       medidor({ valor: e.ypf_lp, objetivo: R6?.objetivo ?? 0.1, max: 0.3, estado: e.ypf_lp > (R6?.objetivo ?? 0.1) ? 'alerta' : 'ok' })));
 }
 

@@ -1,0 +1,27 @@
+{
+  "nota": "Supuestos del tablero, con fuente y fecha. Se pueden cambiar desde la app (⋯ → Supuestos): lo que cambies queda en tus datos cifrados y manda sobre este archivo.",
+  "retornos_etf": {
+    "fuente": "Vanguard Capital Markets Model: retorno anual esperado a 10 años, punto medio de cada rango (EE.UU. 4,8–6,8%; desarrollados fuera de EE.UU. 5,3–7,3%; emergentes 3,7–5,7%). IWM usa el de EE.UU.",
+    "url": "https://corporate.vanguard.com/content/corporatesite/us/en/corp/vemo/vemo-return-forecasts.html",
+    "fecha": "2026-09-30",
+    "SPY": 0.058,
+    "EFA": 0.063,
+    "EEM": 0.047,
+    "IWM": 0.058
+  },
+  "acciones": {
+    "fuente": "Acciones sueltas: tasa libre de riesgo + beta contra SPY × prima de mercado. Tasa: bono del Tesoro a 10 años al 30/09/2026 (FRED, DGS10). Prima: prima implícita de Damodaran a comienzos de octubre de 2026 (publicada el 08/10/2026).",
+    "url": "https://aswathdamodaran.blogspot.com/2026/10/stock-prices-earnings-and-cashflows-ai.html",
+    "fecha": "2026-09-30",
+    "tasa_libre": 0.0529,
+    "prima_mercado": 0.037
+  },
+  "otros": {
+    "fuente": "Criterio propio de la herramienta: obligaciones negociables, la tasa libre a 10 años; fondos en dólares, la letra a 3 meses al 30/09/2026 (FRED, DGS3MO); dólares sin invertir, nada; pesos, nada en dólares (se supone que el interés apenas compensa la suba del dólar).",
+    "fecha": "2026-11-26",
+    "on": 0.0529,
+    "fci_usd": 0.042,
+    "caja_usd": 0,
+    "pesos": 0
+  }
+}

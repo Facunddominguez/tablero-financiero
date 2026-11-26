@@ -1,10 +1,13 @@
 // Pruebas públicas de la ronda 2 (sin datos privados). Corren junto con js/pruebas_publicas.js.
 import { aplicarEventos, valuar } from './estado.js';
-import { planificador } from './motor.js';
+import { planificador, proyeccion } from './motor.js';
+import { simular, modelo, raizCorrelacion, textoHito } from './simulacion.js';
+import { supuestos } from './supuestos.js';
 import { ventanaDelDia, textoVentana, precioJusto, paraVender, horaPrecios, frescuraPrecios, avisoPrecioJusto } from './precios.js';
 import { compararFantasmas, puntajePredicciones } from './diario.js';
 import { fusionar } from './sync.js';
 import { ejemplo } from './ejemplo.js';
+import { aNumero, fmt } from './util.js';
 
 export const cerca = (a, b, tol, que) => { if (!(Math.abs(a - b) <= tol)) throw new Error(`${que}: dio ${a}, esperado ≈ ${b}`); };
 export const igual = (a, b, que) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${que}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`); };
@@ -154,6 +157,135 @@ function etapa1() {
   ];
 }
 
+// Sin volatilidad ni retornos: lo mismo que "si los precios no cambian".
+const QUIETO = { escala_volatilidad: 0, retornos_etf: { SPY: 0, EFA: 0, EEM: 0, IWM: 0 }, acciones: { tasa_libre: 0, prima_mercado: 0 }, otros: { on: 0, fci_usd: 0, caja_usd: 0, pesos: 0 } };
+
+function etapa3() {
+  return [
+    ['Los montos se leen como se escriben acá: un punto con tres cifras detrás separa miles', async () => {
+      for (const [texto, numero] of [['1.200', 1200], ['30.000', 30000], ['1.234,56', 1234.56], ['12.345.678', 12345678], ['−1.500', -1500],['1234.5', 1234.5], ['1234,5', 1234.5], ['0.125', 0.125], ['1.0545', 1.0545], ['$ 5.395', 5395]]) {
+        si(aNumero(texto) === numero, `${texto} → ${aNumero(texto)}`);
+      }
+      si(aNumero(fmt.num(1200)) === 1200 && aNumero(fmt.num(25836295.5, 2)) === 25836295.5, 'ida y vuelta con lo que muestra la app');
+    }],
+
+    ['Proyección con volatilidad cero: la mediana coincide con la proyección de hoy', async () => {
+      for (const ingreso of [700, 1000, 1800]) {
+        const { e } = mundo({ ajustar: x => { x.datos.supuestos = QUIETO; x.datos.perfil.ingreso_mensual_usd = ingreso; } });
+        const sim = simular(e, { escenarios: 50 }), pr = proyeccion(e);
+        for (const id of ['nucleo', 'satelites', 'ypf']) {
+          const h = sim.hitos[id];
+          si(pr[id] && h.m50 === pr[id].meses && h.f50 === pr[id].fecha, `${id} con ${ingreso}: ${h.m50} (${h.f50}) contra ${pr[id]?.meses} (${pr[id]?.fecha})`);
+          si(h.m10 === h.m50 && h.m90 === h.m50 && h.en12 === (h.m50 <= 12 ? 1 : 0) && h.en24 === (h.m50 <= 24 ? 1 : 0), JSON.stringify(h));
+        }
+        for (const a of sim.anios) { cerca(a.p50, e.total_usd + pr.aporte * a.anios * 12, 0.01, `patrimonio a ${a.anios}`); cerca(a.p10, a.p90, 1e-6, 'sin dispersión'); cerca(a.aportado, a.p50, 0.01, 'aportado'); }
+      }
+    }],
+
+    ['Proyección sin volatilidad: cada cosa crece a su retorno anual', async () => {
+      const { e } = mundo({ ajustar: x => { x.datos.supuestos = { escala_volatilidad: 0 }; x.datos.perfil.ingreso_mensual_usd = 500; } });
+      const sim = simular(e, { escenarios: 5 }), m = sim.modelo;
+      si(sim.aporte === 0, 'sin aporte');
+      const esperado = anios => m.items.reduce((s, x) => s + x.usd * Math.pow(1 + x.retorno, anios), 0);
+      for (const a of sim.anios) cerca(a.p50, esperado(a.anios), 0.01, `a ${a.anios} años`);
+    }],
+
+    ['Proyección: con la semilla fija el resultado se repite, y con otra cambia', async () => {
+      const una = () => simular(mundo().e, { escenarios: 200 });
+      const a = una(), b = una();
+      igual([a.hitos, a.abanico, a.anios], [b.hitos, b.abanico, b.anios], 'misma semilla');
+      const c = simular(mundo().e, { escenarios: 200, semilla: 7 });
+      si(JSON.stringify(c.anios) !== JSON.stringify(a.anios), 'otra semilla da otros caminos');
+      const { e } = mundo();
+      si(simular(e) === simular(e), 'dentro de la misma pantalla se calcula una vez');
+    }],
+
+    ['Proyección: percentiles y chances ordenados', async () => {
+      const { e } = mundo({ ajustar: x => { x.datos.perfil.ingreso_mensual_usd = 700; } });
+      const sim = simular(e, { escenarios: 500 });
+      for (const h of Object.values(sim.hitos)) {
+        si(h.en12 <= h.en24 + 1e-12, JSON.stringify(h));
+        const m = [h.m10, h.m50, h.m90].map(v => v ?? Infinity);
+        si(m[0] <= m[1] && m[1] <= m[2], JSON.stringify(h));
+      }
+      si(sim.hitos.tesis.m50 >= sim.hitos.nucleo.m50 && sim.hitos.tesis.m50 >= sim.hitos.satelites.m50, 'la tesis pide las dos cosas');
+      for (const a of sim.anios) si(a.p10 < a.p50 && a.p50 < a.p90, JSON.stringify(a));
+      si(sim.abanico.length === 61 && sim.abanico[0].p10 === sim.abanico[0].p90, 'arranca en el patrimonio de hoy');
+      cerca(sim.abanico[0].p50, e.total_usd, 0.01, 'hoy');
+    }],
+
+    ['Proyección: la mediana y la dispersión de un solo ETF son las de su retorno y volatilidad', async () => {
+      const { e } = mundo({ ajustar: x => {
+        x.datos.posiciones = x.datos.posiciones.filter(p => p.ticker === 'SPY'); x.datos.lotes_costo = []; x.datos.caja = { ARS: 0, USD_MEP: 0 };
+        x.datos.nucleo.pesos_internos = { SPY: 1 }; x.datos.perfil.ingreso_mensual_usd = 500;
+      } });
+      const sim = simular(e, { escenarios: 4000 }), s = sim.modelo.items.find(x => x.ticker === 'SPY'), uno = sim.anios[0];
+      cerca(uno.p50 / (e.total_usd * 1.06), 1, 0.01, 'mediana: retorno compuesto');
+      cerca(Math.log(uno.p90 / uno.p50), 1.2816 * s.vol, 0.1 * 1.2816 * s.vol, 'dispersión hacia arriba');
+      cerca(Math.log(uno.p50 / uno.p10), 1.2816 * s.vol, 0.1 * 1.2816 * s.vol, 'dispersión hacia abajo');
+      si(sim.modelo.factores[s.factor].origen === 'largo', 'los ETF usan la historia larga');
+    }],
+
+    ['Proyección: acciones por tasa libre + beta × prima; lo sin historia, con los supuestos de riesgo', async () => {
+      const { e } = mundo({ ajustar: x => {
+        const h = x.ext.historico.series;
+        h.NVDA = h.SPY.map((v, i) => 150 * (v / h.SPY[0]) ** 2); // se mueve el doble que SPY
+        delete h.PAM;
+      } });
+      const m = modelo(e), de = t => m.items.find(x => x.ticker === t), f = x => m.factores[x.factor];
+      cerca(de('NVDA').beta, 2, 1e-6, 'beta'); cerca(de('NVDA').retorno, 0.05 + 2 * 0.04, 1e-6, 'retorno');
+      cerca(de('NVDA').deriva, Math.log(1.13) - de('NVDA').vol ** 2 / 2, 1e-9, 'el promedio se corrige por volatilidad');
+      si(de('PAMP').beta === 1 && f(de('PAMP')).origen === 'fija' && de('PAMP').vol === 0.35, JSON.stringify(de('PAMP')));
+      si(de('ON1').vol === 0.08 && de('FCID').vol === 0.03 && de('FCID').retorno === 0.04 && de('Caja en dólares').vol === 0, 'ON, fondos y caja');
+      si(f(de('FCIP')).id === 'MEP' && f(de('Caja en pesos')) === f(de('FCIP')), 'los pesos se mueven juntos con el MEP');
+      cerca(m.correlaciones[de('NVDA').factor][de('SPY').factor], 1, 0.01, 'correlación diaria');
+    }],
+
+    ['Proyección: matrices de correlación incoherentes se corrigen sin perder el largo de cada una', async () => {
+      const buena = [[1, 0.5, 0.2], [0.5, 1, 0.3], [0.2, 0.3, 1]], mala = [[1, 0.9, -0.9], [0.9, 1, 0.9], [-0.9, 0.9, 1]];
+      for (const [C, exacta] of [[buena, true], [mala, false]]) {
+        const A = raizCorrelacion(C), p = (i, j) => A[i].reduce((s, x, k) => s + x * A[j][k], 0);
+        C.forEach((f, i) => { cerca(p(i, i), 1, 1e-9, 'diagonal'); if (exacta) f.forEach((v, j) => cerca(p(i, j), v, 1e-9, 'correlación')); });
+        si(A.flat().every(Number.isFinite), 'sin números rotos');
+      }
+    }],
+
+    ['Proyección: objetivos con fecha, contra el patrimonio o juntados aparte', async () => {
+      const eventos = [
+        evento(30, { tipo: 'objetivo', objetivo_id: 'a', nombre: 'Chico', monto_usd: 100, fecha: '2027-11-30' }),
+        evento(31, { tipo: 'objetivo', objetivo_id: 'b', nombre: 'Imposible', monto_usd: 1e9, fecha: '2031-11-30' }),
+        evento(32, { tipo: 'objetivo', objetivo_id: 'c', nombre: 'Medio', monto_usd: 1, fecha: '2029-11-30' }),
+      ];
+      eventos.push(evento(33, { tipo: 'objetivo', objetivo_id: 'c', nombre: 'Medio', monto_usd: 16345, fecha: '2027-11-30' }));
+      const { e } = mundo({ eventos, ajustar: x => { x.datos.objetivos_externos = [{ nombre: 'Viaje', objetivo_usd: 1200, fecha: '2027-11-15', aporte_mensual_usd: 100 }, { nombre: 'Sin fecha', monto_usd: 5 }]; x.datos.perfil.ingreso_mensual_usd = 1100; } });
+      const o = Object.fromEntries(simular(e, { escenarios: 400 }).objetivos.map(x => [x.nombre, x]));
+      si(!o['Sin fecha'] && o.Chico.chance === 1 && o.Imposible.chance === 0, JSON.stringify(Object.keys(o)));
+      si(o.Medio.monto_usd === 16345 && o.Medio.chance > 0 && o.Medio.chance < 1, JSON.stringify(o.Medio));
+      si(o.Viaje.contra === 'aparte' && o.Viaje.llega === true && o.Viaje.proyectado === 1200, JSON.stringify(o.Viaje));
+      const sin = mundo({ eventos: [...eventos, evento(40, { tipo: 'objetivo_borrar', ref: 'b' })] }).e;
+      igual(sin.datos.objetivos.map(x => x.id), ['a', 'c'], 'borrar');
+    }],
+
+    ['Supuestos: se editan desde la app, mandan sobre el archivo y se pueden restaurar', async () => {
+      const cambio = evento(50, { tipo: 'supuestos', cambios: { retornos_etf: { SPY: 0.02 } } });
+      const con = mundo({ eventos: [cambio] }).e;
+      si(supuestos(con).retornos_etf.SPY === 0.02 && supuestos(con).retornos_etf.EFA === 0.065 && supuestos(con).acciones.tasa_libre === 0.05, JSON.stringify(supuestos(con)));
+      si(modelo(con).items.find(x => x.ticker === 'SPY').retorno === 0.02, 'la proyección lo usa');
+      const vuelta = mundo({ eventos: [cambio, evento(51, { tipo: 'supuestos', restaurar: true })] }).e;
+      si(supuestos(vuelta).retornos_etf.SPY === 0.06, 'restaurado');
+      si(simular(mundo({ ajustar: x => { delete x.ext.supuestos; } }).e) === null, 'sin supuestos no se inventa nada');
+    }],
+
+    ['Proyección en palabras: rango, ya cumplida y fuera de alcance', async () => {
+      si(textoHito({ cumplida: true }) === null, 'cumplida');
+      const t = textoHito({ m10: 3, m50: 5, m90: 9, f10: '2027-02-01', f50: '2027-04-01', f90: '2027-08-01' });
+      si(t === 'lo más probable abr 2027 (entre feb 2027 y ago 2027)', t);
+      si(textoHito({ m10: 3, m50: 5, m90: null, f10: '2027-02-01', f50: '2027-04-01' }).endsWith('y más de 20 años)'), 'abierto');
+      si(/casi seguro no antes de 20 años/.test(textoHito({ m10: null, m50: null, m90: null })), 'lejos');
+    }],
+  ];
+}
+
 export function pruebasRonda2() {
-  return [...etapa1()];
+  return [...etapa1(), ...etapa3()];
 }

@@ -6,8 +6,9 @@ import { riesgo } from '../riesgo.js';
 import { puntajePredicciones, compararFantasmas, contraReferencia, HORIZONTES } from '../diario.js';
 import { nuevaPrediccion, nuevaRotacion, borrarPrediccion, editarFantasma, borrarFantasma } from './diario.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase, parteRiesgo } from './comun.js';
+import { informeProyeccion } from './proyeccion.js';
 
-const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['trimestral', 'Trimestral'], ['diario', 'Predicciones y fantasmas'], ['anual', 'Anual para el contador'], ['allaria', 'Contraste con Allaria']];
+const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['proyeccion', 'Proyección'], ['trimestral', 'Trimestral'],['diario', 'Predicciones y fantasmas'], ['anual', 'Anual para el contador'], ['allaria', 'Contraste con Allaria']];
 const dato = (etq, valor, sub) => h('div', h('p.dato-etq', etq), h('p.dato-valor', valor), sub ? h('p.dato-sub', sub) : null);
 const color = (n, txt) => h('span.' + (signoClase(n) || 'plano'), txt);
 const hoja = (titulo, sub, ...secciones) => h('article.informe', h('header.informe-cab', h('h1', titulo), h('p', sub)), secciones);
@@ -400,7 +401,7 @@ function allaria(ctx) {
     ], a.activos)));
 }
 
-const FN = { mensual, rendimiento: rendimientoInforme, trimestral, diario, anual, allaria };
+const FN = { mensual, rendimiento: rendimientoInforme, proyeccion: informeProyeccion, trimestral, diario, anual, allaria };
 
 export function vistaInformes(ctx, sub) {
   const id = FN[sub] ? sub : 'mensual';

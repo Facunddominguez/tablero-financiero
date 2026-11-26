@@ -85,8 +85,23 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
     usd: sec({ precios: {} }),
     cpi_usa: sec({ meses: { '2025-11': 320, '2026-03': 323, '2026-06': 325, '2026-10': 328 } }),
   };
+  // Historia larga (mensual, 2019 en adelante) y supuestos inventados para las proyecciones.
+  const meses = [];
+  for (let a = 2019, m = 1; `${a}-${String(m).padStart(2, '0')}` < hoy.slice(0, 7); m === 12 ? (a++, m = 1) : m++) meses.push(`${a}-${String(m).padStart(2, '0')}`);
+  const largoPlazo = {
+    fechas: meses, hasta: meses.at(-1),
+    series: Object.fromEntries(['SPY', 'EFA', 'EEM', 'IWM'].map((t, k) => {
+      let v = 100;
+      return [t, meses.map((_, i) => Math.round((v *= 1 + 0.007 + (0.03 + 0.004 * k) * Math.sin(i * 1.7) + 0.015 * Math.sin(i * 0.4 + k)) * 100) / 100)];
+    })),
+  };
+  const supuestos = {
+    retornos_etf: { fuente: 'Ejemplo', fecha: '2026-09-30', SPY: 0.06, EFA: 0.065, EEM: 0.05, IWM: 0.06 },
+    acciones: { fuente: 'Ejemplo', fecha: '2026-09-30', tasa_libre: 0.05, prima_mercado: 0.04 },
+    otros: { fuente: 'Ejemplo', fecha: '2026-09-30', on: 0.05, fci_usd: 0.04, caja_usd: 0, pesos: 0 },
+  };
   const ext = {
-    mercado, historico,
+    mercado, historico, largoPlazo, supuestos,
     ratios: { fecha: '2026-11-19', ratios: Object.fromEntries(Object.entries(ratios).map(([t, r]) => [t, { ratio: r }])) },
     feriados: {
       anios: [2026, 2027], feriados: { '2026-11-26': 'Acción de Gracias', '2026-12-25': 'Navidad' }, medias_ruedas: { '2026-11-27': 'día después de Acción de Gracias', '2026-12-24': 'Nochebuena' },

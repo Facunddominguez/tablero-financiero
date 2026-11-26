@@ -306,6 +306,12 @@ input[type="file"] { width: 100%; font-size: .9rem; }
 .leyenda-linea span { display: inline-flex; align-items: center; }
 .leyenda-linea i { width: 1rem; height: 3px; border-radius: 2px; margin-right: .45rem; }
 .leyenda-linea i.punteada { height: 0; border-radius: 0; border-top: 2px dashed var(--tinta-2); }
+.leyenda-linea i.franja { height: .7rem; background: color-mix(in srgb, var(--serie-1) 22%, transparent); }
+.indicador-rango { display: block; margin-top: .3rem; text-decoration-color: var(--linea-fuerte); text-underline-offset: 3px; }
+.tabla-hitos .tabla td:first-child { white-space: normal; min-width: 8.5rem; }
+.tabla-hitos .tabla td.num, .tabla-hitos .tabla th { font-size: .82rem; }
+.tabla-hitos .tabla th { font-size: .68rem; }
+.cuando-tesis { margin-top: .6rem; }
 .descargo { font-size: .8rem; color: var(--tinta-3); border-top: 1px solid var(--linea); padding-top: .8rem; margin-top: 1.5rem; }
 .barra-informe { display: flex; justify-content: flex-end; margin-bottom: .9rem; }
 

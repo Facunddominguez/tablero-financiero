@@ -13,7 +13,7 @@ export const PARAMETROS = {
   sigmas_peor_mes: 2.33,       // peor mes de lo que no tiene serie, en veces su volatilidad mensual
   crisis: ['YPF', 'PAM', 'MEP'],
 };
-const parametros = e => {
+export const parametros = e => {
   const p = e.datos.riesgo || {};
   return { ...PARAMETROS, ...p, vol_fija: { ...PARAMETROS.vol_fija, ...p.vol_fija }, series: { ...p.series } };
 };
@@ -32,7 +32,7 @@ export function inversaNormal(p) {
 }
 
 // Valores de una serie en la ventana, como [fecha, valor en dólares]. "MEP" es el valor en dólares de un peso.
-function valores(hist, serie, ventana) {
+export function valores(hist, serie, ventana) {
   const s = serie === 'MEP' ? hist.series.MEP : serieDe(hist, serie);
   if (!s) return [];
   const out = [];
@@ -41,10 +41,10 @@ function valores(hist, serie, ventana) {
   }
   return out;
 }
-const rendimientos = v => new Map(v.slice(1).map(([f, x], i) => [f, x / v[i][1] - 1]));
+export const rendimientos = v => new Map(v.slice(1).map(([f, x], i) => [f, x / v[i][1] - 1]));
 
 // Covarianza muestral diaria sobre las fechas que las dos series tienen.
-function covarianza(x, y) {
+export function covarianza(x, y) {
   const pares = [];
   for (const [f, a] of x) if (y.has(f)) pares.push([a, y.get(f)]);
   if (pares.length < 2) return 0;
@@ -60,11 +60,11 @@ function peorMes(v) {
 }
 
 // Una serie sirve si tiene al menos un mes de precios.
-const conHistoria = (hist, t) => (t === 'MEP' ? hist.series.MEP : serieDe(hist, t))?.filter(v => v > 0).length > 20;
+const conHistoria = (hist, t) => (t === 'MEP' ? hist?.series?.MEP : serieDe(hist, t))?.filter(v => v > 0).length > 20;
 const enPesos = hist => conHistoria(hist, 'MEP') ? { serie: 'MEP' } : { fija: 'sin_serie' };
 
 // Con qué se mide cada cosa: { serie } del histórico, o { fija } = clave de vol_fija.
-function medida(p, hist, par) {
+export function medida(p, hist, par) {
   const forzada = par.series[p.ticker];
   if (forzada && conHistoria(hist, forzada)) return { serie: forzada };
   if (p.tipo === 'on') return { fija: 'on' };
@@ -76,22 +76,29 @@ function medida(p, hist, par) {
   return enPesos(hist); // todo lo demás en pesos
 }
 
-// Riesgo de la cartera de largo plazo (todo menos la emergencia, con la caja). null si no hay histórico.
-// { valor, sigma_mes, mes_malo_usd, mes_malo_pct, posiciones, bloques, escenarios, correlaciones, sin_serie, supuestos }
-export function riesgo(e) {
-  const hist = e.historico;
-  if (!hist?.fechas?.length || !(e.lp_usd > 0)) return null;
-  const par = parametros(e), base = new Map(e.datos.posiciones.map(p => [p.ticker, p]));
-  const items = e.posiciones.filter(p => p.grupo !== 'emergencia').map(p => ({
-    ticker: p.ticker, grupo: p.grupo, tipo: p.tipo, usd: p.valor_usd,
+// Cada cosa de la cartera (y la caja) con lo que la mide: { ticker, grupo, tipo, moneda, usd, argentino, serie | fija }.
+// La emergencia solo entra si se pide.
+export function itemsDeRiesgo(e, { conEmergencia = false } = {}) {
+  const hist = e.historico, par = parametros(e), base = new Map(e.datos.posiciones.map(p => [p.ticker, p]));
+  const items = e.posiciones.filter(p => conEmergencia || p.grupo !== 'emergencia').map(p => ({
+    ticker: p.ticker, grupo: p.grupo, tipo: p.tipo, moneda: p.moneda, usd: p.valor_usd,
     argentino: !!base.get(p.ticker)?.riesgo_ar || p.tipo === 'accion_ar' || p.grupo === 'ypf',
     ...medida(p, hist, par),
   }));
   // La caja: los pesos se mueven con el MEP; los dólares no tienen riesgo.
   const pesos = (e.datos.caja?.ARS || 0) / e.mep;
-  if (pesos) items.push({ ticker: 'Caja en pesos', grupo: 'caja', tipo: 'caja', usd: pesos, argentino: true, ...enPesos(hist) });
+  if (pesos) items.push({ ticker: 'Caja en pesos', grupo: 'caja', tipo: 'caja', moneda: 'ARS', usd: pesos, argentino: true, ...enPesos(hist) });
   const dolares = e.caja_usd - pesos;
-  if (Math.abs(dolares) > 0.005) items.push({ ticker: 'Caja en dólares', grupo: 'caja', tipo: 'caja', usd: dolares, argentino: false, fija: null });
+  if (Math.abs(dolares) > 0.005) items.push({ ticker: 'Caja en dólares', grupo: 'caja', tipo: 'caja', moneda: 'USD', usd: dolares, argentino: false, fija: null });
+  return items;
+}
+
+// Riesgo de la cartera de largo plazo (todo menos la emergencia, con la caja). null si no hay histórico.
+// { valor, sigma_mes, mes_malo_usd, mes_malo_pct, posiciones, bloques, escenarios, correlaciones, sin_serie, supuestos }
+export function riesgo(e) {
+  const hist = e.historico;
+  if (!hist?.fechas?.length || !(e.lp_usd > 0)) return null;
+  const par = parametros(e), items = itemsDeRiesgo(e);
 
   const V = suma(items, x => x.usd);
   if (!(V > 0)) return null;

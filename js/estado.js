@@ -2,6 +2,7 @@
 import { clon, suma, fechas } from './util.js';
 import { costoLoteUSD, expuestoAlCanje, ADR_DE_LOCAL } from './finanzas.js';
 import { claveFantasma } from './diario.js';
+import { fundir } from './supuestos.js';
 export { ADR_DE_LOCAL };
 
 const GRUPO = { nucleo: 'nucleo', satelite: 'satelite', satelite_argentina: 'satelite', satelite_volatil: 'satelite', satelite_ypf: 'ypf', renta_fija_ars: 'renta_fija', emergencia: 'emergencia' };
@@ -156,6 +157,15 @@ export function aplicarEventos(base, eventosLocales = []) {
         a.rotacion = e.rotacion; a.fecha = e.fecha;
         break;
       }
+      case 'supuestos': // lo que cambiaste de data/supuestos.json; restaurar: volver a los originales
+        d.supuestos = e.restaurar ? {} : fundir(d.supuestos || {}, e.cambios || {});
+        break;
+      case 'objetivo': { // una meta de patrimonio con fecha (un evento nuevo con el mismo objetivo la reemplaza)
+        const o = { id: e.objetivo_id, nombre: e.nombre, monto_usd: e.monto_usd, fecha: e.fecha };
+        d.objetivos = [...(d.objetivos || []).filter(x => x.id !== o.id), o];
+        break;
+      }
+      case 'objetivo_borrar': d.objetivos = (d.objetivos || []).filter(x => x.id !== e.ref); break;
       case 'config': Object.assign(d.config, e.cambios); break;
       case 'perfil': Object.assign(d.perfil, e.cambios); break;
       case 'fecha_aporte': { // se busca por monto y fecha original; el índice queda como respaldo para eventos viejos
@@ -257,7 +267,7 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     fecha_resumen: datos.meta.fecha_resumen || datos.meta.fecha_snapshot,
     mercado: m, calendario: ext.calendario || { flujos: [] }, insiders: ext.insiders || { filas: [] }, historico: ext.historico || null,
     ratios: ext.ratios?.ratios || null, ratios_fecha: ext.ratios?.fecha || null,
-    argentina: ext.argentina || null, clima: ext.clima || null, largo_plazo: ext.largoPlazo || null,
+    argentina: ext.argentina || null, clima: ext.clima || null, largo_plazo: ext.largoPlazo || null, supuestos: ext.supuestos || null,
     // calendario de mercado: EE.UU. y BYMA, más los feriados argentinos que guarda el Action
     feriados: ext.feriados || ext.feriadosAr ? { ...ext.feriados, argentina: ext.feriadosAr || null } : null,
   };
