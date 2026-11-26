@@ -5,6 +5,7 @@ import { enlacePermiso, enlacePermisoCron, LISTA_PERMISOS, urlDisparo, cuerpoDis
 import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN, botonPrecios } from './comun.js';
 import { esSobreCifrado } from '../cripto.js';
 import { esRespaldoPlano } from '../estado.js';
+import { nuevaPrediccion } from './diario.js';
 
 const descargar = (nombre, texto, tipo = 'application/json') => {
   const a = h('a', { href: URL.createObjectURL(new Blob([texto], { type: tipo })), download: nombre });
@@ -343,6 +344,7 @@ const SECCIONES = {
   importar: ['Importar el Excel de Balanz', 'Actualiza lotes y cantidades', importarExcel],
   movimiento: ['Registrar un movimiento', 'Dividendo, cupón, venta o un aporte viejo', registrarMovimiento],
   decisiones: ['Registro de decisiones', 'Qué hiciste y por qué', decisiones],
+  prediccion: ['Anotar una predicción', 'Qué esperás, con qué probabilidad y hasta cuándo', nuevaPrediccion],
   fuentes: ['Fuentes y fechas', 'De dónde sale cada dato y de cuándo es', fuentes],
   configuracion: ['Configuración', 'Ingreso, día de cobro, apariencia', configuracion],
   seguridad: ['Seguridad', 'Bloqueo, clave y este dispositivo', seguridad],

@@ -4,7 +4,7 @@ import { costoEntradaLote, costosAnuales, brechaAportes, volatilidadReciente, AD
 import { tickersPropios } from './estado.js';
 import { precioJusto, precioLimite, primaMaxima, conDolares, dolaresEnCaja, textoVentana, porQueSeMovio } from './precios.js';
 
-const PRIORIDAD = { emergencia: 1, regla: 2, aporte: 3, flujo: 4, datos: 5, trimestral: 6, pendiente: 7, anual: 8, aviso: 9, senal: 10 };
+const PRIORIDAD = { emergencia: 1, regla: 2, aporte: 3, flujo: 4, datos: 5, trimestral: 6, pendiente: 7, prediccion: 7, anual: 8, aviso: 9, senal: 10 };
 
 // ---------- Reglas ----------
 // Devuelve una fila por regla: { id, politica, nivel: ok|alerta|violada|sin_datos|info, activa, valor, detalle, accion }
@@ -454,6 +454,17 @@ export function planificador(e, hoy = e.hoy) {
     accion: { tipo: 'menu', seccion: 'movimiento', arg: 'aporte_historico', etiqueta: 'Cargar un aporte' },
   });
 
+  // Predicciones vencidas sin marcar
+  for (const p of d.predicciones || []) {
+    if (typeof p.cumplio === 'boolean' || !(p.vence <= hoy)) continue;
+    agregar({
+      id: `prediccion-${p.id}`, tipo: 'prediccion', titulo: `¿Se cumplió? ${p.ticker ? p.ticker + ': ' : ''}${p.texto.length > 70 ? p.texto.slice(0, 70).trimEnd() + '…' : p.texto}`,
+      porque: `El ${fmt.fecha(p.fecha)} anotaste, con ${fmt.pct(p.probabilidad, 0)} de probabilidad: "${p.texto}". Venció el ${fmt.fecha(p.vence)}.`,
+      como: [p.cambio ? `Dijiste que cambiarías de idea si: ${p.cambio}` : null, 'Marcá Hecho y elegí si se cumplió'].filter(Boolean),
+      accion: { tipo: 'prediccion', ref: p.id },
+    });
+  }
+
   // 10 · Fin de año
   if (nMes === 12 || nMes === 1) {
     const ej = nMes === 12 ? anio : anio - 1;
@@ -504,6 +515,7 @@ export function proximaAccion(e, hoy = e.hoy) {
   }
   const vence = fechas.sumar(e.fecha_resumen, cfg.dias_resumen_viejo + 1);
   if (vence > hoy) cand.push({ fecha: vence, texto: 'subir el Excel de Balanz' });
+  for (const p of d.predicciones || []) if (typeof p.cumplio !== 'boolean' && p.vence > hoy) cand.push({ fecha: p.vence, texto: 'revisar una predicción' });
   for (let i = 1; i <= 12; i++) {
     const f = fechas.sumarMeses(fechas.diaDelMes(hoy, 1), i);
     if ([1, 4, 7, 10].includes(fechas.nMes(f))) { cand.push({ fecha: f, texto: 'revisión trimestral' }); break; }

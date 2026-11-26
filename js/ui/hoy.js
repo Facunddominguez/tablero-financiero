@@ -2,6 +2,7 @@
 import { h, fmt, fechas, aNumero } from '../util.js';
 import { dialogo, campo, entrada, boton, chip, medidor, dialogoCompras, signoClase, NIVEL, proximaFecha, botonPrecios } from './comun.js';
 import { proyeccion } from '../motor.js';
+import { marcarPrediccion } from './diario.js';
 
 function antiguedad(e) {
   if (e.precios.origen === 'archivo') return `precios del resumen del ${fmt.fecha(e.precios.fecha_archivo)}`;
@@ -32,6 +33,7 @@ function hecho(ctx, paso) {
   if (a.tipo === 'aporte' || a.tipo === 'compra')
     return dialogoCompras(ctx, { titulo: a.tipo === 'aporte' ? 'Registrar el aporte' : 'Registrar la reinversión', compras: a.compras, usd: a.usd, externo: a.tipo === 'aporte', paso });
   if (a.tipo === 'importar') return ctx.menu('importar');
+  if (a.tipo === 'prediccion') return marcarPrediccion(ctx, paso);
   if (a.tipo === 'cobro' || a.tipo === 'suscripcion' || a.tipo === 'fecha_aporte') {
     const fFecha = entrada({ type: 'date', inputmode: null, value: a.tipo === 'fecha_aporte' ? a.fecha : e.hoy, max: e.hoy });
     const fUsd = entrada({ value: fmt.num(a.usd, 2) });

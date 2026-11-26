@@ -42,6 +42,7 @@ export function aplicarEventos(base, eventosLocales = []) {
   const d = clon(base);
   d.pasos = d.pasos || {}; d.meses = d.meses || {}; d.decisiones = d.decisiones || [];
   d.cobros = d.cobros || []; d.realizados = d.realizados || []; d.snapshots = d.snapshots || {};
+  d.predicciones = d.predicciones || []; d.fantasmas = d.fantasmas || [];
   const vistos = new Set();
   const todos = [...(base.eventos || []), ...eventosLocales]
     .filter(e => !vistos.has(e.id) && vistos.add(e.id))
@@ -104,6 +105,29 @@ export function aplicarEventos(base, eventosLocales = []) {
         d.decisiones.push({ fecha: e.fecha, texto: `${{ hecho: 'Hecho', pospuesto: 'Pospuesto', descartado: 'Descartado' }[e.estado]}: ${e.titulo}${e.nota ? ' — ' + e.nota : ''}` });
         break;
       case 'decision': d.decisiones.push({ fecha: e.fecha, texto: e.texto }); break;
+      case 'prediccion': { // qué esperás que pase, con qué probabilidad y hasta cuándo
+        const { tipo, ts, ...p } = e;
+        d.predicciones.push(p);
+        break;
+      }
+      case 'prediccion_resultado': {
+        const p = d.predicciones.find(x => x.id === e.ref);
+        if (p) { p.cumplio = !!e.cumplio; p.resuelta = e.fecha; }
+        break;
+      }
+      case 'fantasma': // algo que no compraste, para ver después cómo le fue contra SPY
+        if (!d.fantasmas.some(f => f.origen === e.origen && f.ticker === e.ticker && f.fecha === e.fecha)) d.fantasmas.push({ origen: e.origen, ticker: e.ticker, fecha: e.fecha, grupo: e.grupo });
+        break;
+      case 'rotacion_allaria': {
+        const a = d.cartera_modelo_allaria = d.cartera_modelo_allaria || { activos: [] };
+        const activos = (a.activos || []).filter(x => !e.sale.includes(x.ticker));
+        for (const t of e.entra) if (!activos.some(x => x.ticker === t)) activos.push({ ticker: t, desde: e.fecha });
+        a.activos = activos;
+        a.ultimos_cambios = [{ fecha: e.fecha, entra: e.entra.join(', ') || '—', sale: e.sale.join(', ') || '—' }, ...(a.ultimos_cambios || [])];
+        a.rotaciones = [...(a.rotaciones || []), { rotacion: e.rotacion, fecha: e.fecha }];
+        a.rotacion = e.rotacion; a.fecha = e.fecha;
+        break;
+      }
       case 'config': Object.assign(d.config, e.cambios); break;
       case 'perfil': Object.assign(d.perfil, e.cambios); break;
       case 'fecha_aporte': { // se busca por monto y fecha original; el índice queda como respaldo para eventos viejos

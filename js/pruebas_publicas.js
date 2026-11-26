@@ -6,6 +6,9 @@ import { repartirAporte, planificador, movimientosFuertes } from './motor.js';
 import { volatilidadReciente } from './finanzas.js';
 import { ejemplo } from './ejemplo.js';
 import { riesgo, inversaNormal } from './riesgo.js';
+import { puntajePredicciones, compararFantasmas, contraReferencia, eventosRotacion } from './diario.js';
+import { proximaAccion } from './motor.js';
+import { fusionar } from './sync.js';
 import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo, benchmarks, rendimientoPorBloque, canjeDe } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
@@ -86,6 +89,82 @@ function carteraConMovimiento(movimientos, { amplitud = { SPY: 0.01, NVDA: 0.01,
 
 export function pruebasPublicas() {
   return [
+    ['Predicciones: puntaje de Brier y acierto por rango de probabilidad', async () => {
+      const p = (probabilidad, cumplio) => ({ probabilidad, cumplio });
+      const r = puntajePredicciones([p(0.9, true), p(0.9, false), p(0.3, false), p(1, true), p(0.5)]);
+      cerca(r.brier, (0.01 + 0.81 + 0.09 + 0) / 4, 1e-12, 'Brier');
+      if (r.resueltas !== 4 || r.pendientes !== 1) throw new Error(JSON.stringify(r));
+      const alto = r.rangos.at(-1);
+      if (alto.cantidad !== 3) throw new Error('el 100% va en el último rango');
+      cerca(alto.acierto, 2 / 3, 1e-12, 'acierto alto'); cerca(alto.esperado, 2.8 / 3, 1e-12, 'esperado alto');
+      if (r.rangos[1].cantidad !== 1 || r.rangos[1].acierto !== 0 || r.rangos[0].acierto !== null) throw new Error(JSON.stringify(r.rangos));
+      if (puntajePredicciones([]).brier !== null) throw new Error('sin predicciones no hay puntaje');
+    }],
+
+    ['Predicciones: al vencer aparece el paso en Hoy y al marcarla deja de aparecer', async () => {
+      const { datos, ext } = ejemplo();
+      const nueva = { id: 'p1', ts: '2026-11-02T10:00:00Z', tipo: 'prediccion', fecha: '2026-11-02', texto: 'KO sube más que SPY', probabilidad: 0.7, vence: '2026-11-30', cambio: 'si recorta el dividendo', ticker: 'KO' };
+      const pasos = (ev, hoy) => planificador(valuar(aplicarEventos(datos, ev), ext, hoy), hoy).pasos;
+      const sinDiario = pasos([], '2026-11-30').map(p => p.id);
+      const antes = pasos([nueva], '2026-11-29');
+      if (antes.some(p => p.tipo === 'prediccion')) throw new Error('apareció antes de vencer');
+      const prox = proximaAccion(valuar(aplicarEventos(datos, [{ ...nueva, vence: '2026-11-30' }]), ext, '2026-11-29'));
+      if (prox.fecha !== '2026-11-30') throw new Error(JSON.stringify(prox));
+      const al = pasos([nueva], '2026-11-30'), paso = al.find(p => p.tipo === 'prediccion');
+      if (!paso || paso.accion.ref !== 'p1' || !/70%/.test(paso.porque) || !/recorta el dividendo/.test(paso.como.join())) throw new Error(JSON.stringify(paso));
+      igual(al.filter(p => p.tipo !== 'prediccion').map(p => p.id), sinDiario, 'es lo único nuevo');
+      const marcada = [nueva, { id: 'r', ts: '2026-11-30T12:00:00Z', tipo: 'prediccion_resultado', ref: 'p1', cumplio: true, fecha: '2026-11-30' }];
+      if (pasos(marcada, '2026-12-05').some(p => p.tipo === 'prediccion')) throw new Error('sigue apareciendo');
+      if (puntajePredicciones(aplicarEventos(datos, marcada).predicciones).resueltas !== 1) throw new Error('no quedó resuelta');
+      // Se sincroniza como cualquier otro cambio.
+      const unida = fusionar({ ...datos, eventos: [nueva] }, { ...datos, eventos: marcada });
+      if (aplicarEventos(unida).predicciones[0].cumplio !== true) throw new Error('la sincronización perdió el resultado');
+    }],
+
+    ['Fantasmas: contra SPY a 1, 3, 6 y 12 meses, solo lo que ya pasó, y avisa qué falta pedir', async () => {
+      const fs = ['2026-01-02', '2026-02-02', '2026-04-02', '2026-07-02', '2026-08-03'];
+      const e = { hoy: '2026-08-04', ratios: { BRKB: { ratio: 22, usa: 'BRK.B' } }, historico: { fechas: fs, series: { SPY: [100, 110, 110, 120, 125], KO: [50, 60, 45, 66, 70], MEP: [1, 1, 1, 1, 1] } },
+        datos: { fantasmas: [{ origen: 'watchlist', ticker: 'KO', fecha: '2026-01-02' }, { origen: 'allaria', ticker: 'KO', fecha: '2026-01-02', grupo: 'Allaria P9' }, { origen: 'allaria', ticker: 'BRKB', fecha: '2026-01-02', grupo: 'Allaria P9' }, { origen: 'allaria', ticker: 'SPY', fecha: '2026-01-02', grupo: 'Allaria P9' }] } };
+      const r = compararFantasmas(e);
+      igual(r.faltan, ['BRK.B'], 'avisa con el ticker que hay que sumar');
+      const w = r.grupos.find(g => g.origen === 'watchlist').filas[0];
+      cerca(w.plazos[1].rend, 0.2, 1e-12, 'KO a 1 mes'); cerca(w.plazos[1].ref, 0.1, 1e-12, 'SPY a 1 mes'); cerca(w.plazos[1].dif, 0.1, 1e-12, 'diferencia');
+      cerca(w.plazos[3].rend, -0.1, 1e-12, 'a 3 meses'); cerca(w.plazos[6].rend, 66 / 50 - 1, 1e-12, 'a 6 meses');
+      if (w.plazos[12] !== null) throw new Error('12 meses todavía no pasó');
+      cerca(w.hoy.rend, 0.4, 1e-12, 'hasta hoy');
+      const a = r.grupos.find(g => g.origen === 'allaria');
+      cerca(a.promedio.plazos[1].rend, (0.2 + 0.1) / 2, 1e-12, 'cartera con el mismo peso (sin el que no tiene precios)');
+      if (a.promedio.plazos[1].cantidad !== 2) throw new Error('cantidad');
+      // Entre dos fechas sin un cierre posterior al de entrada no hay resultado.
+      e.datos.fantasmas = [{ origen: 'radar', ticker: 'KO', fecha: '2026-01-01' }];
+      const hueco = compararFantasmas(e).grupos[0].filas[0];
+      if (hueco.plazos[1] !== null || !hueco.plazos[3]) throw new Error(JSON.stringify(hueco.plazos));
+    }],
+
+    ['Satélites contra su referencia, configurable en los datos', async () => {
+      const { datos, ext } = ejemplo();
+      const e = valuar(aplicarEventos(datos), ext, '2026-11-30'), r = contraReferencia(e);
+      const f = Object.fromEntries(r.filas.map(x => [x.ticker, x]));
+      if (f.NVDA.referencia !== 'SMH' || f.PAMP.referencia !== 'ARGT' || f.PAMP.serie !== 'PAM') throw new Error(JSON.stringify(r.filas.map(x => [x.ticker, x.serie, x.referencia])));
+      if (f.ON1 || f.SPY || r.faltan.length) throw new Error('solo las acciones satélite: ' + JSON.stringify(r.faltan));
+      const s = ext.historico.series, i = ext.historico.fechas.indexOf('2026-05-04'), n = ext.historico.fechas.length - 1;
+      cerca(f.NVDA.compra.rend, s.NVDA[n] / s.NVDA[i] - 1, 1e-12, 'desde la compra'); cerca(f.NVDA.compra.ref, s.SMH[n] / s.SMH[i] - 1, 1e-12, 'la referencia');
+      if (!f.NVDA.tres || !f.NVDA.doce) throw new Error('faltan los 3 y 12 meses');
+      datos.referencias = { NVDA: 'QQQ' };
+      const x = contraReferencia(valuar(aplicarEventos(datos), ext, '2026-11-30'));
+      if (x.filas.find(v => v.ticker === 'NVDA').referencia !== 'QQQ' || !x.faltan.includes('QQQ')) throw new Error('no tomó la referencia de los datos');
+    }],
+
+    ['Una rotación nueva de Allaria guarda la fecha, actualiza la cartera modelo y entra como fantasma', async () => {
+      const { datos, ext } = ejemplo();
+      const ev = eventosRotacion(datos, { fecha: '2026-11-20', rotacion: 'P4', entra: ['MSFT'], sale: ['KO'] }, '2026-11-30').map((x, i) => ({ id: 'r' + i, ts: `2026-11-30T10:00:0${i}Z`, ...x }));
+      const d = aplicarEventos(datos, ev), a = d.cartera_modelo_allaria;
+      igual(a.activos.map(x => x.ticker), ['AAPL', 'SPY', 'MSFT'], 'cartera nueva');
+      if (a.rotacion !== 'P4' || a.fecha !== '2026-11-20' || a.rotaciones.at(-1).fecha !== '2026-11-20' || a.ultimos_cambios[0].entra !== 'MSFT') throw new Error(JSON.stringify(a));
+      igual(d.fantasmas.map(f => [f.origen, f.ticker, f.fecha]), [['allaria', 'AAPL', '2026-11-20'], ['allaria', 'SPY', '2026-11-20'], ['allaria', 'MSFT', '2026-11-20']], 'fantasmas');
+      if (planificador(valuar(d, ext, '2026-11-30'), '2026-11-30').pasos.some(p => /allaria|fantasma/i.test(p.id + p.titulo))) throw new Error('no tiene que crear tareas');
+    }],
+
     ['Avisos de precio: el umbral es un múltiplo de lo que cada activo suele moverse', async () => {
       // Con ±1% por día: satélite avisa en 2,5% y es crítico en 4%; el núcleo, ×1,25.
       const e = carteraConMovimiento({ SPY: -4.5, NVDA: -4.5, PAMP: -4.5, ON1: -4.5 });
