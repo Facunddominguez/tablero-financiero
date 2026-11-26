@@ -172,7 +172,7 @@ h2.sub { margin-top: 2rem; }
 .activo strong { display: block; font-family: var(--f-num); font-size: .92rem; }
 .activo { min-width: 10.5rem; }
 .activo small { display: block; font-size: .76rem; color: var(--tinta-3); }
-.cartera-tabla td:nth-child(10) { min-width: 11rem; font-size: .84rem; color: var(--tinta-2); }
+.cartera-tabla td:nth-child(11) { min-width: 11rem; font-size: .84rem; color: var(--tinta-2); }
 .solo-movil { display: none; }
 .vencimientos .tabla { max-width: 36rem; }
 @media (max-width: 43rem) {
@@ -284,6 +284,7 @@ input[type="file"] { width: 100%; font-size: .9rem; }
 .informe > .aviso + .conmutador { margin-top: 0; }
 .desglose { display: grid; font-size: .72rem; color: var(--tinta-3); }
 .nota-canje { margin-top: .6rem; }
+.supuestos { margin-top: .6rem; font-size: .84rem; color: var(--tinta-2); }
 .lista-simple { display: grid; gap: .35rem; font-size: .93rem; }
 .lista-simple li { padding-left: 1.1rem; position: relative; }
 .lista-simple li::before { content: "–"; position: absolute; left: 0; color: var(--tinta-3); }

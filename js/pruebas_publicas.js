@@ -4,6 +4,7 @@ import { tickersPropios, esRespaldoPlano, snapshotDe, aplicarEventos, valuar } f
 import { precioJusto, referenciaImplicito, especieD, conDolares, ventanaDelDia, textoVentana } from './precios.js';
 import { repartirAporte, planificador } from './motor.js';
 import { ejemplo } from './ejemplo.js';
+import { riesgo, inversaNormal } from './riesgo.js';
 import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo, benchmarks, rendimientoPorBloque, canjeDe } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
@@ -46,8 +47,62 @@ function estadoReparto({ primas = { AAA: 0, BBB: 0 }, cantidades = { AAA: 10, BB
 const unidades = r => Object.fromEntries(r.compras.map(c => [c.especie || c.ticker, c.cantidad]));
 const igual = (a, b, que) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${que}: ${JSON.stringify(a)}`); };
 
+// Dos activos con volatilidad diaria a y b y correlación exacta rho: dos patrones ortogonales de media cero.
+function carteraDosActivos(a, b, rho, n = 400) {
+  const A = [100], B = [50], fs = ['2025-01-01'];
+  for (let i = 0; i < n; i++) {
+    const p = i % 2 ? -1 : 1, q = i % 4 < 2 ? 1 : -1;
+    A.push(A[i] * (1 + a * p)); B.push(B[i] * (1 + b * (rho * p + Math.sqrt(1 - rho * rho) * q)));
+    fs.push(new Date(Date.UTC(2025, 0, 2 + i)).toISOString().slice(0, 10));
+  }
+  const pos = (ticker, usd) => ({ ticker, tipo: 'cedear', grupo: ticker === 'AAA' ? 'nucleo' : 'satelite', subyacente: ticker, moneda: 'ARS', valor_usd: usd });
+  return {
+    hoy: fs.at(-1), mep: 1000, lp_usd: 1000, caja_usd: 0,
+    historico: { fechas: fs, series: { AAA: A, BBB: B } },
+    posiciones: [pos('AAA', 600), pos('BBB', 400)],
+    datos: { posiciones: [{ ticker: 'AAA' }, { ticker: 'BBB' }], caja: { ARS: 0 }, riesgo: { ventana_dias: n } },
+  };
+}
+
 export function pruebasPublicas() {
   return [
+    ['Riesgo: dos activos con correlación conocida dan el resultado analítico', async () => {
+      for (const rho of [-0.5, 0, 0.3, 1]) {
+        const a = 0.01, b = 0.03, w1 = 0.6, w2 = 0.4, n = 400, r = riesgo(carteraDosActivos(a, b, rho, n));
+        const base = w1 * w1 * a * a + w2 * w2 * b * b + 2 * rho * w1 * w2 * a * b; // varianza diaria (sin el n/(n−1) muestral)
+        cerca(r.correlaciones.AAA.BBB, rho, 1e-9, 'correlación');
+        cerca(r.sigma_mes, Math.sqrt(base * n / (n - 1) * 21), 1e-9, `volatilidad del mes con rho ${rho}`);
+        cerca(r.posiciones.AAA.parte, w1 * (w1 * a * a + w2 * rho * a * b) / base, 1e-9, 'aporte de AAA');
+        cerca(r.posiciones.BBB.parte, w2 * (w2 * b * b + w1 * rho * a * b) / base, 1e-9, 'aporte de BBB');
+        cerca(r.bloques.reduce((s, x) => s + x.riesgo, 0), 1, 1e-9, 'los bloques suman 100%');
+        cerca(r.mes_malo_usd, 1.6448536269514722 * r.sigma_mes * 1000, 1e-5, 'mes malo, percentil 5');
+      }
+      cerca(inversaNormal(0.05), -1.6448536269514722, 1e-8, 'percentil 5'); cerca(inversaNormal(0.01), -2.3263478740408408, 1e-8, 'percentil 1');
+    }],
+
+    ['Riesgo: cada cosa se mide con su serie, lo sin serie con supuestos, y los parámetros se editan en los datos', async () => {
+      const { datos, ext } = ejemplo();
+      const e = valuar(aplicarEventos(datos), ext, '2026-11-30'), r = riesgo(e);
+      const de = t => r.posiciones[t];
+      if (de('SPY').serie !== 'SPY' || de('PAMP').serie !== 'PAM' || de('Caja en pesos').serie !== 'MEP') throw new Error('mapa de series');
+      if (de('ON1').supuesto !== 'on' || de('ON1').serie !== null) throw new Error('la ON usa volatilidad fija');
+      cerca(de('ON1').vol_anual, 0.08, 1e-9, 'vol de la ON');
+      if (r.posiciones.FCIP || r.posiciones.FCID) throw new Error('la emergencia queda afuera');
+      cerca(r.valor, e.lp_usd, 0.01, 'cartera de largo plazo');
+      cerca(r.bloques.reduce((s, x) => s + x.peso, 0), 1, 1e-9, 'pesos'); cerca(r.bloques.reduce((s, x) => s + x.riesgo, 0), 1, 1e-9, 'riesgo');
+      const { peor_cada_uno: p, crisis: c } = r.escenarios;
+      if (!(p.usd > r.mes_malo_usd * 0.5) || !(c.usd > 0) || !(c.usd < p.usd) || !(c.series.YPF < 0 && c.series.PAM < 0 && c.series.MEP < 0)) throw new Error(JSON.stringify(r.escenarios));
+      // Editado en los datos: otra volatilidad para la ON, PAMP forzado a la serie de YPF y un activo sin historia.
+      const otro = ejemplo();
+      otro.datos.riesgo = { vol_fija: { on: 0.2 }, series: { PAMP: 'YPF' } };
+      delete otro.ext.historico.series.NVDA;
+      const s = riesgo(valuar(aplicarEventos(otro.datos), otro.ext, '2026-11-30'));
+      cerca(s.posiciones.ON1.vol_anual, 0.2, 1e-9, 'vol editada');
+      if (s.posiciones.PAMP.serie !== 'YPF' || s.posiciones.NVDA.supuesto !== 'sin_serie' || s.sin_serie.join() !== 'NVDA') throw new Error(JSON.stringify(s.sin_serie));
+      if (!s.supuestos.some(x => /NVDA/.test(x) && /historico_extra/.test(x))) throw new Error('falta avisar qué sumar');
+      if (riesgo(valuar(aplicarEventos(datos), { ...ext, historico: null }, '2026-11-30')) !== null) throw new Error('sin histórico no hay riesgo');
+    }],
+
     ['Precio justo: subyacente × dólar implícito de referencia ÷ ratio', async () => {
       const e = estadoReparto({ primas: { AAA: 0.02, BBB: 0 } });
       // un papel de poco volumen no entra en la mediana

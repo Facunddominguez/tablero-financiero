@@ -2,6 +2,7 @@
 import { h, fmt, fechas, suma, poner } from '../util.js';
 import { costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, historiaCartera, resumenPeriodo, benchmarks } from '../finanzas.js';
 import { NOMBRE_GRUPO } from '../estado.js';
+import { riesgo } from '../riesgo.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase } from './comun.js';
 
 const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['trimestral', 'Trimestral'], ['anual', 'Anual para el contador'], ['allaria', 'Contraste con Allaria']];
@@ -34,6 +35,27 @@ function seccionCanje(R, titulo) {
   return sec(titulo,
     h('div.tabla-periodo', tabla([{ titulo: '', celda: f => h('strong', f.nombre) }, { titulo: 'Total', num: 1, celda: f => pc(f.rend) }, ...columnasCanje(pc)], R.filas)),
     notaCanje(R.canje));
+}
+
+// ---------- Riesgo ----------
+// Peso contra riesgo por bloque, un mes malo y dos escenarios. Cartera de largo plazo, sin la emergencia.
+function seccionRiesgo(e) {
+  const r = riesgo(e);
+  if (!r) return sec('Riesgo', h('p.nota', 'Todavía no hay historia de precios para medirlo.'));
+  const { peor_cada_uno: peor, crisis } = r.escenarios;
+  const caida = (nombre, x) => x == null ? null : `${nombre} ${fmt.pctSigno(x, 0)}`;
+  const detalle = [...Object.entries(crisis.series).filter(([k]) => k !== 'MEP').map(([k, v]) => caida(k, v)), caida('el peso contra el dólar MEP', crisis.series.MEP)].filter(Boolean).join(', ');
+  return sec('Riesgo',
+    tabla([
+      { titulo: 'Bloque', celda: b => h('strong', b.nombre) }, { titulo: 'Peso', num: 1, celda: b => fmt.pct(b.peso) },
+      { titulo: '% del riesgo', num: 1, celda: b => fmt.pct(b.riesgo) }, { titulo: 'USD', num: 1, celda: b => fmt.num(b.usd) },
+    ], r.bloques, { pie: ['Total', fmt.pct(1, 0), fmt.pct(1, 0), fmt.num(r.valor)] }),
+    h('div.resumen', { style: 'margin:1rem 0' },
+      dato('Un mes malo', fmt.usd(r.mes_malo_usd), `${fmt.pct(r.mes_malo_pct)}: de cada ${Math.round(1 / r.percentil)} meses, uno sería así de malo o peor`),
+      dato('Peor mes de cada activo, todos juntos', fmt.usd(peor.usd), `${fmt.pct(peor.pct)} de la cartera`),
+      dato('Crisis argentina', fmt.usd(crisis.usd), `${fmt.pct(crisis.pct)} · ${detalle}`)),
+    h('p.nota', 'Las cifras son pérdidas posibles, no pronósticos. "Un mes malo" supone que los meses se reparten como una campana. Si un bloque tiene más riesgo que peso, mueve la cartera más de lo que parece.'),
+    h('ul.lista-simple.supuestos', r.supuestos.map(s => h('li', s))));
 }
 
 // Rendimiento de la canasta núcleo (pesos fijos) entre dos fechas.
@@ -225,6 +247,7 @@ function trimestral(ctx) {
       item(!fuera.length && R.R5?.nivel === 'ok', 'Satélites', `${fuera.length ? `Fuera de su banda: ${fuera.map(p => `${p.ticker} ${fmt.pct(p.pct_lp)}`).join(', ')}. ` : 'Todos dentro de su banda. '}En total son ${fmt.pct(e.satelites_lp)} de largo plazo${R.R5 && R.R5.nivel !== 'ok' ? ` (regla R5 ${NIVEL[R.R5.nivel][0].toLowerCase()}: los aportes van solo al núcleo)` : ''}.`),
       item(true, 'Watchlist', `${(d.watchlist || []).length} nombres en seguimiento. ${R.R7?.activa ? 'Bloqueada por la regla R7: solo observación.' : 'Habilitada: máximo inicial por nombre según la tabla.'}`))),
     seccionCanje(T, 'Activos y efecto canje, desde el inicio'),
+    seccionRiesgo(e),
     sec('Satélites contra su banda', tabla([
       { titulo: 'Activo', celda: p => h('strong.num', p.ticker) }, { titulo: '% LP', num: 1, celda: p => fmt.pct(p.pct_lp) },
       { titulo: 'Banda', num: 1, celda: p => { const b = d.objetivos_por_activo[p.ticker]?.banda; return b ? `${fmt.pct(b[0], 0)}–${fmt.pct(b[1], 1)}` : '—'; } },
