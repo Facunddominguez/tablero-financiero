@@ -307,12 +307,12 @@ function etapa4() {
       igual(verde.indicadores.map(i => i.id), ['riesgo_pais', 'canje', 'brecha', 'adr'], 'los cuatro');
       cerca(verde.indicadores[1].valor, 0.03, 1e-9, 'canje'); cerca(verde.indicadores[2].valor, 1000 / 960 - 1, 1e-9, 'brecha'); cerca(verde.indicadores[3].valor, 0, 1e-9, 'contra SPY');
       const amarillo = sem({ fx: { oficial: 880 } });
-      si(amarillo.color === 'amarillo' && amarillo.por.map(i => i.id).join() === 'brecha' && !amarillo.sugerencia && /lo pone así brecha \(13,6%\)/.test(textoSemaforo(amarillo)), textoSemaforo(amarillo));
+      si(amarillo.color === 'amarillo' && amarillo.por.map(i => i.id).join() === 'brecha' && !amarillo.sugerencia && /lo pone así la brecha \(13,6%\)/.test(textoSemaforo(amarillo)), textoSemaforo(amarillo));
       const rojo = sem({ fx: { oficial: 880 }, riesgo: 1600 });
       si(rojo.color === 'rojo' && rojo.por.map(i => i.id).join() === 'riesgo_pais', textoSemaforo(rojo));
       si(/R6B/.test(rojo.sugerencia) && /parte en pesos de la reserva/.test(rojo.sugerencia) && /No hay que hacer nada automáticamente/.test(rojo.sugerencia), rojo.sugerencia);
       const dos = sem({ riesgo: 900, fx: { ccl: 1070 } });
-      si(dos.color === 'amarillo' && /ponen así riesgo país \(900\) y canje/.test(textoSemaforo(dos)), textoSemaforo(dos));
+      si(dos.color === 'amarillo' && /ponen así el riesgo país \(900\) y el canje/.test(textoSemaforo(dos)), textoSemaforo(dos));
       const adr = sem({ adr: -0.4 }); // PAM −40% y YPF igual a SPY: en promedio −20%
       si(adr.color === 'rojo' && adr.por[0].id === 'adr', JSON.stringify(adr.indicadores[3]));
       cerca(adr.indicadores[3].valor, -0.2, 1e-6, 'promedio de las dos');

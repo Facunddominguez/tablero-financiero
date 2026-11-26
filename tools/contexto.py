@@ -10,6 +10,7 @@ Todo es público y de solo lectura: acá no hay nada de la cartera.
 import datetime as dt
 import json
 import re
+import time
 
 ARGENTINADATOS = "https://api.argentinadatos.com/v1"
 FRED = "https://fred.stlouisfed.org/graph/fredgraph.csv"
@@ -18,6 +19,16 @@ POLYMARKET = "https://gamma-api.polymarket.com"
 # Riesgo de bonos de alto rendimiento, curva 10 años − 3 meses, VIX e índice de condiciones financieras de Chicago.
 SERIES_FRED = ("BAMLH0A0HYM2", "T10Y3M", "VIXCLS", "NFCI")
 MAX_PEDIDOS_HISTORIA = 80  # pedidos de cuotapartes viejas por corrida: la primera vez se completa en pocas corridas
+MAX_CORTES = 5             # cortes de red seguidos al completar historia: se deja para otra corrida
+# El contexto no puede comerse la corrida: si las fuentes andan lentas, lo que falta queda con el dato anterior.
+PRESUPUESTO_SEGUNDOS = 300
+_limite = None
+
+
+def _bajar(m, url, **k):
+    if _limite is not None and time.monotonic() > _limite:
+        raise RuntimeError("sin tiempo en esta corrida")
+    return m.bajar(url, **{"intentos": 2, "timeout": 20, **k})
 
 
 def _serie(filas, desde):
@@ -29,11 +40,11 @@ def _serie(filas, desde):
 
 
 def riesgo_pais(m):
-    return _serie(json.loads(m.bajar(f"{ARGENTINADATOS}/finanzas/indices/riesgo-pais")), m.CFG["contexto_desde"])
+    return _serie(json.loads(_bajar(m, f"{ARGENTINADATOS}/finanzas/indices/riesgo-pais")), m.CFG["contexto_desde"])
 
 
 def plazo_fijo(m):
-    s = _serie(json.loads(m.bajar(f"{ARGENTINADATOS}/finanzas/tasas/depositos30Dias")), m.CFG["historico_desde"])
+    s = _serie(json.loads(_bajar(m, f"{ARGENTINADATOS}/finanzas/tasas/depositos30Dias")), m.CFG["historico_desde"])
     return dict(s, nota="Tasa nominal anual promedio de depósitos a 30 días (BCRA, vía ArgentinaDatos), como fracción.")
 
 
@@ -41,7 +52,7 @@ def plazo_fijo(m):
 
 def _filas_fci(m, categoria, ruta="ultimo", intentos=2):
     filtro = m.CFG["fci_filtro"].lower()
-    filas = json.loads(m.bajar(f"{ARGENTINADATOS}/finanzas/fci/{categoria}/{ruta}", intentos=intentos))
+    filas = json.loads(_bajar(m, f"{ARGENTINADATOS}/finanzas/fci/{categoria}/{ruta}", intentos=intentos))
     return [f for f in filas if filtro in (f.get("fondo") or "").lower() and f.get("vcp") and f.get("fecha") and (f.get("patrimonio") or 0) > 0]
 
 
@@ -76,7 +87,7 @@ def fondos(m, anterior, hoy):
     anterior = anterior or {}
     previas = anterior.get("fechas") or []
     acumulado = {n: {f: v for f, v in zip(previas, s) if v is not None} for n, s in (anterior.get("series") or {}).items()}
-    vacios, pedidos = set(anterior.get("vacios") or []), 0
+    vacios, pedidos, cortes = set(anterior.get("vacios") or []), 0, 0
     for categoria in m.CFG["fci_categorias"]:
         actuales = _filas_fci(m, categoria)
         if not actuales:
@@ -90,14 +101,18 @@ def fondos(m, anterior, hoy):
                 continue
             sin_dato = 0
             for dia in _ultimos_habiles(mes):
-                if pedidos >= MAX_PEDIDOS_HISTORIA:
+                if pedidos >= MAX_PEDIDOS_HISTORIA or cortes >= MAX_CORTES:
                     break
                 pedidos += 1
                 try:
                     filas = [f for f in _filas_fci(m, categoria, dia.replace("-", "/"), intentos=1) if f["fondo"] in nombres]
                 except Exception as e:  # noqa: BLE001
-                    sin_dato += "404" in str(e)  # "no existe" se recuerda; un corte de red, no
+                    if "404" in str(e):  # "no existe" se recuerda; un corte de red, no
+                        sin_dato, cortes = sin_dato + 1, 0
+                    else:
+                        cortes += 1
                     continue
+                cortes = 0
                 if len(filas) >= max(1, len(nombres) // 4):
                     _sumar(acumulado, filas, desde)
                     break
@@ -113,7 +128,7 @@ def fondos(m, anterior, hoy):
 
 def fred(m, serie):
     """Serie de FRED (CSV público, sin clave): un valor por semana (el último) y el último dato diario."""
-    texto = m.bajar(f"{FRED}?id={serie}&cosd={m.CFG['largo_desde']}")
+    texto = _bajar(m, f"{FRED}?id={serie}&cosd={m.CFG['largo_desde']}")
     pares = []
     for linea in texto.strip().splitlines()[1:]:
         partes = linea.strip().split(",")
@@ -167,7 +182,7 @@ def largo_plazo(m, hoy):
 
 def kalshi(m):
     cfg = m.CFG["elecciones"]
-    d = json.loads(m.bajar(f"{KALSHI}/events?series_ticker={cfg['kalshi_serie']}&with_nested_markets=true"))
+    d = json.loads(_bajar(m, f"{KALSHI}/events?series_ticker={cfg['kalshi_serie']}&with_nested_markets=true"))
     anio = cfg["fecha"][2:4]
     eventos = [e for e in d.get("events") or [] if str(e.get("event_ticker", "")).split("-", 1)[-1].startswith(anio)]
     candidatos = []
@@ -187,7 +202,7 @@ def kalshi(m):
 
 def polymarket(m):
     cfg = m.CFG["elecciones"]
-    eventos = json.loads(m.bajar(f"{POLYMARKET}/events?slug={cfg['polymarket_slug']}"))
+    eventos = json.loads(_bajar(m, f"{POLYMARKET}/events?slug={cfg['polymarket_slug']}"))
     if not eventos or str(eventos[0].get("endDate", ""))[:4] != cfg["fecha"][:4]:
         raise RuntimeError("polymarket: no encuentro el evento de la elección")
     candidatos = []
@@ -221,6 +236,8 @@ def elecciones(m, anterior):
 
 def correr(m):
     """Baja todo el contexto y escribe sus tres archivos. m = módulo mercado."""
+    global _limite
+    _limite = time.monotonic() + PRESUPUESTO_SEGUNDOS
     hoy = m.hoy_argentina()
     a = m.leer("argentina.json")
     m.escribir("argentina.json", {

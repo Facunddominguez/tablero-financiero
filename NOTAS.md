@@ -12,29 +12,71 @@ Herramienta personal de seguimiento de inversiones.
 1. Abrí el link. La primera vez en cada dispositivo pide la clave; con "Recordar en este dispositivo" no la vuelve a pedir (salvo que se bloquee por inactividad).
 2. **Hoy** dice qué hacer. Cada paso tiene Hecho / Posponer / Descartar.
 3. Una vez por mes: **Aportar → ¿Cuánto invierto este mes?** Cargás el extracto del banco y, en seis pasos, sale cuánto invertir y en qué.
-4. Para comprar, mirá la ventana que dice el paso. Si dice que no hay precio justo, tocá **Actualizar ahora** dentro de la ventana.
+4. Para comprar o vender, mirá la ventana que dice el paso. Si dice que no hay precio justo, o los precios tienen más de una hora, tocá **Actualizar ahora** dentro de la ventana.
 5. Debajo del patrimonio se ve siempre de cuándo son los precios (tocá para ver cada fuente) y el estado de la sincronización.
+6. **Para saber** junta lo informativo: el semáforo argentino, el clima de mercado y los avisos. Nada de eso es una tarea.
 
-## Comprar al mejor precio
+## Comprar y vender al mejor precio
 
 - **Precio justo** de un CEDEAR = precio en EE.UU. × dólar de referencia ÷ ratio. El dólar de referencia es la mediana del dólar implícito (contado con liqui) de los 30 papeles con más volumen.
 - **Prima**: cuánto más caro o barato está contra ese precio. Entre dos ETF igual de atrasados va primero el más barato. El que está **más de 1% caro se saltea** ese día, con el motivo. La banda y los ETF elegibles no cambian.
 - **Precio límite**: el precio justo (o el de pantalla, si está más barato) más 1%.
-- Solo se calcula con precios tomados **con Wall Street abierto**, de hoy o de ayer. Si no, no saltea nada ni pone límite.
+- Solo se calcula con precios tomados **con Wall Street abierto y con rueda en BYMA**, de hoy o de ayer. Si no, no saltea nada ni pone límite.
+- La **hora de esos precios** va al lado del precio justo y del límite. Con más de 60 minutos y la ventana abierta, sugiere actualizarlos antes de operar (`config.minutos_precio_viejo`).
+- **Ventas** (paso por tope duro y ⋯ → Registrar un movimiento → Vendí): la misma lógica al revés. Límite = precio justo (o el de pantalla, si está más caro) menos 1%; si está más de 1% barato, dice que conviene esperar.
 - Si el ratio que surge de los precios difiere más de 5% del oficial, pide revisarlo y no usa el precio justo.
-- **Ventana**: con Wall Street abierto y hasta media hora antes del cierre de BYMA. Avisa feriados y medias ruedas de EE.UU. (no los feriados argentinos).
+- **Cambios de ratio**: el Action lee la lista de BYMA una vez por día. Si cambió el ratio de algo que usás, lo avisa en "Para saber" con el valor nuevo y deja de poner límite para ese papel. No cambia el archivo solo.
+- **Ventana**: con Wall Street abierto y hasta media hora antes del cierre de BYMA. Avisa feriados y medias ruedas de EE.UU. y **feriados argentinos**: sin rueda en BYMA no se opera y dice cuál es la próxima ventana. Los días "puente" tienen rueda sin liquidación (calendario de BYMA).
 - **Dólares en la cuenta**: si la especie en dólares (SPYD, por ejemplo) no es más cara que en pesos, la sugiere. Al registrarla se descuentan los dólares y se suma al mismo activo.
 
 ## Riesgo
 
-**Cartera → "% del riesgo"** y **Informes → Trimestral → Riesgo** muestran cuánto de los altibajos de la cartera de largo plazo explica cada cosa, la pérdida de un mes malo (1 de cada 20), y dos escenarios: el peor mes de cada activo a la vez y "crisis argentina" (peor mes de YPF, PAM y el dólar MEP). Sale de la volatilidad y las correlaciones de los últimos dos años. Los fondos en dólares y las ON usan una volatilidad fija, que se muestra como supuesto. Un ticker sin historia aparece como tal: se suma a `historico_extra`.
+**Cartera → "% del riesgo"** y **Informes → Trimestral → Riesgo** muestran cuánto de los altibajos de la cartera de largo plazo explica cada cosa, la pérdida de un mes malo (1 de cada 20), y dos escenarios: el peor mes de cada activo a la vez y "crisis argentina" (peor mes de YPF, PAM y el dólar MEP). Sale de la volatilidad y las correlaciones de los últimos dos años. Los fondos en dólares y las ON usan una volatilidad fija, que se muestra como supuesto. Los fondos en pesos se miden con su cuotaparte pasada a dólares MEP, así cuenta el interés (sin cuotapartes, con la tasa de plazo fijo). Un ticker sin historia aparece como tal: se suma a `historico_extra`.
 
 ## Predicciones y carteras fantasma
 
+- **Editar y borrar**: cada predicción y cada cartera fantasma tiene "Editar" y "Borrar" (y "Quitar" para un ticker). En una predicción resuelta se corrige el resultado, no la probabilidad.
 - **Predicciones**: ⋯ → Anotar una predicción (o Radar → "Antes de abrir una tesis nueva"). Cuando vence, aparece en Hoy para marcar si se cumplió. **Informes → Predicciones y fantasmas** muestra el puntaje de Brier (0 es perfecto) y el acierto por rango de probabilidad.
 - **Fantasmas**: "Seguir como fantasma" en Radar. Se comparan con SPY a 1, 3, 6 y 12 meses. Sin historia de precios, avisa qué sumar a `historico_extra`.
 - **Allaria**: Informes → Contraste con Allaria → "Cargar una rotación nueva". Guarda la fecha, actualiza la cartera modelo y la suma como fantasma.
 - **Satélites contra su referencia**: en el Trimestral. Los pares por defecto están en `js/diario.js` (sin referencia propia, SPY) y se cambian en los datos.
+
+## Proyección con rangos
+
+**Informes → Proyección** (y los indicadores de Hoy, y Radar) simulan 2.000 caminos mensuales con semilla fija: los mismos datos dan el mismo resultado.
+
+- Cada mes entra el aporte de la proyección de siempre (promedio de los últimos cierres; si no hay, ingreso menos gasto habitual), todo al núcleo y primero a lo más atrasado. No se vende nada.
+- Para R3, R5, R6 y "lugar para una tesis nueva": la fecha para la que ya se logró en 1, en 5 y en 9 de cada 10 caminos, y la chance antes de 12 y 24 meses.
+- Patrimonio a 1, 3 y 5 años (percentiles 10, 50 y 90) con el abanico.
+- **Objetivos con fecha**: se cargan ahí mismo (monto y fecha, contra el patrimonio total). Los objetivos externos que tengan monto y fecha se miden aparte, sin simulación.
+- Los ETF usan el retorno de Vanguard como retorno compuesto, y la volatilidad y las correlaciones de los cierres mensuales desde 2005. Las acciones sueltas, tasa libre + beta × prima (retorno promedio: cuanto más se mueven, más abajo queda el camino del medio) y la historia diaria de dos años. ON, fondos y caja, los supuestos de abajo.
+- No simula cupones, la amortización de la ON ni la parte del ahorro que iría a la reserva.
+
+## Semáforo argentino, reserva en pesos y elecciones
+
+En **Hoy → Para saber** (una línea) e **Informes → Trimestral**.
+
+- **Semáforo**: riesgo país, canje, brecha MEP contra oficial, e YPF y PAM contra SPY a 30 días. Toma el peor y dice cuál lo puso así. En rojo solo sugiere revisar R6B y la parte en pesos de la reserva.
+- **Reserva en pesos**: mes a mes, cuánto tenía que subir el MEP para que el fondo en dólares le ganara a la tasa de plazo fijo, cuánto subió y qué rindieron tus fondos en pesos.
+- **Elección 2027**: cuenta regresiva y probabilidad por candidato, ponderada por el volumen de cada mercado; avisa si dos difieren más de 10 puntos. El tablero solo lee.
+- **Polymarket está apagado**: en Argentina está bloqueado por orden judicial (marzo de 2026). Se prende con `elecciones.polymarket_activado` en `tools/mercado_config.json`; el Action corre en servidores de GitHub, fuera del país. Su lectura se probó solo con un ejemplo del formato, no con una respuesta real.
+
+## Clima de mercado y aporte extra
+
+- Línea en "Para saber" e Informes → Trimestral: sobretasa de bonos de alto riesgo, curva 10 años contra 3 meses, VIX y SPY contra su promedio de 200 ruedas, cada uno "tranquilo", "atento" o "tenso", con su historia.
+- **Aporte extra** (⋯ → Configuración), apagado de fábrica: si la reserva tiene excedente (R1) y el núcleo cae más de 15% desde su máximo, sugiere usar la mitad del excedente (los dos valores se cambian). No es un paso y nunca sugiere vender ni frenar aportes. El máximo se mide con la historia diaria disponible (desde junio de 2024).
+
+## Supuestos
+
+Los números que no salen de ningún dato están en `data/supuestos.json`, cada grupo con fuente y fecha. Se cambian en **⋯ → Supuestos**: quedan en tus datos cifrados y mandan sobre el archivo (hay "Volver a los originales").
+
+| Supuesto | Valor | Fuente |
+|---|---|---|
+| Retorno anual de SPY, EFA, EEM, IWM | 5,8 · 6,3 · 4,7 · 5,8% | Vanguard al 30/09/2026, punto medio (verificado en su página) |
+| Tasa libre y prima de mercado | 5,29 y 3,70% | FRED `DGS10` al 30/09/2026 · Damodaran, 08/10/2026 |
+| ON · fondos en dólares · caja · pesos | 5,29 · 4,2 · 0 · 0% | Criterio propio |
+| Semáforo (amarillo y rojo) | riesgo país 800 y 1.500; canje 5 y 10%; brecha 10 y 30%; acciones −7 y −15% | Criterio propio, a confirmar |
+| Clima (atento y tenso) | bonos 4 y 6; curva 0,25 y 0; VIX 20 y 30; SPY 0 y −5% | Criterio propio, a confirmar |
 
 ## Sincronizar
 
@@ -106,7 +148,11 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | `js/estado.js` | Aplica el registro de eventos sobre los datos base y valúa todo en USD MEP. Puro. |
 | `js/motor.js` | `evaluarReglas`, `planificador`, `repartirAporte`, `recomendarAporte`, avisos de precio. Puros: los umbrales salen de los datos. |
 | `js/finanzas.js` | Costo de lotes, XIRR, benchmark con CEDEARs, efecto canje, volatilidad reciente, historia de la cartera y rendimiento por período, costos anuales. |
-| `js/precios.js` | Precio justo, precio límite, especie en dólares, ventana para comprar, por qué se movió un CEDEAR. Puro. |
+| `js/precios.js` | Precio justo y límite (compra y venta), hora y antigüedad de los precios, especie en dólares, ventana con feriados, por qué se movió un CEDEAR. Puro. |
+| `js/simulacion.js` | Simulación mensual: rangos de fechas, abanico del patrimonio y objetivos. Puro, con semilla fija. |
+| `js/argentina.js` | Semáforo, elección y reserva en pesos. Puro. |
+| `js/clima.js` | Clima de mercado, caída del núcleo y aporte extra. Puro. |
+| `js/supuestos.js`, `js/series.js` | Supuestos (archivo más lo tuyo) e interpolación de cuotapartes. Puros. |
 | `js/riesgo.js` | Aporte de cada cosa al riesgo, mes malo y escenarios. Puro. |
 | `js/diario.js` | Puntaje de las predicciones, carteras fantasma, satélites contra su referencia, rotaciones. Puro. |
 | `js/ejemplo.js` | Cartera inventada para las pruebas públicas. |
@@ -116,14 +162,16 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | `js/cripto.js`, `js/db.js` | WebCrypto e IndexedDB. |
 | `js/ui/*.js` | Pantallas, menú y el paso a paso del mes (`mes.js`). |
 | `js/pruebas.js` | Pruebas; corren en `tests.html` y con `node tools/pruebas_node.mjs`. |
-| `js/pruebas_publicas.js` | Pruebas que no usan datos privados (precio justo, reparto, canje, riesgo, avisos, diario, historia, respaldo cifrado); también corren en cada PR. |
-| `tools/mercado.py` | Escribe `data/market.json`, `data/insiders.json` y `data/historico.json`. Si una fuente falla, conserva el último dato y lo marca `stale`. |
+| `js/pruebas_publicas.js`, `js/pruebas_ronda2.js` | Pruebas que no usan datos privados; también corren en cada PR. |
+| `tools/mercado.py` | Escribe `data/market.json`, `data/insiders.json`, `data/historico.json` y `data/feriados_ar.json`. Si una fuente falla, conserva el último dato y lo marca `stale`. |
+| `tools/contexto.py` | Escribe `data/argentina.json` (riesgo país, tasa, cuotapartes, elección), `data/clima.json` y `data/largo_plazo.json`, con el mismo criterio y un tope de tiempo por corrida. |
 | `tools/cedear_ratios.json` | Ratios oficiales de BYMA, con fuente y fecha. |
 | `tools/grabadas/` | Respuestas grabadas y el histórico congelado para las pruebas de Python. |
 | `data/calendario.json` | Cupones y amortización de la ON, por cada 1 de valor nominal. |
-| `data/feriados_eeuu.json` | Feriados y medias ruedas de EE.UU. 2026 y 2027, y horario de BYMA. |
+| `data/feriados_eeuu.json` | Feriados y medias ruedas de EE.UU. 2026 y 2027, horario de BYMA y excepciones de su calendario. |
+| `data/supuestos.json` | Supuestos con fuente y fecha. |
 
-**Eventos**: `aporte`, `compra` (con `moneda: "USD"` y `especie` si se pagó en dólares), `cobro`, `venta`, `mes` (cierre con gastos), `reglas_gasto`, `paso`, `decision`, `config`, `perfil`, `fecha_aporte`, `aporte_historico`, `importar_lotes`, `prediccion`, `prediccion_resultado`, `fantasma`, `rotacion_allaria`. Se aplican encima de los datos base; al sincronizar se guarda base + eventos + un valor por día (patrimonio, largo plazo, núcleo, parte en CEDEARs y acciones, MEP y contado con liqui).
+**Eventos**: `aporte`, `compra` (con `moneda: "USD"` y `especie` si se pagó en dólares), `cobro`, `venta`, `mes` (cierre con gastos), `reglas_gasto`, `paso`, `decision`, `config`, `perfil`, `fecha_aporte`, `aporte_historico`, `importar_lotes`, `prediccion`, `prediccion_resultado`, `prediccion_editar`, `prediccion_borrar`, `fantasma`, `fantasma_editar`, `fantasma_borrar`, `rotacion_allaria`, `supuestos`, `objetivo`, `objetivo_borrar`, `aporte_extra`. Se aplican encima de los datos base; al sincronizar se guarda base + eventos + un valor por día (patrimonio, largo plazo, núcleo, parte en CEDEARs y acciones, MEP y contado con liqui).
 
 **Ajustes en los datos** (todos opcionales):
 
@@ -135,10 +183,16 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | `riesgo` | `vol_fija` (`fci_usd`, `on`, `sin_serie`), `series`, `percentil`, `ventana_dias`, `sigmas_peor_mes`, `crisis` | 3% · 8% · 35%; 5%; 504; 2,33; YPF, PAM, MEP |
 | `alertas.volatilidad` | `aviso`, `critico`, `grupo`, `lambda`, `min_datos`, `tope` (0: sin máximo) | 2,5; 4; núcleo 1,25; 0,94; 40; 1,5 |
 | `referencias` | Con qué se compara cada satélite | ver `js/diario.js` |
+| `config.minutos_precio_viejo` | Desde cuántos minutos sugiere actualizar antes de operar | 60 |
+| `supuestos` | Lo que cambiaste de `data/supuestos.json` | vacío |
+| `objetivos` | Metas de patrimonio con fecha | ninguna |
+| `aporte_extra` | `activo`, `caida`, `parte` | apagado; 0,15; 0,5 |
 
 ## Mantenimiento
 
-- **Ratios de CEDEARs**: cambian cuando hay splits o ajustes. Bajar la lista vigente de [BYMA](https://www.byma.com.ar/productos/productos-financieros/cedears), actualizar `tools/cedear_ratios.json` (ratios y fecha). El tablero marca para revisar el que no cierra (`market.json` → `implicito.revisar_ratios`).
+- **Ratios de CEDEARs**: cambian cuando hay splits o ajustes. El tablero avisa (`market.json` → `ratios_byma.cambios`, y `implicito.revisar_ratios` si los precios no cierran). Para actualizarlos: editar `tools/cedear_ratios.json` (ratios y fecha) con la lista de [BYMA](https://www.byma.com.ar/productos/productos-financieros/cedears).
+- **Calendario de BYMA**: los feriados argentinos se bajan solos; las excepciones (`byma.excepciones` en `data/feriados_eeuu.json`) se cargan a mano cuando BYMA publica el calendario de cada año.
+- **Supuestos**: revisar cada trimestre el retorno de Vanguard, la tasa y la prima en `data/supuestos.json`.
 - **Marzo de 2027**: confirmar el horario de BYMA cuando EE.UU. pase al horario de verano y cargarlo en `data/feriados_eeuu.json` (hoy se asume cierre a las 17:00).
 - **Antes de 2028**: sumar los feriados de EE.UU. de ese año.
 - **Historia de precios**: lo que quieras medir (fantasmas, satélites, riesgo) tiene que estar en `historico_extra`. El archivo es público: no hace falta que sea algo que tenés.
@@ -159,6 +213,14 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | ETF en USD e histórico | yfinance (cierre ajustado diario) |
 | Compras de directivos | OpenInsider, tabla del filtro configurado en `tools/mercado_config.json` |
 | Inflación de EE.UU. | FRED, serie `CPIAUCSL` (CSV público, sin clave): rendimiento real en Informes |
+| Feriados argentinos | api.argentinadatos.com `/v1/feriados/{año}` → `feriados_ar.json` |
+| Lista de CEDEARs (para avisar cambios de ratio) | PDF enlazado en la página de CEDEARs de BYMA, leído con `pypdf` → `market.json` `ratios_byma` |
+| Riesgo país | api.argentinadatos.com `/v1/finanzas/indices/riesgo-pais` (desde 2020) |
+| Tasa de plazo fijo | api.argentinadatos.com `/v1/finanzas/tasas/depositos30Dias` (BCRA, 30 días) |
+| Historia de cuotapartes | api.argentinadatos.com `/v1/finanzas/fci/{categoría}/{año}/{mes}/{día}`: un valor cerca de cada fin de mes y el de cada día desde ahora (a la fuente le faltan días) |
+| Bonos de riesgo, curva, VIX, condiciones financieras | FRED `BAMLH0A0HYM2` (solo tres años), `T10Y3M`, `VIXCLS`, `NFCI` (se guarda, todavía no se muestra) |
+| ETF: cierres mensuales desde 2005 | yfinance → `largo_plazo.json` (cambia una vez por mes) |
+| Elección 2027 | Kalshi `/trade-api/v2/events?series_ticker=KXARGENTINAPRES`; Polymarket `gamma-api.polymarket.com/events?slug=…` (apagado) |
 | Histórico de lo que tenés | Yahoo Finance, tickers de `historico_extra` en `tools/mercado_config.json` (solo para reconstruir la evolución de tu cartera antes de los registros diarios; si un ticker falla no frena al resto) |
 
 ## Probar en la computadora

@@ -52,8 +52,9 @@ export function semaforoArgentina(e) {
   return { color, por, indicadores, sin_dato: indicadores.filter(i => !i.color).map(i => i.nombre), sugerencia };
 }
 
+const EN_FRASE = { riesgo_pais: 'el riesgo país', canje: 'el canje', brecha: 'la brecha', adr: 'las acciones argentinas afuera' };
 export const textoSemaforo = s => !s.color ? 'Sin datos para el semáforo argentino.'
-  : `Argentina en ${s.color}${s.por.length ? `: lo ${s.por.length > 1 ? 'ponen' : 'pone'} así ${s.por.map(i => `${i.nombre.toLowerCase()} (${i.texto})`).join(' y ')}.` : ': nada pasa sus umbrales.'}`;
+  : `Argentina en ${s.color}${s.por.length ? `: lo ${s.por.length > 1 || s.por[0].id === 'adr' ? 'ponen' : 'pone'} así ${s.por.map(i => `${EN_FRASE[i.id]} (${i.texto})`).join(' y ')}.` : ': nada pasa sus umbrales.'}`;
 
 // ---------- elección presidencial ----------
 export const FECHA_ELECCION = '2027-10-24';

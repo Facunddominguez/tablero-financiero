@@ -340,6 +340,7 @@ def red_contexto(cambios=None):
             raise NO_EXISTE
         raise AssertionError("pedido no grabado: " + url)
     mercado.bajar = bajar
+    contexto._limite = None
     return pedidos
 
 
@@ -491,6 +492,41 @@ def contexto_completo():
             mercado.DATA, contexto.yahoo_mensual, mercado.hoy_argentina = real_data, real_yahoo, real_hoy
 
 
+def fuentes_lentas():
+    # Muchos cortes seguidos al completar historia: se deja para otra corrida, sin anotar nada como inexistente.
+    real = mercado.CFG["historico_desde"]
+    mercado.CFG["historico_desde"] = "2025-01-01"
+    try:
+        pedidos = red_contexto()
+        de_verdad = mercado.bajar
+
+        def cortada(url, **k):
+            if "/fci/" in url and not url.endswith("/ultimo"):
+                pedidos.append(url)
+                raise RuntimeError("timed out")
+            return de_verdad(url, **k)
+        mercado.bajar = cortada
+        r = contexto.fondos(mercado, None, "2026-11-26")
+        historia = [u for u in pedidos if "/fci/" in u and not u.endswith("/ultimo")]
+        assert len(historia) == contexto.MAX_CORTES and r["vacios"] == [], len(historia)
+    finally:
+        mercado.CFG["historico_desde"] = real
+    # Sin tiempo: no se pide nada más y cada parte conserva lo anterior.
+    import tempfile
+    real_data, real_presupuesto, real_yahoo = mercado.DATA, contexto.PRESUPUESTO_SEGUNDOS, contexto.yahoo_mensual
+    with tempfile.TemporaryDirectory() as tmp:
+        mercado.DATA, contexto.PRESUPUESTO_SEGUNDOS, contexto.yahoo_mensual = pathlib.Path(tmp), -1, mensual_falso
+        try:
+            pedidos = red_contexto()
+            contexto.correr(mercado)
+            a = mercado.leer("argentina.json")
+            assert not pedidos and a["riesgo_pais"]["stale"] and "sin tiempo" in a["fondos"]["error"], (pedidos, a["fondos"])
+        finally:
+            mercado.DATA, contexto.PRESUPUESTO_SEGUNDOS, contexto.yahoo_mensual = real_data, real_presupuesto, real_yahoo
+            contexto._limite = None
+
+
+prueba("Contexto: fuentes lentas o cortadas no se comen la corrida", fuentes_lentas)
 prueba("Riesgo país y tasa de plazo fijo: desde la fecha configurada; si falla conserva lo anterior", riesgo_pais_y_tasa)
 prueba("Cuotapartes: acumula la de hoy, completa los meses viejos y no repite pedidos", cuotapartes)
 prueba("Cuotapartes: tope de pedidos, cortes de red y fallas", cuotapartes_con_fallas)

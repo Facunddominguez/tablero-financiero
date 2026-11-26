@@ -1,5 +1,58 @@
 # Plan de trabajo por etapas
 
+## Ronda 2 · Mirar adelante con rangos (rama `ronda-2`, 26/11/2026)
+
+Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inventados (`js/ejemplo.js`), respuestas grabadas y, en el navegador, con los archivos públicos reales; **no con la cartera real** (no hay clave en el entorno de trabajo).
+
+| Etapa | Estado | Qué hace |
+|---|---|---|
+| 1 · Arreglos de la ronda 1 | Hecha | Feriados argentinos en la ventana; hora de los precios y sugerencia de actualizar; precio justo en ventas; editar y borrar predicciones y fantasmas; aviso de cambios de ratio de BYMA. |
+| 2 · Datos nuevos | Hecha | Riesgo país, tasa de plazo fijo, cuotapartes históricas, cuatro series de FRED, cierres mensuales desde 2005, elección en Kalshi (Polymarket programado y apagado). |
+| 3 · Proyecciones con rangos | Hecha | Simulación de 2.000 caminos; rangos en Hoy y Radar; Informes → Proyección; supuestos editables; objetivos con fecha. |
+| 4 · Semáforo y reserva en pesos | Hecha | Semáforo de cuatro indicadores, elección 2027, reserva en pesos mes a mes, interés de los fondos en pesos en el riesgo. |
+| 5 · Clima de mercado | Hecha | Cuatro lecturas con historia; aviso opcional de aporte extra. |
+| 6 · Cierre | Hecha | Estas notas y el PR. |
+
+De paso se corrigió un error anterior: un campo precargado como "1.200" se leía como 1,2 (Configuración y Aportar con montos de mil o más).
+
+### Decisiones tomadas (para confirmar)
+
+- **Polymarket apagado.** Desde esta computadora no responde: la justicia porteña ordenó bloquearlo en el país (marzo de 2026). El Action podría leerlo desde GitHub, pero es una decisión del dueño. No hay respuesta real grabada: la prueba usa el formato de la API con valores inventados.
+- **Feriados**: los "puente" y los días no laborables tienen rueda sin liquidación (calendario de BYMA); el 31/12/2026 no tiene rueda aunque no sea feriado.
+- **Riesgo país desde 2020; cuotapartes un valor por mes hacia atrás** (a la fuente le faltan días) y diario desde ahora.
+- **Simulación**: retornos de Vanguard como compuestos; los de las acciones (tasa libre + beta × prima) como promedio. Vienen de fuentes distintas y no son del todo coherentes entre sí. Sin cupones, sin amortización de la ON y sin desviar ahorro a la reserva, como la proyección anterior.
+- **Chance en 12 y 24 meses** = haberlo logrado al menos una vez antes del plazo.
+- **Combinada de la elección** = promedio ponderado por volumen (contratos en Kalshi, dólares en Polymarket); probabilidad de Kalshi = punta media si las puntas distan 10 puntos o menos, si no el último precio. No se usa el mercado de primera vuelta.
+- **Umbrales** del semáforo y del clima: criterio propio. Con los datos del 26/11/2026 el semáforo está en **rojo** por YPF y PAM contra SPY (−22,5% en 30 días).
+- **Aporte extra**: caída de 15% desde el máximo, la mitad del excedente.
+
+### Para probar con los datos reales
+
+1. Después de mergear, correr una vez "Datos de mercado" y revisar en ⋯ → Fuentes y fechas que nada quede "sin actualizar" (FRED y BYMA se leen desde GitHub).
+2. `tests.html` con la clave (o `node tools/pruebas_node.mjs`).
+3. **⋯ → Configuración: revisar el ingreso mensual y el gasto.** Si alguna vez se guardó ese formulario con el error de "1.200", pudo quedar en 1,2.
+4. Un día con rueda: "Actualizar ahora", comparar precio justo y límite (compra y venta) con la pantalla del broker, y ver que la sugerencia aparezca con precios de más de una hora.
+5. El 7/12 (puente: se opera sin liquidar) y el 8/12 (sin rueda; próxima ventana el 9).
+6. Informes → Proyección: en "Qué se le supone a cada cosa", que cada posición use la historia que corresponde (lo que diga "supuesto" y tenga cotización se suma a `historico_extra`). Cargar un objetivo.
+7. Hoy: comparar el rango de los indicadores con la fecha "si los precios no cambian" de las reglas.
+8. Reserva en pesos: comparar el rendimiento mensual de los fondos con el del broker.
+9. Cartera y Trimestral → Riesgo: el fondo en pesos de largo plazo debe decir que incluye el interés.
+10. Editar y borrar una predicción y un fantasma, sincronizar y verlo en otro dispositivo.
+11. Confirmar umbrales, decidir Polymarket y si se prende el aporte extra.
+
+### Para la ronda 3
+
+- Cupones, amortización de la ON y la parte del ahorro que va a la reserva dentro de la simulación.
+- Serie propia para la ON (sigue con volatilidad fija).
+- Calibrar los umbrales del semáforo y del clima con la historia ya guardada; mostrar las condiciones financieras (`NFCI`) o dejar de bajarlas.
+- Historia diaria de cuotapartes hacia atrás.
+- Retornos esperados coherentes entre ETF y acciones, y actualizarlos solos cuando cambien.
+- Actualizar los ratios con un botón cuando BYMA cambie alguno.
+- Fechas de las rotaciones viejas de Allaria; cambiar referencias desde la app.
+- Marzo de 2027: horario de BYMA, y las excepciones de su calendario 2027.
+
+---
+
 ## Ronda 1 · Medir bien y comprar mejor (rama `ronda-1`, 26/11/2026)
 
 Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inventados (`js/ejemplo.js`) y respuestas grabadas; **no con los datos reales** (no hay clave en el entorno de trabajo).
@@ -37,14 +90,9 @@ Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inven
 8. Anotar una predicción, seguir un fantasma y cargar la próxima rotación de Allaria; sincronizar y verlo en otro dispositivo.
 9. En cron-job.org, pasar el minuto de 30 a 40.
 
-### Para la ronda 2
+### Para la ronda 2 (estado al cerrarla)
 
-- Feriados argentinos en la ventana de compra.
-- Riesgo: sumar el interés de los fondos en pesos y una serie propia para la ON.
-- Actualizar solo los ratios desde la lista de BYMA.
-- Fechas de las rotaciones viejas de Allaria (P1 en adelante) para comparar período por período.
-- Borrar o editar predicciones y fantasmas desde la app; cambiar referencias sin editar los datos.
-- Usar el precio justo también al vender.
+Hechos: feriados argentinos, interés de los fondos en pesos, aviso de cambios de ratio (no los actualiza solo), borrar y editar predicciones y fantasmas, y precio justo al vender. Pasan a la ronda 3: serie propia para la ON, fechas de las rotaciones viejas y cambiar referencias desde la app.
 
 ---
 

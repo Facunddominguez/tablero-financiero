@@ -482,9 +482,9 @@ def archivo_ratios():
 
 def ratios_byma():
     """Compara la lista vigente de BYMA con tools/cedear_ratios.json. No cambia el archivo: solo informa."""
-    fecha, url = enlace_lista_byma(bajar(BYMA_PAGINA))
+    fecha, url = enlace_lista_byma(bajar(BYMA_PAGINA, intentos=2, timeout=20))
     propio = archivo_ratios()
-    lista = leer_lista_byma(texto_pdf(bajar_bytes(url)))
+    lista = leer_lista_byma(texto_pdf(bajar_bytes(url, intentos=2, timeout=20)))
     cambios = comparar_ratios(propio.get("ratios") or {}, lista)
     return {"lista_fecha": fecha, "url": url, "archivo_fecha": propio.get("fecha"), "revisados": len(lista), "cambios": cambios}
 
