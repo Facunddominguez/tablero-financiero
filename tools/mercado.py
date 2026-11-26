@@ -565,6 +565,12 @@ def main():
     escribir("historico.json", hist)
     escribir("insiders.json", seccion("insiders", i_prev, insiders))
 
+    try:  # contexto: riesgo país, tasas, fondos, FRED, historia larga y elecciones
+        import contexto
+        contexto.correr(sys.modules[__name__])
+    except Exception as e:  # noqa: BLE001
+        print(f"FALLA contexto: {e}", file=sys.stderr)
+
     try:  # alertas de precio al teléfono (no detienen el resto si fallan)
         import alertas
         alertas.correr(mercado)

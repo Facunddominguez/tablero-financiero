@@ -260,6 +260,20 @@ function seguridad(ctx) {
 }
 
 // ---------- Fuentes y fechas ----------
+// Riesgo país, tasas, fondos, indicadores de EE.UU., historia larga y mercados de predicción.
+function filasContexto(e) {
+  const a = e.argentina || {}, c = e.clima?.series || {}, l = e.largo_plazo, el = a.elecciones || {};
+  const fred = Object.values(c), poly = el.polymarket;
+  return [
+    ['Riesgo país', 'argentinadatos.com', a.riesgo_pais?.ultimo?.fecha, a.riesgo_pais?.stale],
+    ['Tasa de plazo fijo (30 días)', 'argentinadatos.com (datos del BCRA)', a.plazo_fijo?.ultimo?.fecha, a.plazo_fijo?.stale],
+    ['Historia de cuotapartes de fondos', 'argentinadatos.com (datos de CAFCI)', a.fondos?.fechas?.at(-1), a.fondos?.stale],
+    ['Bonos de alto rendimiento, curva, VIX y condiciones financieras', 'FRED, Reserva Federal de St. Louis', fred.map(s => s.ultimo?.fecha).filter(Boolean).sort()[0], fred.some(s => s.stale)],
+    ['ETF: cierres mensuales desde 2005', 'Yahoo Finance (vía yfinance)', l?.actualizado, l?.stale],
+    ['Elección 2027: Kalshi', 'API pública de Kalshi (solo lectura)', el.kalshi?.actualizado, el.kalshi?.stale],
+    ['Elección 2027: Polymarket', poly?.desactivado ? 'Apagado: está bloqueado en Argentina por orden judicial' : 'API gamma de Polymarket (solo lectura)', poly?.actualizado, poly?.stale, poly?.desactivado ? '—' : null],
+  ];
+}
 function fuentes(ctx) {
   const e = ctx.estado, m = e.mercado || {}, d = e.datos;
   const cuando = iso => !iso ? '—' : iso.length > 10 ? `${fmt.fecha(iso.slice(0, 10))} · ${fmt.hace(iso)}` : fmt.fecha(iso);
@@ -281,6 +295,7 @@ function fuentes(ctx) {
     ['Dólar MEP promedio por mes', 'argentinadatos.com', m.mep_mensual?.actualizado, m.mep_mensual?.stale],
     ['Inflación de EE.UU. (IPC mensual)', 'FRED, Reserva Federal de St. Louis (serie CPIAUCSL)', m.cpi_usa?.actualizado, m.cpi_usa?.stale],
     ['Compras de directivos', 'OpenInsider (formularios 4 de la SEC)', e.insiders?.actualizado, e.insiders?.stale],
+    ...filasContexto(e),
     ['Cupones y amortización de la ON', 'Suplemento de prospecto del emisor', null, false, 'fijo'],
     ['Cantidades, lotes y caja', `Resumen de ${d.meta.broker || 'tu broker'}`, e.fecha_resumen],
     ['Aportes', 'Cargados a mano', ultimoAporte?.fecha],

@@ -7,6 +7,7 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import contexto  # noqa: E402
 import mercado  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")  # en Windows la consola no siempre es UTF-8
@@ -306,6 +307,198 @@ def una_vez_por_dia():
     assert mercado.seccion_diaria("n", fresco, fn, vigente=lambda a: False)["x"] == 2, "cambió algo que lo invalida"
 
 
+# ---------- contexto: riesgo país, tasas, fondos, FRED, historia larga y elecciones ----------
+
+NO_EXISTE = RuntimeError("HTTP Error 404: Not Found")
+
+
+def red_contexto(cambios=None):
+    """Red grabada para tools/contexto.py. Las cuotapartes de fechas no grabadas responden 404."""
+    mapa = {
+        "indices/riesgo-pais": grabada("argentinadatos_riesgo_pais.json"),
+        "tasas/depositos30Dias": grabada("argentinadatos_depositos30.json"),
+        "fci/mercadoDinero/ultimo": grabada("argentinadatos_fci_mm_ultimo.json"),
+        "fci/rentaFija/ultimo": grabada("argentinadatos_fci_rf_ultimo.json"),
+        "fci/mercadoDinero/2025/01/31": grabada("argentinadatos_fci_mm_2025_01_31.json"),
+        "fci/rentaFija/2025/01/31": grabada("argentinadatos_fci_rf_2025_01_31.json"),
+        "series_ticker=KXARGENTINAPRES&with_nested_markets=true": grabada("kalshi_argentinapres.json"),
+        "events?slug=argentina-presidential-election-winner": grabada("polymarket_formato_inventado.json"),
+    }
+    for s in contexto.SERIES_FRED:
+        mapa[f"id={s}&cosd=2005-01-01"] = grabada(f"fred_{s}.csv")
+    mapa.update(cambios or {})
+    pedidos = []
+
+    def bajar(url, **k):
+        pedidos.append(url)
+        for parte, r in mapa.items():
+            if url.endswith(parte):
+                if isinstance(r, Exception):
+                    raise r
+                return r
+        if "/fci/" in url:
+            raise NO_EXISTE
+        raise AssertionError("pedido no grabado: " + url)
+    mercado.bajar = bajar
+    return pedidos
+
+
+def mensual_falso(ticker, desde):
+    return {f"{a}-{m:02d}": 100 + a - 2005 + m / 100 for a in range(2019, 2027) for m in range(1, 13) if f"{a}-{m:02d}" <= "2026-11"}
+
+
+def riesgo_pais_y_tasa():
+    red_contexto()
+    r = contexto.riesgo_pais(mercado)
+    assert r["fechas"][0] >= "2020-01-01" and r["ultimo"] == {"fecha": "2026-11-25", "valor": 1067.0}, r["ultimo"]
+    assert len(r["fechas"]) == len(r["valores"]) and r["fechas"] == sorted(r["fechas"])
+    t = contexto.plazo_fijo(mercado)
+    assert t["fechas"][0] >= mercado.CFG["historico_desde"] and 0 < t["ultimo"]["valor"] < 1, t["ultimo"]
+    red_contexto({"indices/riesgo-pais": "[]"})
+    s = mercado.seccion("riesgo_pais", r, lambda: contexto.riesgo_pais(mercado))
+    assert s["stale"] is True and s["ultimo"] == r["ultimo"], "conserva lo anterior"
+
+
+def con_historia_desde(desde):
+    def decorar(fn):
+        def envuelta():
+            real = mercado.CFG["historico_desde"]
+            mercado.CFG["historico_desde"] = desde
+            try:
+                fn()
+            finally:
+                mercado.CFG["historico_desde"] = real
+        return envuelta
+    return decorar
+
+
+@con_historia_desde("2025-01-01")
+def cuotapartes():
+    pedidos = red_contexto()
+    r = contexto.fondos(mercado, None, "2025-03-15")
+    mm = "Balanz Capital Money Market - Clase A"
+    valores = dict(zip(r["fechas"], r["series"][mm]))
+    assert valores["2025-01-31"] == 8.347921 and valores["2026-11-25"] == 12.937735, valores
+    assert "Balanz Capital Estrategia I USD - Clase A" in r["series"], "también los fondos en dólares"
+    assert all(len(s) == len(r["fechas"]) for s in r["series"].values()) and r["fechas"][0] >= "2025-01-01"
+    assert r["vacios"] == ["mercadoDinero:2025-02", "rentaFija:2025-02"], r["vacios"]
+    # Segunda corrida: no vuelve a pedir lo que ya tiene ni lo que sabe que no existe.
+    pedidos.clear()
+    otra = contexto.fondos(mercado, r, "2025-03-15")
+    assert len(pedidos) == 2 and otra["series"] == r["series"], pedidos
+
+
+@con_historia_desde("2025-01-01")
+def cuotapartes_con_fallas():
+    # Un corte de red no se anota como "no existe".
+    red_contexto({"fci/mercadoDinero/2025/01/31": RuntimeError("timed out"), "fci/rentaFija/2025/01/31": RuntimeError("timed out")})
+    r = contexto.fondos(mercado, None, "2025-02-15")
+    assert r["vacios"] == [], r["vacios"]
+    tope, contexto.MAX_PEDIDOS_HISTORIA = contexto.MAX_PEDIDOS_HISTORIA, 3
+    try:
+        pedidos = red_contexto()
+        contexto.fondos(mercado, None, "2026-11-01")
+        assert len(pedidos) == 5, "dos de hoy y tres de historia: " + str(len(pedidos))
+    finally:
+        contexto.MAX_PEDIDOS_HISTORIA = tope
+    red_contexto({"fci/mercadoDinero/ultimo": RuntimeError("sin red")})
+    s = mercado.seccion("fondos", r, lambda: contexto.fondos(mercado, r, "2025-02-15"))
+    assert s["stale"] is True and s["series"] == r["series"]
+
+
+def fred_semanal():
+    red_contexto()
+    r = contexto.fred(mercado, "VIXCLS")
+    texto = grabada("fred_VIXCLS.csv").strip().splitlines()
+    ultimo = texto[-1].split(",")
+    assert r["ultimo"] == {"fecha": ultimo[0], "valor": float(ultimo[1])}, r["ultimo"]
+    assert "2005-01-17" not in r["fechas"], "saltea los días sin dato"
+    assert "2005-01-07" in r["fechas"] and "2005-01-06" not in r["fechas"], "un valor por semana: el último"
+    red_contexto({"id=NFCI&cosd=2005-01-01": "observation_date,NFCI\n"})
+    s = mercado.seccion("fred NFCI", {"ultimo": 1}, lambda: contexto.fred(mercado, "NFCI"))
+    assert s["stale"] is True and s["ultimo"] == 1
+
+
+def historia_larga():
+    real = contexto.yahoo_mensual
+    contexto.yahoo_mensual = mensual_falso
+    try:
+        r = contexto.largo_plazo(mercado, "2026-11-26")
+        assert r["hasta"] == "2026-10" and "2026-11" not in r["fechas"], r["hasta"]
+        assert list(r["series"]) == mercado.CFG["usd_tickers"] and len(r["series"]["SPY"]) == len(r["fechas"])
+        assert contexto.mes_anterior("2026-01-05") == "2025-12" and contexto.mes_anterior("2026-11-26") == "2026-10"
+        contexto.yahoo_mensual = lambda t, d: {"2026-01": 1.0}
+        s = mercado.seccion("largo_plazo", r, lambda: contexto.largo_plazo(mercado, "2026-11-26"))
+        assert s["stale"] is True and s["hasta"] == "2026-10"
+    finally:
+        contexto.yahoo_mensual = real
+
+
+def kalshi_grabado():
+    red_contexto()
+    r = contexto.kalshi(mercado)
+    c = {x["nombre"]: x for x in r["candidatos"]}
+    assert c["Javier Milei"]["prob"] == 0.465 and c["Javier Milei"]["volumen"] == 35796, c["Javier Milei"]
+    # con puntas juntas manda el medio; un último precio viejo y sin movimiento no
+    assert c["Horacio Rodríguez Larreta"]["prob"] == 0.006, c["Horacio Rodríguez Larreta"]
+    assert [x["prob"] for x in r["candidatos"]] == sorted((x["prob"] for x in r["candidatos"]), reverse=True)
+    red_contexto({"series_ticker=KXARGENTINAPRES&with_nested_markets=true": '{"events":[]}'})
+    s = mercado.seccion("kalshi", r, lambda: contexto.kalshi(mercado))
+    assert s["stale"] is True and s["candidatos"] == r["candidatos"]
+
+
+def polymarket_apagado_y_prendido():
+    pedidos = red_contexto()
+    apagado = contexto.elecciones(mercado, {})
+    assert apagado["polymarket"] == {"nombre": "Polymarket", "desactivado": True}, apagado["polymarket"]
+    assert not any("polymarket" in u for u in pedidos), "apagado no se consulta"
+    assert apagado["fecha"] == "2027-10-24" and apagado["kalshi"]["candidatos"]
+    mercado.CFG["elecciones"]["polymarket_activado"] = True
+    try:
+        r = contexto.elecciones(mercado, {})["polymarket"]
+        assert [c["nombre"] for c in r["candidatos"]] == ["Javier Milei", "Axel Kicillof", "Sergio Massa", "Dante Gebel"], r["candidatos"]
+        assert r["candidatos"][0] == {"nombre": "Javier Milei", "prob": 0.58, "volumen": 200000}
+        otro = json.loads(grabada("polymarket_formato_inventado.json"))
+        otro[0]["endDate"] = "2023-10-22T00:00:00Z"
+        red_contexto({"events?slug=argentina-presidential-election-winner": json.dumps(otro)})
+        s = contexto.elecciones(mercado, {"polymarket": r})["polymarket"]
+        assert s["stale"] is True and s["candidatos"] == r["candidatos"], "un evento de otra elección no se usa"
+    finally:
+        mercado.CFG["elecciones"]["polymarket_activado"] = False
+
+
+def contexto_completo():
+    import tempfile
+    real_data, real_yahoo, real_hoy = mercado.DATA, contexto.yahoo_mensual, mercado.hoy_argentina
+    with tempfile.TemporaryDirectory() as tmp:
+        mercado.DATA, contexto.yahoo_mensual, mercado.hoy_argentina = pathlib.Path(tmp), mensual_falso, lambda: "2026-11-26"
+        try:
+            red_contexto()
+            contexto.correr(mercado)
+            a, c, l = (mercado.leer(n) for n in ("argentina.json", "clima.json", "largo_plazo.json"))
+            assert all(not a[k]["stale"] for k in ("riesgo_pais", "plazo_fijo", "fondos")) and not a["elecciones"]["kalshi"]["stale"]
+            assert sorted(c["series"]) == sorted(contexto.SERIES_FRED) and l["hasta"] == "2026-10"
+            # Si después se cae todo, cada parte conserva lo suyo; lo diario y lo mensual ni se vuelven a pedir.
+            def caida(url, **k):
+                raise RuntimeError("sin red")
+            mercado.bajar = caida
+            contexto.correr(mercado)
+            b, c2, l2 = (mercado.leer(n) for n in ("argentina.json", "clima.json", "largo_plazo.json"))
+            assert b["riesgo_pais"]["stale"] and b["riesgo_pais"]["valores"] == a["riesgo_pais"]["valores"]
+            assert b["fondos"]["stale"] and b["elecciones"]["kalshi"]["stale"] and b["elecciones"]["kalshi"]["candidatos"]
+            assert c2 == c and l2 == l and b["plazo_fijo"] == a["plazo_fijo"]
+        finally:
+            mercado.DATA, contexto.yahoo_mensual, mercado.hoy_argentina = real_data, real_yahoo, real_hoy
+
+
+prueba("Riesgo país y tasa de plazo fijo: desde la fecha configurada; si falla conserva lo anterior", riesgo_pais_y_tasa)
+prueba("Cuotapartes: acumula la de hoy, completa los meses viejos y no repite pedidos", cuotapartes)
+prueba("Cuotapartes: tope de pedidos, cortes de red y fallas", cuotapartes_con_fallas)
+prueba("FRED: un valor por semana, el último diario y sin días vacíos", fred_semanal)
+prueba("Historia larga: mensual, sin el mes en curso", historia_larga)
+prueba("Kalshi: probabilidad por candidato desde las puntas, con volumen", kalshi_grabado)
+prueba("Polymarket: apagado por defecto; prendido, saltea casilleros vacíos y otras elecciones", polymarket_apagado_y_prendido)
+prueba("Contexto completo: escribe los tres archivos y cada parte falla por separado", contexto_completo)
 prueba("Feriados argentinos: este año y el que viene, con su tipo", con_anio(feriados_grabados))
 prueba("Feriados argentinos: si el año que viene no está publicado, sigue con lo que hay", con_anio(feriados_sin_el_anio_que_viene))
 prueba("Feriados argentinos: una respuesta rota conserva lo anterior marcado como viejo", con_anio(feriados_si_falla_conserva))

@@ -4,5 +4,13 @@
   "usd_tickers": ["SPY", "EFA", "EEM", "IWM"],
   "historico_extra": ["GOOGL", "NVDA", "TSLA", "MELI", "PAM", "YPF", "SMH", "ARGT"],
   "historico_desde": "2024-06-03",
+  "contexto_desde": "2020-01-01",
+  "largo_desde": "2005-01-01",
+  "elecciones": {
+    "fecha": "2027-10-24",
+    "kalshi_serie": "KXARGENTINAPRES",
+    "polymarket_slug": "argentina-presidential-election-winner",
+    "polymarket_activado": false
+  },
   "insiders_url": "http://openinsider.com/screener?s=&o=&pl=5&ph=&ll=&lh=&fd=7&fdr=&td=0&tdr=&fdlyl=&fdlyh=&daysago=&xp=1&vl=&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&isofficer=1&iscob=1&isceo=1&ispres=1&iscoo=1&iscfo=1&isgc=1&isvp=1&isdirector=1&grp=2&nfl=&nfh=&nil=3&nih=&nol=&noh=&v2l=400&v2h=&oc2l=&oc2h=&sortcol=0&cnt=100&page=1"
 }
