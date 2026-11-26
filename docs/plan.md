@@ -1,6 +1,60 @@
 # Plan de trabajo por etapas
 
-Rama: `etapas-0-6`. Nada de esto está en `main` hasta que se apruebe el PR.
+## Ronda 1 · Medir bien y comprar mejor (rama `ronda-1`, 26/11/2026)
+
+Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inventados (`js/ejemplo.js`) y respuestas grabadas; **no con los datos reales** (no hay clave en el entorno de trabajo).
+
+| Etapa | Estado | Qué hace |
+|---|---|---|
+| 1 · Datos nuevos | Hecha | MEP y contado con liqui diarios en `historico.json`; dólar implícito y precios de EE.UU. del momento en `market.json` (`implicito`); `tools/cedear_ratios.json` (451 ratios de BYMA) con marca "revisar" si difiere más de 5%; SMH y ARGT en el histórico; el registro diario guarda el contado con liqui y lo que está en CEDEARs. |
+| 2 · Efecto canje | Hecha | SPY y núcleo simulados con CEDEARs; "Activos" y "Efecto canje" en Rendimiento, Mensual, Trimestral y la tabla por bloque. |
+| 3 · Comprar mejor | Hecha | Precio justo y prima; desempate por prima; saltea lo más de 1% caro; límite; ventana de compra con feriados y medias ruedas; especie en dólares. |
+| 4 · Riesgo | Hecha | "% del riesgo" en Cartera; bloque "Riesgo" en Trimestral con mes malo y dos escenarios. |
+| 5 · Alertas | Hecha | Umbral según la volatilidad de cada activo; explicación EE.UU. / dólar implícito. |
+| 6 · Diario | Hecha | Predicciones (Brier y calibración), carteras fantasma contra SPY, satélites contra referencia, rotaciones de Allaria. |
+| 7 · Cierre | Hecha | Estas notas y el PR. |
+
+### Decisiones tomadas (para confirmar)
+
+- **Precio justo solo con Wall Street abierto.** Con el mercado de EE.UU. cerrado o sin abrir, compararía contra el cierre de ayer: no saltea ni pone límite. Por eso la primera corrida pasó de 11:20 a 11:40.
+- **Dólar de referencia**: mediana de los 30 papeles con más volumen. El `live/ccl` de data912 venía vacío, así que hoy se calcula con los ratios de BYMA.
+- **"A igual déficit"** = difieren menos de 0,1 punto. **Límite** = precio justo (o el de pantalla, si es menor) + 1%.
+- **Canje**: afecta a CEDEARs y acciones locales; ON, fondos y caja, no. "Efecto canje" = total − activos.
+- **Riesgo**: sobre la cartera de largo plazo (sin emergencia), "mes malo" con distribución normal; volatilidad fija 3% (fondos en dólares), 8% (ON) y 35% (sin historia).
+- **Umbrales de alerta**: núcleo ×1,25. Calibrado sobre dos años (4 ETF, 6 acciones y el MEP): críticos del día 19,7 por año contra 24,2 con los fijos. Los escalones acumulados no cambian.
+- **Horario de BYMA desde el 14/03/2027**: sin publicar; se asume cierre 17:00.
+- **Referencias**: satélite sin referencia propia, contra SPY. La ON no se compara.
+
+### Para decidir
+
+- **Tope a los umbrales por volatilidad.** Después de saltos grandes el umbral queda muy alto (con los datos del 26/11, el crítico de SPY es 8,9% y el de la acción más movida de la serie, 34%). Se puede limitar (por ejemplo, nunca por encima del umbral fijo anterior) o dejarlo así.
+
+### Para probar con los datos reales
+
+1. Correr el workflow "Datos de mercado" una vez y mirar que `market.json` tenga `implicito.usa` e `implicito.ccl`, y `historico.json` las series `MEP`, `CCL`, `SMH` y `ARGT`.
+2. `tests.html` con la clave (o `node tools/pruebas_node.mjs`).
+3. Con Wall Street abierto, "Actualizar ahora": comparar el precio justo y el límite de SPY, EFA, EEM e IWM con la pantalla del broker, y ver si alguno de los tuyos figura para revisar el ratio.
+4. Antes de usar una especie en dólares, confirmar en el broker el código y el precio. Al registrar la primera, revisar que bajen los dólares de la caja y sume al mismo activo.
+5. Informes: los números de SPY y núcleo cambian (ahora incluyen el canje). Revisar que "Activos" y "Efecto canje" tengan sentido.
+6. Cartera y Trimestral: que cada posición use la serie correcta; sumar a `historico_extra` lo que figure sin historia.
+7. Alertas: no hace falta rearmar `ALERTAS_CONFIG`. Mirar unos días cuántos avisos llegan.
+8. Anotar una predicción, seguir un fantasma y cargar la próxima rotación de Allaria; sincronizar y verlo en otro dispositivo.
+9. En cron-job.org, pasar el minuto de 30 a 40.
+
+### Para la ronda 2
+
+- Feriados argentinos en la ventana de compra.
+- Riesgo: sumar el interés de los fondos en pesos y una serie propia para la ON.
+- Actualizar solo los ratios desde la lista de BYMA.
+- Fechas de las rotaciones viejas de Allaria (P1 en adelante) para comparar período por período.
+- Borrar o editar predicciones y fantasmas desde la app; cambiar referencias sin editar los datos.
+- Usar el precio justo también al vender.
+
+---
+
+## Etapas 0 a 6 (rondas anteriores)
+
+Rama: `etapas-0-6` (ya integrada).
 
 Reglas: no perder ni exponer datos; `main` no se toca sin aprobación; cada etapa se valida antes de seguir; si una falla tres veces, se frena y se reporta.
 
@@ -229,6 +283,8 @@ Se mantiene (3 corridas por día hábil, permisos mínimos, sin secretos). Cambi
 ---
 
 ### Alertas de precio y ajustes (rama `alertas-y-ajustes`)
+
+*Desde la ronda 1 el umbral del movimiento del día depende de la volatilidad de cada activo; la tabla de abajo queda para lo que no tiene historia.*
 
 **Alertas de precio.** Dos niveles: *aviso* (se ve en Hoy) y *crítico* (además llega al teléfono). Todo se mide **en dólares**: el movimiento del precio en pesos corregido por lo que se movió el MEP, para que un salto del dólar no dispare todo junto.
 
