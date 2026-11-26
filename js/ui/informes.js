@@ -8,6 +8,7 @@ import { nuevaPrediccion, nuevaRotacion, borrarPrediccion, editarFantasma, borra
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase, parteRiesgo } from './comun.js';
 import { informeProyeccion } from './proyeccion.js';
 import { seccionesArgentina } from './argentina.js';
+import { seccionClima } from './clima.js';
 
 const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['proyeccion', 'Proyección'], ['trimestral', 'Trimestral'],['diario', 'Predicciones y fantasmas'], ['anual', 'Anual para el contador'], ['allaria', 'Contraste con Allaria']];
 const dato = (etq, valor, sub) => h('div', h('p.dato-etq', etq), h('p.dato-valor', valor), sub ? h('p.dato-sub', sub) : null);
@@ -318,6 +319,7 @@ function trimestral(ctx) {
       item(true, 'Watchlist', `${(d.watchlist || []).length} nombres en seguimiento. ${R.R7?.activa ? 'Bloqueada por la regla R7: solo observación.' : 'Habilitada: máximo inicial por nombre según la tabla.'}`))),
     seccionCanje(T, 'Activos y efecto canje, desde el inicio'),
     seccionesArgentina(e),
+    seccionClima(ctx),
     seccionRiesgo(e),
     seccionReferencias(e),
     sec('Satélites contra su banda', tabla([

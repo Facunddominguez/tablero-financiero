@@ -8,6 +8,7 @@ import { esSobreCifrado } from '../cripto.js';
 import { esRespaldoPlano } from '../estado.js';
 import { nuevaPrediccion } from './diario.js';
 import { supuestos, EDITABLES } from '../supuestos.js';
+import { ajustesAporteExtra } from '../clima.js';
 
 const descargar = (nombre, texto, tipo = 'application/json') => {
   const a = h('a', { href: URL.createObjectURL(new Blob([texto], { type: tipo })), download: nombre });
@@ -197,6 +198,29 @@ function decisiones(ctx) {
 }
 
 // ---------- Configuración ----------
+// Aviso opcional (apagado de fábrica): usar parte de la reserva que sobra cuando el núcleo cae fuerte.
+function formularioAporteExtra(ctx, cerrar) {
+  const e = ctx.estado, c = ajustesAporteExtra(e);
+  const fActivo = h('input', { type: 'checkbox', checked: c.activo });
+  const fCaida = entrada({ value: fmt.num(c.caida * 100, 0) }), fParte = entrada({ value: fmt.num(c.parte * 100, 0) });
+  const error = h('p.error', { role: 'alert' });
+  return h('form.bloque', {
+    onsubmit: async ev => {
+      ev.preventDefault();
+      const caida = aNumero(fCaida.value) / 100, parte = aNumero(fParte.value) / 100;
+      if (!(caida > 0 && caida < 1) || !(parte > 0 && parte <= 1)) { error.textContent = 'La caída va de 1 a 99% y la parte, de 1 a 100%.'; return; }
+      const cambios = { activo: fActivo.checked, caida, parte };
+      if (cambios.activo !== c.activo || caida !== c.caida || parte !== c.parte) await ctx.registrar({ tipo: 'aporte_extra', fecha: e.hoy, cambios },
+        { tipo: 'decision', fecha: e.hoy, texto: cambios.activo ? `Aviso de aporte extra activado: caída de ${fmt.pct(caida, 0)}, ${fmt.pct(parte, 0)} del excedente` : 'Aviso de aporte extra apagado' });
+      cerrar();
+    },
+  },
+    h('h3', 'Aporte extra en una caída'),
+    h('label.casilla', fActivo, h('span', 'Avisarme en "Para saber"'), h('small', 'Si la reserva tiene excedente (regla R1) y el núcleo cae desde su máximo. Nunca sugiere vender ni frenar aportes.')),
+    h('div.fila-campos', campo('Caída desde el máximo (%)', fCaida), campo('Parte del excedente (%)', fParte)),
+    error, h('div.acciones.izq', h('button.boton', { type: 'submit' }, 'Guardar')));
+}
+
 function configuracion(ctx) {
   const e = ctx.estado, p = e.datos.perfil;
   const fDia = entrada({ value: String(e.datos.config.dia_cobro), inputmode: 'numeric' });
@@ -220,6 +244,7 @@ function configuracion(ctx) {
       h('div.fila-campos', campo('Ingreso mensual (USD)', fIngreso), campo('Gasto habitual (USD)', fGasto), campo('Día de cobro', fDia)),
       h('small', 'El ingreso y el gasto son la referencia para calcular cuánto invertir; desde el día de cobro aparece el paso "Aportá".'),
       h('div.acciones.izq', h('button.boton', { type: 'submit' }, 'Guardar'))),
+    formularioAporteExtra(ctx, () => d.close()),
     h('div.bloque', h('h3', 'Apariencia'), fTema)), { ancho: '32rem' });
   return d;
 }

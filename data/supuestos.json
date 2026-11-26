@@ -29,6 +29,14 @@
     "fecha": "2026-11-26",
     "diferencia": 0.1
   },
+  "clima": {
+    "fuente": "Criterio propio de la herramienta, a confirmar. Bonos de alto riesgo y curva en puntos porcentuales; en la curva y en SPY contra su promedio, cuanto más abajo, peor.",
+    "fecha": "2026-11-26",
+    "alto_rendimiento": { "atento": 4, "tenso": 6 },
+    "curva": { "atento": 0.25, "tenso": 0 },
+    "vix": { "atento": 20, "tenso": 30 },
+    "spy_promedio": { "atento": 0, "tenso": -0.05 }
+  },
   "otros": {
     "fuente": "Criterio propio de la herramienta: obligaciones negociables, la tasa libre a 10 años; fondos en dólares, la letra a 3 meses al 30/09/2026 (FRED, DGS3MO); dólares sin invertir, nada; pesos, nada en dólares (se supone que el interés apenas compensa la suba del dólar).",
     "fecha": "2026-11-26",

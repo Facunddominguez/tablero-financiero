@@ -102,7 +102,11 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
     otros: { fuente: 'Ejemplo', fecha: '2026-09-30', on: 0.05, fci_usd: 0.04, caja_usd: 0, pesos: 0 },
     semaforo: { fuente: 'Ejemplo', fecha: '2026-11-26', riesgo_pais: { amarillo: 800, rojo: 1500 }, canje: { amarillo: 0.05, rojo: 0.1 }, brecha: { amarillo: 0.1, rojo: 0.3 }, adr: { amarillo: -0.07, rojo: -0.15 } },
     elecciones: { fuente: 'Ejemplo', fecha: '2026-11-26', diferencia: 0.1 },
+    clima: { fuente: 'Ejemplo', fecha: '2026-11-26', alto_rendimiento: { atento: 4, tenso: 6 }, curva: { atento: 0.25, tenso: 0 }, vix: { atento: 20, tenso: 30 }, spy_promedio: { atento: 0, tenso: -0.05 } },
   };
+  const semanas = fechasHist.filter((_, i) => i % 5 === 4);
+  const fred = (base, amplitud) => sec({ fechas: semanas, valores: semanas.map((_, i) => Math.round((base + amplitud * Math.sin(i * 0.4)) * 100) / 100), ultimo: { fecha: fechasHist.at(-1), valor: base } });
+  const clima = { series: { BAMLH0A0HYM2: fred(3.5, 0.5), T10Y3M: fred(0.6, 0.3), VIXCLS: fred(16, 4), NFCI: fred(-0.4, 0.1) } };
   // Riesgo país, tasa de plazo fijo, cuotapartes de fin de mes y mercados de la elección: todo inventado.
   const finesDeMes = meses.slice(-24).map(m => new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).toISOString().slice(0, 10)).concat(fechasHist.at(-1)).filter((f, i, a) => !i || f > a[i - 1]);
   const dias = f => (Date.parse(f) - Date.parse(finesDeMes[0])) / 86400000;
@@ -124,7 +128,7 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
     },
   };
   const ext = {
-    mercado, historico, largoPlazo, supuestos, argentina,
+    mercado, historico, largoPlazo, supuestos, argentina, clima,
     ratios: { fecha: '2026-11-19', ratios: Object.fromEntries(Object.entries(ratios).map(([t, r]) => [t, { ratio: r }])) },
     feriados: {
       anios: [2026, 2027], feriados: { '2026-11-26': 'Acción de Gracias', '2026-12-25': 'Navidad' }, medias_ruedas: { '2026-11-27': 'día después de Acción de Gracias', '2026-12-24': 'Nochebuena' },

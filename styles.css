@@ -132,6 +132,13 @@ h2.sub { margin-top: 2rem; }
 .lineas-contexto + .lista-pasos { border-top: 0; }
 .punto { width: .7rem; height: .7rem; border-radius: 50%; margin-top: .42rem; background: var(--tinta-3); }
 .punto.ok { background: var(--ok); } .punto.alerta { background: var(--alerta); } .punto.mal { background: var(--mal); }
+.punto.acento { background: var(--acento); }
+.clima-grilla { display: grid; gap: 1.5rem; margin-bottom: 1rem; }
+@media (min-width: 40rem) { .clima-grilla { grid-template-columns: 1fr 1fr; } }
+.clima-item { min-width: 0; display: flex; flex-direction: column; justify-content: space-between; }
+.clima-valor { font: 500 1.3rem/1.3 var(--f-num); letter-spacing: -.03em; }
+.clima-valor .desglose { font-family: var(--f-texto); letter-spacing: 0; }
+.grafico.chico { height: 9rem; margin: .4rem 0 0; }
 .vigentes { margin-top: 3rem; }
 .vigentes h2 { margin-bottom: .3rem; }
 .vigentes ul { margin-top: .9rem; border-top: 1px solid var(--linea); }

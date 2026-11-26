@@ -24,4 +24,10 @@ export const EDITABLES = [
     ['adr.amarillo', 'Acciones contra SPY: amarillo (%)', 'pct'], ['adr.rojo', 'Acciones contra SPY: rojo (%)', 'pct'],
   ]],
   ['elecciones', 'Elección 2027', [['diferencia', 'Avisar si los mercados difieren (%)', 'pct']]],
+  ['clima', 'Clima de mercado', [
+    ['alto_rendimiento.atento', 'Bonos de riesgo: atento desde (puntos)', 'num'], ['alto_rendimiento.tenso', 'Bonos de riesgo: tenso desde (puntos)', 'num'],
+    ['curva.atento', 'Curva: atento desde (puntos)', 'num'], ['curva.tenso', 'Curva: tenso desde (puntos)', 'num'],
+    ['vix.atento', 'VIX: atento desde', 'num'], ['vix.tenso', 'VIX: tenso desde', 'num'],
+    ['spy_promedio.atento', 'SPY contra su promedio: atento (%)', 'pct'], ['spy_promedio.tenso', 'SPY contra su promedio: tenso (%)', 'pct'],
+  ]],
 ];

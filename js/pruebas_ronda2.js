@@ -10,6 +10,7 @@ import { ejemplo } from './ejemplo.js';
 import { aNumero, fmt } from './util.js';
 import { semaforoArgentina, textoSemaforo, eleccion, claveCandidato, reservaEnPesos } from './argentina.js';
 import { riesgo, historiaRiesgo } from './riesgo.js';
+import { climaMercado, textoClima, spyContraPromedio, caidaNucleo, aporteExtra, ajustesAporteExtra } from './clima.js';
 
 export const cerca = (a, b, tol, que) => { if (!(Math.abs(a - b) <= tol)) throw new Error(`${que}: dio ${a}, esperado ≈ ${b}`); };
 export const igual = (a, b, que) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${que}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`); };
@@ -382,6 +383,65 @@ function etapa4() {
   ];
 }
 
+function etapa5() {
+  // El núcleo sube parejo y al final cae `caida` desde su máximo; la reserva tiene `extra` USD de más.
+  const escenario = ({ caida = 0.2, extra = 2000, activo = true, ajustes = {} } = {}) => mundo({
+    eventos: activo == null ? [] : [evento(70, { tipo: 'aporte_extra', cambios: { activo, ...ajustes } })],
+    ajustar: x => {
+      const h = x.ext.historico.series, n = x.ext.historico.fechas.length;
+      for (const t of ['SPY', 'EFA', 'EEM', 'IWM']) {
+        h[t] = x.ext.historico.fechas.map((_, i) => i < n - 10 ? 100 + i / 10 : (100 + (n - 11) / 10) * (1 - caida));
+        x.ext.mercado.implicito.usa.precios[t] = [h[t][n - 1], 0];
+      }
+      x.datos.emergencia.objetivo_usd = valuar(aplicarEventos(x.datos), x.ext, '2026-11-30').emergencia_usd - extra;
+    },
+  }).e;
+  return [
+    ['Clima de mercado: los cuatro indicadores, con su lectura en palabras y su historia', async () => {
+      const { e } = mundo({ ajustar: x => { const s = x.ext.clima.series; s.BAMLH0A0HYM2.ultimo.valor = 4.5; s.T10Y3M.ultimo.valor = -0.1; s.VIXCLS.ultimo.valor = 15; } });
+      const c = climaMercado(e), i = Object.fromEntries(c.indicadores.map(x => [x.id, x]));
+      igual(c.indicadores.map(x => x.id), ['alto_rendimiento', 'curva', 'vix', 'spy_promedio'], 'los cuatro');
+      igual([i.alto_rendimiento.lectura, i.curva.lectura, i.vix.lectura], ['atento', 'tenso', 'tranquilo'], 'lecturas');
+      si(c.lectura === 'tenso' && /bonos de riesgo atento \(4,50\) · curva de tasas tenso \(−0,10\) · VIX tranquilo \(15,0\)/.test(textoClima(c)), textoClima(c));
+      si(c.indicadores.every(x => x.historia.fechas.length > 10 && x.historia.fechas.length === x.historia.valores.length), 'historia');
+      const s = e.historico.series.SPY, n = s.length, promedio = s.slice(n - 200).reduce((a, v) => a + v, 0) / 200;
+      cerca(i.spy_promedio.valor, s[n - 1] / promedio - 1, 1e-12, 'SPY contra su promedio de 200 ruedas');
+      si(spyContraPromedio({ fechas: e.historico.fechas.slice(0, 100), series: { SPY: s.slice(0, 100) } }) === null, 'con menos de 200 ruedas no hay promedio');
+      const sin = climaMercado(mundo({ ajustar: x => { delete x.ext.clima; delete x.ext.historico.series.SPY; } }).e);
+      si(sin.lectura === null && sin.indicadores.every(x => x.texto === '—') && /Sin datos/.test(textoClima(sin)), JSON.stringify(sin.indicadores[0]));
+      const editado = mundo({ eventos: [evento(71, { tipo: 'supuestos', cambios: { clima: { vix: { atento: 10 } } } })] }).e;
+      si(climaMercado(editado).indicadores[2].lectura === 'atento', 'umbrales editables');
+    }],
+
+    ['Caída del núcleo desde su máximo, con los precios del momento', async () => {
+      const e = escenario({ caida: 0.2 });
+      cerca(caidaNucleo(e).caida, 0.2, 1e-9, 'caída');
+      const n = e.historico.fechas.length;
+      si(caidaNucleo(e).desde === e.historico.fechas[n - 11], 'fecha del máximo: ' + caidaNucleo(e).desde);
+      for (const t of ['SPY', 'EFA', 'EEM', 'IWM']) e.mercado.implicito.usa.precios[t] = [e.historico.series[t][n - 1] * 0.9, 0];
+      cerca(caidaNucleo(e).caida, 1 - 0.8 * 0.9, 1e-9, 'con el precio de hoy');
+    }],
+
+    ['Aporte extra: apagado por defecto; prendido, solo con excedente y caída suficiente', async () => {
+      si(aporteExtra(escenario({ activo: null })) === null && ajustesAporteExtra(escenario({ activo: null })).activo === false, 'apagado de fábrica');
+      const a = aporteExtra(escenario());
+      cerca(a.usd, 1000, 1e-6, 'la mitad del excedente'); cerca(a.caida, 0.2, 1e-9, 'caída');
+      si(/podés sumar USD\s1\.000 \(50% del excedente\) al núcleo/.test(a.texto) && /No vendas nada y seguí con tus aportes/.test(a.texto), a.texto);
+      si(aporteExtra(escenario({ caida: 0.1 })) === null, 'caída chica');
+      si(aporteExtra(escenario({ extra: -500 })) === null, 'sin excedente');
+      si(aporteExtra(escenario({ activo: false })) === null, 'apagado a mano');
+      cerca(aporteExtra(escenario({ caida: 0.1, ajustes: { caida: 0.08, parte: 0.25 } })).usd, 500, 1e-6, 'ajustes propios');
+      const conTope = escenario(); conTope.datos.reglas.find(r => r.id === 'R1').meses_exceso = 100;
+      si(aporteExtra(conTope) === null, 'si R1 no lo considera exceso, no sugiere');
+    }],
+
+    ['Aporte extra y clima: nunca cambian los pasos de Hoy ni las reglas', async () => {
+      const resumen = e => { const p = planificador(e, e.hoy); return [p.pasos.map(s => s.id + s.titulo), p.reglas.map(r => [r.id, r.nivel])]; };
+      igual(resumen(escenario()), resumen(escenario({ activo: false })), 'iguales con el aviso prendido o apagado');
+    }],
+  ];
+}
+
 export function pruebasRonda2() {
-  return [...etapa1(), ...etapa3(), ...etapa4()];
+  return [...etapa1(), ...etapa3(), ...etapa4(), ...etapa5()];
 }

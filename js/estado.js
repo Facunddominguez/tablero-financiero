@@ -166,6 +166,7 @@ export function aplicarEventos(base, eventosLocales = []) {
         break;
       }
       case 'objetivo_borrar': d.objetivos = (d.objetivos || []).filter(x => x.id !== e.ref); break;
+      case 'aporte_extra': d.aporte_extra = { ...d.aporte_extra, ...e.cambios }; break;
       case 'config': Object.assign(d.config, e.cambios); break;
       case 'perfil': Object.assign(d.perfil, e.cambios); break;
       case 'fecha_aporte': { // se busca por monto y fecha original; el índice queda como respaldo para eventos viejos
