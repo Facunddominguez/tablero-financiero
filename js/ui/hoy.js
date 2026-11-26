@@ -1,6 +1,6 @@
 // Pantalla Hoy: estado en una línea, próximos pasos e indicadores.
 import { h, fmt, fechas, aNumero } from '../util.js';
-import { dialogo, campo, entrada, boton, chip, medidor, dialogoCompras, signoClase, NIVEL, proximaFecha, botonPrecios } from './comun.js';
+import { dialogo, campo, entrada, boton, chip, medidor, dialogoCompras, signoClase, NIVEL, proximaFecha, botonPrecios, notaPrecios } from './comun.js';
 import { proyeccion } from '../motor.js';
 import { marcarPrediccion } from './diario.js';
 
@@ -84,6 +84,7 @@ function tarjetaPaso(ctx, paso, n) {
       h('h3', paso.titulo),
       h('p.paso-porque', paso.porque),
       paso.como.length ? h('ol.paso-como', paso.como.map(c => h('li', c))) : null,
+      paso.usaPrecios ? notaPrecios(ctx) : null,
       h('div.paso-botones',
         paso.informativo ? boton('Visto', visto, 'chico')
           : [boton('Hecho', () => hecho(ctx, paso), 'primario.chico'),

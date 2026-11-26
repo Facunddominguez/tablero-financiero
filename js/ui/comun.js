@@ -1,5 +1,6 @@
 // Piezas de interfaz compartidas: diálogos, campos, medidores y el registro de compras.
 import { h, fmt, fechas, aNumero, suma } from '../util.js';
+import { frescuraPrecios, avisoPrecioJusto } from '../precios.js';
 
 export function dialogo(titulo, cuerpo, { ancho } = {}) {
   const d = h('dialog.dialogo', ancho ? { style: `max-width:${ancho}` } : null,
@@ -49,6 +50,19 @@ export function tablaCompras(compras) {
     { titulo: compras.some(c => c.limite) ? 'Precio límite' : 'Precio', num: 1, celda: c => [precio(c, c.limite || c.precio), pantalla(c)] },
     { titulo: 'USD', num: 1, celda: c => fmt.num(c.monto_usd, 2) },
   ], compras, { pie: ['Total', '', '', fmt.num(suma(compras, c => c.monto_usd), 2)] });
+}
+
+// De cuándo son los precios con los que se calculó el límite y, si tienen más de una hora con la ventana abierta,
+// la sugerencia de actualizarlos antes de operar. null sin precios de mercado o sin precio justo posible.
+export function notaPrecios(ctx, alTerminar) {
+  const e = ctx.estado, f = e.ratios ? frescuraPrecios(e) : null;
+  const hayPrecioJusto = f && !avisoPrecioJusto(e);
+  if (!f || (!f.sugerir && !hayPrecioJusto)) return null;
+  return h('div.nota-precios',
+    hayPrecioJusto ? h('p.nota', `Precio justo y límite calculados con precios ${f.hora}.`) : null,
+    f.sugerir ? h('div.aviso.alerta',
+      h('p', `Esos precios tienen ${f.minutos < 120 ? `${f.minutos} minutos` : `más de ${Math.floor(f.minutos / 60)} horas`} y la ventana está abierta: tocá "Actualizar ahora" antes de operar.`),
+      ctx.permiso ? botonPrecios(ctx, alTerminar) : h('small', 'Para pedirlos desde acá, activá la sincronización (⋯ → Sincronizar).')) : null);
 }
 
 // Pide precios nuevos a GitHub. El texto lo mantiene al día app.js (data-precios) mientras dura el pedido.

@@ -4,7 +4,7 @@ import { costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, hi
 import { NOMBRE_GRUPO } from '../estado.js';
 import { riesgo } from '../riesgo.js';
 import { puntajePredicciones, compararFantasmas, contraReferencia, HORIZONTES } from '../diario.js';
-import { nuevaPrediccion, nuevaRotacion } from './diario.js';
+import { nuevaPrediccion, nuevaRotacion, borrarPrediccion, editarFantasma, borrarFantasma } from './diario.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase, parteRiesgo } from './comun.js';
 
 const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['trimestral', 'Trimestral'], ['diario', 'Predicciones y fantasmas'], ['anual', 'Anual para el contador'], ['allaria', 'Contraste con Allaria']];
@@ -88,8 +88,10 @@ function diario(ctx) {
   const abiertas = (d.predicciones || []).filter(x => typeof x.cumplio !== 'boolean').sort(orden);
   const cerradas = (d.predicciones || []).filter(x => typeof x.cumplio === 'boolean').sort(orden).reverse();
   const fantasmas = compararFantasmas(e);
+  const enlace = (txt, fn) => h('button.enlace.accion-fila', { type: 'button', onclick: fn }, txt);
   const columnas = [
-    { titulo: 'Predicción', celda: x => [x.ticker && !x.texto.includes(x.ticker) ? h('strong.num', x.ticker + ' ') : null, x.texto, h('small.desglose', `cambiaría de idea si: ${x.cambio}`)] },
+    { titulo: 'Predicción', celda: x => [x.ticker && !x.texto.includes(x.ticker) ? h('strong.num', x.ticker + ' ') : null, x.texto, h('small.desglose', `cambiaría de idea si: ${x.cambio}`),
+      h('span.acciones-fila.no-imprimir', enlace('Editar', () => nuevaPrediccion(ctx, '', x)), enlace('Borrar', () => borrarPrediccion(ctx, x)))] },
     { titulo: 'Prob.', num: 1, celda: x => fmt.pct(x.probabilidad, 0) },
     { titulo: 'Vence', num: 1, celda: x => [fmt.fecha(x.vence), typeof x.cumplio !== 'boolean' && x.vence <= e.hoy ? h('div', chip('Falta marcarla', 'alerta')) : null] },
   ];
@@ -115,8 +117,9 @@ function diario(ctx) {
       pedirSeries(fantasmas.faltan),
       fantasmas.grupos.map(g => h('div.fantasma-grupo',
         h('h3', `${g.nombre} · ${ORIGEN[g.origen] || g.origen} · desde el ${fmt.fecha(g.fecha)}`),
+        h('p.acciones-fila.no-imprimir', enlace('Editar', () => editarFantasma(ctx, g)), enlace('Borrar', () => borrarFantasma(ctx, g))),
         tabla([
-          { titulo: 'Ticker', celda: f => h('strong.num', f.ticker) },
+          { titulo: 'Ticker', celda: f => [h('strong.num', f.ticker), g.filas.length > 1 && g.filas.includes(f) ?h('span.acciones-fila.no-imprimir', enlace('Quitar', () => borrarFantasma(ctx, g, f.ticker))) : null] },
           ...HORIZONTES.map(n => ({ titulo: `${n} ${n === 1 ? 'mes' : 'meses'}`, num: 1, celda: f => contra(f.plazos[n], 'SPY') })),
           { titulo: 'Hasta hoy', num: 1, celda: f => contra(f.hoy, 'SPY') },
         ], g.promedio ? [...g.filas, { ticker: 'Promedio', ...g.promedio }] : g.filas))),

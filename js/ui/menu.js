@@ -2,7 +2,8 @@
 import { h, poner, fmt, aNumero } from '../util.js';
 import { fortaleza, generarFrase, bloqueo } from '../seguridad.js';
 import { enlacePermiso, enlacePermisoCron, LISTA_PERMISOS, urlDisparo, cuerpoDisparo } from '../sync.js';
-import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN, botonPrecios } from './comun.js';
+import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN, botonPrecios, notaPrecios } from './comun.js';
+import { paraVender, textoPrima, textoVentana, avisoPrecioJusto } from '../precios.js';
 import { esSobreCifrado } from '../cripto.js';
 import { esRespaldoPlano } from '../estado.js';
 import { nuevaPrediccion } from './diario.js';
@@ -139,11 +140,23 @@ function registrarMovimiento(ctx, inicial = 'dividendo') {
   const fFecha = entrada({ type: 'date', inputmode: null, value: e.hoy, max: e.hoy });
   const fUsd = entrada({ placeholder: '0,00' }), fCant = entrada({ inputmode: 'numeric' }), fPrecio = entrada(), fGastos = entrada({ value: '0' }), fMep = entrada({ value: fmt.num(e.mep, 2) });
   const cTicker = campo('Activo', fTicker), cUsd = campo('Monto (USD)', fUsd);
-  const venta = h('div', h('div.fila-campos', campo('Cantidad', fCant), campo('Precio $ por unidad', fPrecio)), h('div.fila-campos', campo('Gastos $', fGastos), campo('Dólar MEP', fMep)),
+  const justo = h('div.nota-precios');
+  const venta = h('div', justo, h('div.fila-campos', campo('Cantidad', fCant), campo('Precio $ por unidad', fPrecio)), h('div.fila-campos', campo('Gastos $', fGastos), campo('Dólar MEP', fMep)),
     h('p.nota', 'Antes de vender: la ida y vuelta no debería costar más de lo que fija la regla C2.'));
   const error = h('p.error', { role: 'alert' });
-  const ver = () => { const t = fTipo.value; venta.hidden = t !== 'venta'; cUsd.hidden = t === 'venta'; cTicker.hidden = t === 'aporte_historico'; };
-  fTipo.addEventListener('change', ver); ver();
+  // El precio justo de lo elegido, con la misma vara que en las compras.
+  const pintarJusto = () => {
+    const e = ctx.estado, p = e.posiciones.find(x => x.ticker === fTicker.value);
+    const j = p ? paraVender(e, p.ticker) : null;
+    poner(justo, !p ? null : j ? [
+      j.revisar ? aviso(`Revisá el ratio de ${p.ticker}: los precios no cierran y no hay precio justo.`, 'alerta')
+        : h('p.nota', `${textoVentana(e.feriados, e.hoy, { vender: true })} Precio justo de ${p.ticker}: ${fmt.ars(j.justo_ars)}; en pantalla ${fmt.ars(j.precio_ars)} (${textoPrima(j.prima)}). Límite sugerido para vender: ${fmt.ars(j.limite)}.`),
+      j.barato ? aviso(`Hoy ${p.ticker} está ${textoPrima(j.prima)} contra su precio justo: conviene esperar antes de vender.`, 'alerta') : null,
+      notaPrecios(ctx, pintarJusto),
+    ] : h('p.nota', `${textoVentana(e.feriados, e.hoy, { vender: true })} ${p.tipo === 'cedear' ? avisoPrecioJusto(e) || `Sin precio justo para ${p.ticker}.` : 'El precio justo es solo para CEDEARs.'}`));
+  };
+  const ver = () => { const t = fTipo.value; venta.hidden = t !== 'venta'; cUsd.hidden = t === 'venta'; cTicker.hidden = t === 'aporte_historico'; if (t === 'venta') pintarJusto(); };
+  fTipo.addEventListener('change', ver); fTicker.addEventListener('change', ver); ver();
   const d = dialogo('Registrar un movimiento', h('form.formulario', {
     onsubmit: async ev => {
       ev.preventDefault();
@@ -262,7 +275,9 @@ function fuentes(ctx) {
     ['Dólar implícito de cada CEDEAR', m.implicito?.ccl?.fuente === 'calculado' ? 'Calculado con precios de data912 y ratios de BYMA' : 'data912.com', m.implicito?.ccl?.actualizado, m.implicito?.ccl?.stale],
     ['Dólar MEP y contado con liqui de cada día', 'argentinadatos.com', e.historico?.canje?.actualizado, e.historico?.canje?.stale],
     ['Ratios de CEDEARs', 'BYMA, lista oficial', e.ratios_fecha],
+    ['Control de cambios de ratios', m.ratios_byma?.lista_fecha ? `Lista de BYMA del ${fmt.fecha(m.ratios_byma.lista_fecha)}` : 'Lista de BYMA', m.ratios_byma?.actualizado, m.ratios_byma?.stale],
     ['Feriados de EE.UU. y horario de BYMA', 'NYSE y BYMA', e.feriados?.consultado],
+    ['Feriados argentinos', 'argentinadatos.com y calendario de BYMA', e.feriados?.argentina?.actualizado, e.feriados?.argentina?.stale],
     ['Dólar MEP promedio por mes', 'argentinadatos.com', m.mep_mensual?.actualizado, m.mep_mensual?.stale],
     ['Inflación de EE.UU. (IPC mensual)', 'FRED, Reserva Federal de St. Louis (serie CPIAUCSL)', m.cpi_usa?.actualizado, m.cpi_usa?.stale],
     ['Compras de directivos', 'OpenInsider (formularios 4 de la SEC)', e.insiders?.actualizado, e.insiders?.stale],

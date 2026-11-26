@@ -2,7 +2,7 @@
 import { fechas, fmt, suma } from './util.js';
 import { costoEntradaLote, costosAnuales, brechaAportes, volatilidadReciente, ADR_DE_LOCAL } from './finanzas.js';
 import { tickersPropios } from './estado.js';
-import { precioJusto, precioLimite, primaMaxima, conDolares, dolaresEnCaja, textoVentana, porQueSeMovio, avisoPrecioJusto } from './precios.js';
+import { precioJusto, precioLimite, primaMaxima, conDolares, dolaresEnCaja, textoVentana, porQueSeMovio, avisoPrecioJusto, horaPrecios, paraVender, textoPrima } from './precios.js';
 
 const PRIORIDAD = { emergencia: 1, regla: 2, aporte: 3, flujo: 4, datos: 5, trimestral: 6, pendiente: 7, prediccion: 7, anual: 8, aviso: 9, senal: 10 };
 
@@ -232,7 +232,7 @@ export function repartirAporte(e, usd) {
   const tot0 = total();
   const salteados = activos.filter(a => a.caro && a.precio * (1 + c) <= ars && deficit(a, tot0) > -banda).map(a => ({
     ticker: a.t, prima: a.justo.prima, justo_ars: a.justo.justo_ars,
-    motivo: `Hoy salteá ${a.t}: está ${fmt.pct(a.justo.prima)} caro contra su precio justo (${fmt.ars(a.justo.justo_ars)}; en pantalla ${fmt.ars(a.precio)}). El máximo es ${fmt.pct(maxPrima)}.`,
+    motivo: `Hoy salteá ${a.t}: está ${fmt.pct(a.justo.prima)} caro contra su precio justo (${fmt.ars(a.justo.justo_ars)}; en pantalla ${fmt.ars(a.precio)}; precios ${horaPrecios(e)}). El máximo es ${fmt.pct(maxPrima)}.`,
   }));
   for (let i = 0; i < 100000; i++) {
     const tot = total();
@@ -249,6 +249,7 @@ export function repartirAporte(e, usd) {
   const compras = activos.filter(a => a.cant > 0).map(a => ({
     ticker: a.t, cantidad: a.cant, precio: a.precio, monto_ars: a.cant * a.precio, monto_usd: a.cant * a.precio / e.mep, gastos: Math.round(a.cant * a.precio * c * 100) / 100,
     justo_ars: a.justo?.justo_ars ?? null, prima: a.justo?.prima ?? null, limite: a.justo ? precioLimite(e, a.justo.justo_ars, a.precio) : null,
+    hora: a.justo ? horaPrecios(e) : null,
     revisar: !!a.j?.revisar,
   }));
   const invertido = suma(compras, x => x.monto_usd);
@@ -260,13 +261,22 @@ export function repartirAporte(e, usd) {
   };
 }
 
-const caro = p => `${fmt.pct(Math.abs(p))} ${p >= 0 ? 'caro' : 'barato'}`;
 // Una línea por compra, con el precio límite que sale del precio justo (o el de pantalla si no se puede calcular).
 export function textoCompra(c) {
-  if (c.moneda === 'USD') return `Comprá ${fmt.cant(c.cantidad)} ${c.especie} con tus dólares · orden límite a ${c.limite ? '' : '≈ '}USD ${fmt.num(c.limite || c.precio, 2)} · plazo 24 hs (es ${c.ticker} en dólares: no sale más cara que en pesos)`;
+  const cuando = c.limite && c.hora ? `; precios ${c.hora}` : '';
+  if (c.moneda === 'USD') return `Comprá ${fmt.cant(c.cantidad)} ${c.especie} con tus dólares · orden límite a ${c.limite ? '' : '≈ '}USD ${fmt.num(c.limite || c.precio, 2)} · plazo 24 hs (es ${c.ticker} en dólares: no sale más cara que en pesos${cuando})`;
   const base = `Comprá ${fmt.cant(c.cantidad)} ${c.ticker} · orden límite a ${c.limite ? '' : '≈ '}${fmt.ars(c.limite || c.precio)} · plazo 24 hs`;
-  if (c.limite) return `${base} (precio justo ${fmt.ars(c.justo_ars)}; en pantalla ${fmt.ars(c.precio)}, ${caro(c.prima)})`;
+  if (c.limite) return `${base} (precio justo ${fmt.ars(c.justo_ars)}; en pantalla ${fmt.ars(c.precio)}, ${textoPrima(c.prima)}${cuando})`;
   return c.revisar ? `${base}. Antes revisá el ratio de ${c.ticker}: los precios no cierran y no hay precio justo` : base;
+}
+// Lo mismo para una venta: ventana, límite desde el precio justo y, si está barato, que conviene esperar.
+export function comoVender(e, p, cantidad) {
+  const j = paraVender(e, p.ticker), base = `Vendé ${fmt.cant(cantidad)} ${p.ticker} · orden límite a ${j?.limite ? '' : '≈ '}${fmt.ars(j?.limite || p.precio_ars)} · plazo 24 hs`;
+  const linea = !j ? base : j.revisar ? `${base}. Antes revisá el ratio de ${p.ticker}: los precios no cierran y no hay precio justo`
+    : `${base} (precio justo ${fmt.ars(j.justo_ars)}; en pantalla ${fmt.ars(j.precio_ars)}, ${textoPrima(j.prima)}; precios ${j.hora})`;
+  return [textoVentana(e.feriados, e.hoy, { vender: true }), linea,
+    j?.barato ? `Hoy ${p.ticker} está ${textoPrima(j.prima)} contra su precio justo: esperá a que se acomode antes de vender` : null,
+    p.tipo === 'cedear' ? avisoPrecioJusto(e) : null].filter(Boolean);
 }
 // La ventana, las compras, lo salteado por precio y, si no hay precio justo por el horario, por qué.
 const comoComprar = (e, hoy, rep) => [textoVentana(e.feriados, hoy), ...rep.compras.map(textoCompra), ...(rep.salteados || []).map(s => s.motivo), avisoPrecioJusto(e)].filter(Boolean);
@@ -362,7 +372,8 @@ export function planificador(e, hoy = e.hoy) {
       agregar({
         id: `duro-${p.ticker}-${mes}`, tipo: 'regla', titulo: `Reducí ${p.ticker}: vendé ${fmt.cant(vender)} unidades`,
         porque: `Regla ${id}: ${p.ticker} pesa ${fmt.pct(p.pct_lp)} de LP y el tope duro es ${fmt.pct(r.duro, 0)}. Es la única regla que pide vender.`,
-        como: [r.antes_de_vender || 'Revisá el costo de ida y vuelta antes de vender', `Vendé ${fmt.cant(vender)} ${p.ticker} · orden límite a ≈ ${fmt.ars(p.precio_ars)} · plazo 24 hs`, 'Con lo que entre, comprá núcleo (aparece como paso cuando registres la venta)', 'Registrá la venta en ⋯ → Registrar cobro o venta'],
+        como: [r.antes_de_vender || 'Revisá el costo de ida y vuelta antes de vender', ...comoVender(e, p, vender), 'Con lo que entre, comprá núcleo (aparece como paso cuando registres la venta)', 'Registrá la venta en ⋯ → Registrar cobro o venta'],
+        usaPrecios: true,
       });
     }
   }
@@ -389,6 +400,7 @@ export function planificador(e, hoy = e.hoy) {
         como: [`Transferí ${fmt.usd(paraNucleo)} a Balanz (≈ ${fmt.ars(paraNucleo * e.mep)})`, ...comoComprar(e, hoy, rep),
           `Costo estimado ${fmt.usd(rep.costo_usd, 2)} (${fmt.pct(rep.costo_pct, 2)}) · sobran ≈ ${fmt.usd(rep.sobrante_usd, 2)} en caja`],
         accion: { tipo: 'aporte', usd: paraNucleo, compras: rep.compras, extra: cierre ? null : { destino: '#aportar/mes', etiqueta: 'Calcular con el extracto' } },
+        usaPrecios: true,
       });
     }
   }
@@ -420,6 +432,7 @@ export function planificador(e, hoy = e.hoy) {
       titulo: rep.compras.length ? `Reinvertí ${fmt.usd(rep.invertido_usd)} de caja en el núcleo` : `Reinvertí ${fmt.usd(e.caja_usd)} de caja: hoy conviene esperar`,
       porque: `Hay ${fmt.usd(e.caja_usd, 2)} sin invertir en la cuenta (cupones, dividendos o sobrantes). Cupones y dividendos van al núcleo.`,
       como: comoComprar(e, hoy, rep), accion: rep.compras.length ? { tipo: 'compra', usd: e.caja_usd, compras: rep.compras } : undefined,
+      usaPrecios: true,
     });
   }
 
@@ -492,6 +505,21 @@ export function planificador(e, hoy = e.hoy) {
       id: `insider-${t}-${f.fecha}`, tipo: 'senal', informativo: true, etiqueta, titulo: `Compras de directivos en ${t}`,
       porque: `${f.insiders} directivos compraron por ${fmt.usd(f.monto)} el ${fmt.fecha(f.fecha)}; ${donde(t)}. Fuente: OpenInsider.${soloObs ? ' Regla R7 activa: no se abren tesis nuevas.' : ''}`,
     });
+  }
+
+  // BYMA publicó otro ratio para algo que usás: se avisa con el valor nuevo; el del tablero no se cambia solo.
+  const byma = e.mercado?.ratios_byma;
+  if (byma?.cambios) {
+    const uso = new Set([...Object.keys(d.nucleo.pesos_internos), ...e.posiciones.filter(p => p.tipo === 'cedear').map(p => p.ticker), ...watch]);
+    const num = v => fmt.num(v, Number.isInteger(v) ? 0 : 3);
+    for (const [t, [viejo, nuevo]] of Object.entries(byma.cambios)) {
+      if (!uso.has(t)) continue;
+      agregar({
+        id: `ratio-${t}-${nuevo}`, tipo: 'aviso', informativo: true, etiqueta: 'Ratio de CEDEAR',
+        titulo: `Cambió el ratio de ${t}: BYMA dice ${num(nuevo)} y el tablero usa ${num(viejo)}`,
+        porque: `Según la lista de BYMA del ${fmt.fecha(byma.lista_fecha)}. Mientras no se actualice en el tablero, no pone límite con el precio justo de ${t}. Confirmá en tu broker cuántos CEDEAR tenés.`,
+      });
+    }
   }
 
   for (const mv of movimientosFuertes(e)) {

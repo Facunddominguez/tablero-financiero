@@ -92,6 +92,7 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
       anios: [2026, 2027], feriados: { '2026-11-26': 'Acción de Gracias', '2026-12-25': 'Navidad' }, medias_ruedas: { '2026-11-27': 'día después de Acción de Gracias', '2026-12-24': 'Nochebuena' },
       byma: { horarios: [{ desde: '2026-11-02', apertura: '10:30', cierre: '18:00' }, { desde: '2027-03-14', apertura: '10:30', cierre: '17:00', confirmado: false }] },
     },
+    feriadosAr: { anios: [2026, 2027], feriados: { '2026-12-07': { nombre: 'Puente turístico no laborable', tipo: 'puente' }, '2026-12-08': { nombre: 'Inmaculada Concepción de María', tipo: 'inamovible' }, '2026-12-25': { nombre: 'Navidad', tipo: 'inamovible' } } },
     calendario: { flujos: [{ ticker: 'ON1', fecha: '2027-01-14', tipo: 'cupon', moneda: 'USD', por_vn: 0.04, detalle: 'Cupón de ejemplo' }] },
     insiders: { filas: [] },
   };

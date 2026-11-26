@@ -1,3 +1,5 @@
 # Dependencias del Action de mercado. Rango acotado: no salta solo a una versión mayor nueva.
 # Para actualizar: cambiar el rango acá y revisar que la corrida siga diciendo "ok usd + historico".
 yfinance>=1.6,<2
+# Para leer la lista de CEDEARs de BYMA (PDF) y avisar si cambió un ratio.
+pypdf>=6,<7

@@ -212,6 +212,107 @@ def canje_en_historico():
     assert nuevo["series"]["MEP"] == r["series"]["MEP"] + [None], "conserva lo anterior"
 
 
+# ---------- ronda 2 ----------
+
+def red_feriados(cambios=None):
+    mapa = {"feriados/2026": grabada("argentinadatos_feriados_2026.json"), "feriados/2027": grabada("argentinadatos_feriados_2027.json")}
+    mapa.update(cambios or {})
+    red_grabada(mapa)
+
+
+def con_anio(fn):
+    """Fija "hoy" para que las pruebas no dependan del año en que corren."""
+    def envuelta():
+        real = mercado.hoy_argentina
+        mercado.hoy_argentina = lambda: "2026-11-26"
+        try:
+            fn()
+        finally:
+            mercado.hoy_argentina = real
+    return envuelta
+
+
+def feriados_grabados():
+    red_feriados()
+    r = mercado.feriados_ar({})
+    assert r["anios"] == [2026, 2027], r["anios"]
+    assert r["feriados"]["2026-12-08"]["tipo"] == "inamovible" and r["feriados"]["2026-12-07"]["tipo"] == "puente", r["feriados"]["2026-12-07"]
+    assert list(r["feriados"]) == sorted(r["feriados"]), "ordenado"
+
+
+def feriados_sin_el_anio_que_viene():
+    red_feriados()
+    previo = mercado.feriados_ar({})
+    red_feriados({"feriados/2027": RuntimeError("404")})
+    r = mercado.feriados_ar(previo)
+    assert r["anios"] == [2026, 2027] and r["feriados"]["2027-12-08"], "conserva el año que ya tenía"
+    assert mercado.feriados_ar({})["anios"] == [2026], "sin el que viene sigue andando"
+
+
+def feriados_si_falla_conserva():
+    red_feriados()
+    previo = mercado.feriados_ar({})
+    red_feriados({"feriados/2026": "[]"})
+    r = mercado.seccion("feriados_ar", previo, lambda: mercado.feriados_ar(previo))
+    assert r["stale"] is True and r["feriados"] == previo["feriados"], r.get("error")
+
+
+def lista_byma():
+    pagina = grabada("byma_pagina_cedears.html")
+    fecha, url = mercado.enlace_lista_byma(pagina + ' <a href="https://cdn.example/x_BYMA-CEDEARs-2025-01-02.pdf">vieja</a>')
+    assert fecha == "2026-11-19" and url.endswith("_BYMA-CEDEARs-2026-11-19.pdf"), (fecha, url)
+    lista = mercado.leer_lista_byma(grabada("byma_cedears_texto.txt"))
+    assert len(lista) > 400 and lista["SPY"] == {60.0} and lista["ABEV"] == {0.333333}, len(lista)
+    assert lista["ATAD"] == {4.0}, "las filas de Londres vienen partidas"
+    assert lista["XLU"] == {10.0, 15.0}, "la lista de BYMA repite XLU con dos valores"
+    propio = json.loads((GRABADAS.parent / "cedear_ratios.json").read_text(encoding="utf-8"))["ratios"]
+    assert mercado.comparar_ratios(propio, lista) == {}, mercado.comparar_ratios(propio, lista)
+
+
+def ratios_cambiados():
+    original = grabada("byma_cedears_texto.txt")
+    assert "NVDA NASDAQ 24:1" in original
+    propio = json.loads((GRABADAS.parent / "cedear_ratios.json").read_text(encoding="utf-8"))["ratios"]
+    cambios = mercado.comparar_ratios(propio, mercado.leer_lista_byma(original.replace("NVDA NASDAQ 24:1", "NVDA NASDAQ 48:1")))
+    assert cambios == {"NVDA": [24, 48.0]}, cambios
+    try:
+        mercado.comparar_ratios(propio, mercado.leer_lista_byma("formato nuevo\nSPY NYSE 20:1"))
+    except RuntimeError:
+        return
+    raise AssertionError("si no reconoce la lista tiene que fallar")
+
+
+def ratios_byma_completo():
+    mercado.bajar = lambda url, **k: grabada("byma_pagina_cedears.html")
+    mercado.bajar_bytes = lambda url, **k: b"%PDF"
+    real, mercado.texto_pdf = mercado.texto_pdf, lambda contenido: grabada("byma_cedears_texto.txt")
+    try:
+        r = mercado.ratios_byma()
+    finally:
+        mercado.texto_pdf = real
+    assert r["cambios"] == {} and r["lista_fecha"] == "2026-11-19" and r["archivo_fecha"], r
+    mercado.bajar = lambda url, **k: "<html>sin enlace</html>"
+    s = mercado.seccion("ratios_byma", r, mercado.ratios_byma)
+    assert s["stale"] is True and s["lista_fecha"] == "2026-11-19", s
+
+
+def una_vez_por_dia():
+    llamadas = []
+    fn = lambda: llamadas.append(1) or {"x": 2}  # noqa: E731
+    fresco = {"x": 1, "stale": False, "actualizado": mercado.ahora()}
+    assert mercado.seccion_diaria("n", fresco, fn) == fresco and not llamadas, "hoy ya se pidió"
+    assert mercado.seccion_diaria("n", dict(fresco, stale=True), fn)["x"] == 2, "si quedó viejo se vuelve a pedir"
+    assert mercado.seccion_diaria("n", dict(fresco, actualizado="2020-01-01T00:00:00Z"), fn)["x"] == 2
+    assert mercado.seccion_diaria("n", fresco, fn, vigente=lambda a: False)["x"] == 2, "cambió algo que lo invalida"
+
+
+prueba("Feriados argentinos: este año y el que viene, con su tipo", con_anio(feriados_grabados))
+prueba("Feriados argentinos: si el año que viene no está publicado, sigue con lo que hay", con_anio(feriados_sin_el_anio_que_viene))
+prueba("Feriados argentinos: una respuesta rota conserva lo anterior marcado como viejo", con_anio(feriados_si_falla_conserva))
+prueba("Ratios de BYMA: encuentra la lista nueva, la lee y coincide con el archivo", lista_byma)
+prueba("Ratios de BYMA: informa los que cambiaron y falla si cambia el formato", ratios_cambiados)
+prueba("Ratios de BYMA: sin enlace conserva lo anterior", ratios_byma_completo)
+prueba("Lo que cambia poco se pide una vez por día", una_vez_por_dia)
 prueba("Precios de EE.UU.: data912 y, para los ETF que no trae, yfinance", usa_con_etf)
 prueba("Precios de EE.UU.: sin los ETF del núcleo se conserva lo anterior", usa_sin_nucleo_falla)
 prueba("Dólar implícito: si data912 viene vacío se calcula con los ratios oficiales", ccl_calculado_si_viene_vacio)

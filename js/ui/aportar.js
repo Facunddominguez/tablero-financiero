@@ -2,7 +2,7 @@
 import { h, poner, fmt, fechas, aNumero } from '../util.js';
 import { repartirAporte, aporteDelMes } from '../motor.js';
 import { conDolares, dolaresEnCaja, textoVentana, avisoPrecioJusto } from '../precios.js';
-import { dialogoCompras, boton, aviso, tablaCompras } from './comun.js';
+import { dialogoCompras, boton, aviso, tablaCompras, notaPrecios } from './comun.js';
 import { vistaMes, entradaMes } from './mes.js';
 
 let moneda = 'USD', texto = null, deCaja = false, sugerido = null;
@@ -31,6 +31,7 @@ export function vistaAportar(ctx, sub) {
     poner(salida,
       h('p.nota.ventana', [textoVentana(e.feriados, e.hoy), avisoPrecioJusto(e)].filter(Boolean).join(' ')),
       tablaCompras(r.compras),
+      notaPrecios(ctx),
       r.compras.some(c => c.revisar) ? aviso(`Revisá el ratio de ${r.compras.filter(c => c.revisar).map(c => c.ticker).join(', ')}: los precios no cierran y no hay precio justo.`, 'alerta') : null,
       salteados,
       h('div.resumen',

@@ -38,6 +38,14 @@
     "horarios": [
       { "desde": "2026-11-02", "apertura": "10:30", "cierre": "18:00" },
       { "desde": "2027-03-14", "apertura": "10:30", "cierre": "17:00", "confirmado": false }
-    ]
+    ],
+    "excepciones": {
+      "fuente": "BYMA, Calendario bursátil",
+      "url": "https://www.byma.com.ar/mercado/calendario-bursatil",
+      "consultado": "2026-11-26",
+      "nota": "Lo que el calendario de BYMA agrega a los feriados argentinos: días sin rueda y días con rueda pero sin liquidación. Los feriados con fines turísticos (\"puente\") tienen rueda sin liquidación.",
+      "sin_rueda": { "2026-12-31": "sin rueda por decisión de BYMA" },
+      "sin_liquidacion": { "2026-12-24": "Nochebuena" }
+    }
   }
 }
