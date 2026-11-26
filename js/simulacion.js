@@ -5,7 +5,7 @@
 // correlación; después entra el aporte al núcleo, primero a lo más atrasado. No se vende nada.
 import { fechas, fmt, suma } from './util.js';
 import { proyeccion } from './motor.js';
-import { itemsDeRiesgo, medida, parametros, valores } from './riesgo.js';
+import { itemsDeRiesgo, medida, parametros, valores, historiaRiesgo } from './riesgo.js';
 import { supuestos } from './supuestos.js';
 
 export const ESCENARIOS = 2000, SEMILLA = 20261126, HORIZONTE_MESES = 240, MESES_ABANICO = 60;
@@ -85,7 +85,7 @@ export function raizCorrelacion(C) {
 export function modelo(e) {
   const s = supuestos(e);
   if (!s.retornos_etf || !s.acciones || !s.otros) return null;
-  const par = parametros(e), hist = e.historico, largo = e.largo_plazo, escala = s.escala_volatilidad ?? 1;
+  const par = parametros(e), hist = e.historico ? historiaRiesgo(e) : null, largo = e.largo_plazo, escala = s.escala_volatilidad ?? 1;
   const base = itemsDeRiesgo(e, { conEmergencia: true });
   // los ETF del núcleo que todavía no tenés también reciben aportes
   for (const t of Object.keys(e.datos.nucleo.pesos_internos)) if (!base.some(x => x.ticker === t)) {

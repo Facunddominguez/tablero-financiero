@@ -17,4 +17,11 @@ export const EDITABLES = [
   ['retornos_etf', 'Retorno anual esperado de los ETF', [['SPY', 'SPY (%)', 'pct'], ['EFA', 'EFA (%)', 'pct'], ['EEM', 'EEM (%)', 'pct'], ['IWM', 'IWM (%)', 'pct']]],
   ['acciones', 'Acciones sueltas', [['tasa_libre', 'Tasa libre de riesgo (%)', 'pct'], ['prima_mercado', 'Prima de mercado (%)', 'pct']]],
   ['otros', 'Lo demás, retorno anual en dólares', [['on', 'Obligaciones negociables (%)', 'pct'], ['fci_usd', 'Fondos en dólares (%)', 'pct'], ['caja_usd', 'Dólares sin invertir (%)', 'pct'], ['pesos', 'Pesos (%)', 'pct']]],
+  ['semaforo', 'Semáforo argentino', [
+    ['riesgo_pais.amarillo', 'Riesgo país: amarillo desde', 'num'], ['riesgo_pais.rojo', 'Riesgo país: rojo desde', 'num'],
+    ['canje.amarillo', 'Canje: amarillo desde (%)', 'pct'], ['canje.rojo', 'Canje: rojo desde (%)', 'pct'],
+    ['brecha.amarillo', 'Brecha: amarillo desde (%)', 'pct'], ['brecha.rojo', 'Brecha: rojo desde (%)', 'pct'],
+    ['adr.amarillo', 'Acciones contra SPY: amarillo (%)', 'pct'], ['adr.rojo', 'Acciones contra SPY: rojo (%)', 'pct'],
+  ]],
+  ['elecciones', 'Elección 2027', [['diferencia', 'Avisar si los mercados difieren (%)', 'pct']]],
 ];

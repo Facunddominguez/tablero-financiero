@@ -13,6 +13,7 @@ const pruebasArchivos = [
     for (const [g, v] of Object.entries(s)) if (g !== 'nota' && (!v.fuente || !/^\d{4}-\d{2}-\d{2}$/.test(v.fecha))) throw new Error('sin fuente o fecha: ' + g);
     for (const [t, r] of [['SPY', 0.058], ['EFA', 0.063], ['EEM', 0.047], ['IWM', 0.058]]) if (s.retornos_etf[t] !== r) throw new Error(`${t}: punto medio de Vanguard al 30/09/2026`);
     if (!(s.acciones.tasa_libre > 0.02 && s.acciones.tasa_libre < 0.08 && s.acciones.prima_mercado > 0.02 && s.acciones.prima_mercado < 0.08)) throw new Error('tasa y prima fuera de rango');
+    for (const [k, u] of Object.entries(s.semaforo)) if (u.rojo != null && !(k === 'adr' ? u.rojo < u.amarillo : u.rojo > u.amarillo)) throw new Error('umbrales al revés: ' + k);
   }],
   ['Feriados de EE.UU.: 2026 y 2027 con fuente, en días de semana y sin superponerse', async () => {
     const c = leer('../data/feriados_eeuu.json');

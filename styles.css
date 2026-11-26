@@ -127,6 +127,11 @@ h2.sub { margin-top: 2rem; }
 .medidor-valor { position: absolute; inset-block: 0; left: 0; border-radius: 3px; background: var(--acento); }
 .medidor-valor.alerta { background: var(--alerta); } .medidor-valor.mal { background: var(--mal); }
 .medidor-obj { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: var(--tinta); border-radius: 1px; box-shadow: 0 0 0 2px var(--papel); }
+.lineas-contexto { border-top: 1px solid var(--linea-fuerte); }
+.linea-contexto { display: grid; grid-template-columns: 1.1rem 1fr; gap: .6rem; padding: .75rem 0; border-bottom: 1px solid var(--linea); font-size: .93rem; }
+.lineas-contexto + .lista-pasos { border-top: 0; }
+.punto { width: .7rem; height: .7rem; border-radius: 50%; margin-top: .42rem; background: var(--tinta-3); }
+.punto.ok { background: var(--ok); } .punto.alerta { background: var(--alerta); } .punto.mal { background: var(--mal); }
 .vigentes { margin-top: 3rem; }
 .vigentes h2 { margin-bottom: .3rem; }
 .vigentes ul { margin-top: .9rem; border-top: 1px solid var(--linea); }

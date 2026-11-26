@@ -1,6 +1,7 @@
 // Riesgo por bloque: cuánto se mueve cada cosa y cómo se mueven juntas, según el histórico. Puro.
-import { suma } from './util.js';
+import { suma, fechas } from './util.js';
 import { ADR_DE_LOCAL, serieDe } from './finanzas.js';
+import { cuotapartes, valorEn } from './series.js';
 import { NOMBRE_GRUPO } from './estado.js';
 
 // Todo editable desde los datos (clave "riesgo"). Las volatilidades son anuales.
@@ -59,6 +60,35 @@ function peorMes(v) {
   return c.length < 2 ? null : Math.min(...c.slice(1).map((x, i) => x / c[i] - 1));
 }
 
+// El histórico más una serie propia para cada fondo en pesos, "FCI:<ticker>": su cuotaparte pasada a dólares MEP,
+// así cuenta el interés que cobra. Sin cuotapartes, el dólar MEP más la tasa de plazo fijo de cada momento.
+const historias = new WeakMap();
+export function historiaRiesgo(e) {
+  if (historias.has(e)) return historias.get(e);
+  const hist = e.historico, mep = hist?.series?.MEP, series = {};
+  const pf = e.argentina?.plazo_fijo, tasas = pf?.fechas?.map((f, i) => [f, pf.valores[i]]) || [];
+  for (const p of mep ? e.datos.posiciones : []) {
+    if (p.tipo !== 'fci' || p.moneda_precio === 'USD') continue;
+    const cuotas = cuotapartes(e, p.fci_nombre);
+    let s = hist.fechas.map((f, i) => { const v = valorEn(cuotas, f); return v > 0 && mep[i] > 0 ? v / mep[i] : null; });
+    if (s.filter(v => v > 0).length <= 20) {
+      if (!tasas.length) continue;
+      let acumulado = 1, k = 0;
+      s = hist.fechas.map((f, i) => {
+        if (i > 0) {
+          while (k + 1 < tasas.length && tasas[k + 1][0] <= hist.fechas[i - 1]) k++;
+          acumulado *= 1 + tasas[k][1] * fechas.dias(hist.fechas[i - 1], f) / 365;
+        }
+        return mep[i] > 0 ? acumulado / mep[i] : null;
+      });
+    }
+    series['FCI:' + p.ticker] = s;
+  }
+  const out = Object.keys(series).length ? { ...hist, series: { ...hist.series, ...series } } : hist;
+  historias.set(e, out);
+  return out;
+}
+
 // Una serie sirve si tiene al menos un mes de precios.
 const conHistoria = (hist, t) => (t === 'MEP' ? hist?.series?.MEP : serieDe(hist, t))?.filter(v => v > 0).length > 20;
 const enPesos = hist => conHistoria(hist, 'MEP') ? { serie: 'MEP' } : { fija: 'sin_serie' };
@@ -73,13 +103,14 @@ export function medida(p, hist, par) {
     const t = [p.subyacente, ADR_DE_LOCAL[p.ticker], p.ticker].find(x => x !== 'MEP' && conHistoria(hist, x));
     return t ? { serie: t } : { fija: 'sin_serie' };
   }
+  if (p.tipo === 'fci' && conHistoria(hist, 'FCI:' + p.ticker)) return { serie: 'FCI:' + p.ticker };
   return enPesos(hist); // todo lo demás en pesos
 }
 
 // Cada cosa de la cartera (y la caja) con lo que la mide: { ticker, grupo, tipo, moneda, usd, argentino, serie | fija }.
 // La emergencia solo entra si se pide.
 export function itemsDeRiesgo(e, { conEmergencia = false } = {}) {
-  const hist = e.historico, par = parametros(e), base = new Map(e.datos.posiciones.map(p => [p.ticker, p]));
+  const hist = historiaRiesgo(e), par = parametros(e), base = new Map(e.datos.posiciones.map(p => [p.ticker, p]));
   const items = e.posiciones.filter(p => conEmergencia || p.grupo !== 'emergencia').map(p => ({
     ticker: p.ticker, grupo: p.grupo, tipo: p.tipo, moneda: p.moneda, usd: p.valor_usd,
     argentino: !!base.get(p.ticker)?.riesgo_ar || p.tipo === 'accion_ar' || p.grupo === 'ypf',
@@ -96,8 +127,8 @@ export function itemsDeRiesgo(e, { conEmergencia = false } = {}) {
 // Riesgo de la cartera de largo plazo (todo menos la emergencia, con la caja). null si no hay histórico.
 // { valor, sigma_mes, mes_malo_usd, mes_malo_pct, posiciones, bloques, escenarios, correlaciones, sin_serie, supuestos }
 export function riesgo(e) {
-  const hist = e.historico;
-  if (!hist?.fechas?.length || !(e.lp_usd > 0)) return null;
+  if (!e.historico?.fechas?.length || !(e.lp_usd > 0)) return null;
+  const hist = historiaRiesgo(e);
   const par = parametros(e), items = itemsDeRiesgo(e);
 
   const V = suma(items, x => x.usd);
@@ -155,7 +186,8 @@ export function riesgo(e) {
   const supuestos = [
     items.some(x => x.fija === 'fci_usd') ? `Los fondos en dólares se miden con una volatilidad fija de ${pct(par.vol_fija.fci_usd)} por año.` : null,
     items.some(x => x.fija === 'on') ? `Las obligaciones negociables, con una fija de ${pct(par.vol_fija.on)} por año.` : null,
-    items.some(x => x.serie === 'MEP') ? 'Lo que está en pesos se mueve con el dólar MEP (sin contar el interés que cobra).' : null,
+    items.some(x => x.serie?.startsWith('FCI:')) ? 'Los fondos en pesos se miden con su cuotaparte pasada a dólares MEP, así que incluyen el interés.' : null,
+    items.some(x => x.serie === 'MEP') ? 'La caja en pesos (y lo que no tiene cuotaparte) se mueve con el dólar MEP, sin interés.' : null,
     sinSerie.length ? `Sin historia de precios: ${sinSerie.join(', ')}. Se les supone ${pct(par.vol_fija.sin_serie)} por año; para medirlos, sumalos a historico_extra en tools/mercado_config.json.` : null,
     'Lo que tiene volatilidad fija se supone sin relación con el resto.',
   ].filter(Boolean);

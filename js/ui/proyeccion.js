@@ -111,7 +111,7 @@ function seccionObjetivos(ctx, sim) {
 // ---------- supuestos a la vista ----------
 function seccionSupuestos(ctx, sim) {
   const s = supuestos(ctx.estado), m = sim.modelo;
-  const grupos = EDITABLES.filter(([g]) => s[g]);
+  const grupos = EDITABLES.filter(([g]) => s[g] && ['retornos_etf', 'acciones', 'otros'].includes(g));
   const origen = { largo: 'meses desde 2005', diario: 'últimos 2 años', fija: 'supuesto' };
   return sec('Supuestos (no son pronósticos)',
     h('ul.lista-simple.supuestos', grupos.map(([g, titulo, campos]) => h('li',

@@ -8,6 +8,8 @@ import { compararFantasmas, puntajePredicciones } from './diario.js';
 import { fusionar } from './sync.js';
 import { ejemplo } from './ejemplo.js';
 import { aNumero, fmt } from './util.js';
+import { semaforoArgentina, textoSemaforo, eleccion, claveCandidato, reservaEnPesos } from './argentina.js';
+import { riesgo, historiaRiesgo } from './riesgo.js';
 
 export const cerca = (a, b, tol, que) => { if (!(Math.abs(a - b) <= tol)) throw new Error(`${que}: dio ${a}, esperado ≈ ${b}`); };
 export const igual = (a, b, que) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${que}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`); };
@@ -237,7 +239,8 @@ function etapa3() {
       cerca(de('NVDA').deriva, Math.log(1.13) - de('NVDA').vol ** 2 / 2, 1e-9, 'el promedio se corrige por volatilidad');
       si(de('PAMP').beta === 1 && f(de('PAMP')).origen === 'fija' && de('PAMP').vol === 0.35, JSON.stringify(de('PAMP')));
       si(de('ON1').vol === 0.08 && de('FCID').vol === 0.03 && de('FCID').retorno === 0.04 && de('Caja en dólares').vol === 0, 'ON, fondos y caja');
-      si(f(de('FCIP')).id === 'MEP' && f(de('Caja en pesos')) === f(de('FCIP')), 'los pesos se mueven juntos con el MEP');
+      si(f(de('FCIP')).id === 'FCI:FCIP' && f(de('Caja en pesos')).id === 'MEP', 'el fondo en pesos con su cuotaparte; la caja, con el MEP');
+      si(m.correlaciones[de('FCIP').factor][de('Caja en pesos').factor] > 0.9, 'se mueven casi juntos');
       cerca(m.correlaciones[de('NVDA').factor][de('SPY').factor], 1, 0.01, 'correlación diaria');
     }],
 
@@ -286,6 +289,99 @@ function etapa3() {
   ];
 }
 
+function etapa4() {
+  // Un mundo tranquilo, con acciones argentinas que se mueven igual que SPY.
+  const calmo = (x, cambios = {}) => {
+    const h = x.ext.historico.series;
+    h.YPF = h.SPY.map(v => v / 10); h.PAM = h.SPY.map(v => v / 5);
+    Object.assign(x.ext.mercado.fx, { mep: 1000, ccl: 1030, oficial: 960 }, cambios.fx);
+    x.ext.argentina.riesgo_pais.ultimo.valor = cambios.riesgo ?? 650;
+    if (cambios.adr) h.PAM = h.PAM.map((v, i) => i >= h.PAM.length - 5 ? v * (1 + cambios.adr) : v);
+  };
+  const sem = cambios => semaforoArgentina(mundo({ ajustar: x => calmo(x, cambios) }).e);
+  return [
+    ['Semáforo argentino: toma el peor de los cuatro y dice cuál lo puso así', async () => {
+      const verde = sem();
+      si(verde.color === 'verde' && !verde.por.length && !verde.sugerencia && /Argentina en verde/.test(textoSemaforo(verde)), JSON.stringify(verde.indicadores));
+      igual(verde.indicadores.map(i => i.id), ['riesgo_pais', 'canje', 'brecha', 'adr'], 'los cuatro');
+      cerca(verde.indicadores[1].valor, 0.03, 1e-9, 'canje'); cerca(verde.indicadores[2].valor, 1000 / 960 - 1, 1e-9, 'brecha'); cerca(verde.indicadores[3].valor, 0, 1e-9, 'contra SPY');
+      const amarillo = sem({ fx: { oficial: 880 } });
+      si(amarillo.color === 'amarillo' && amarillo.por.map(i => i.id).join() === 'brecha' && !amarillo.sugerencia && /lo pone así brecha \(13,6%\)/.test(textoSemaforo(amarillo)), textoSemaforo(amarillo));
+      const rojo = sem({ fx: { oficial: 880 }, riesgo: 1600 });
+      si(rojo.color === 'rojo' && rojo.por.map(i => i.id).join() === 'riesgo_pais', textoSemaforo(rojo));
+      si(/R6B/.test(rojo.sugerencia) && /parte en pesos de la reserva/.test(rojo.sugerencia) && /No hay que hacer nada automáticamente/.test(rojo.sugerencia), rojo.sugerencia);
+      const dos = sem({ riesgo: 900, fx: { ccl: 1070 } });
+      si(dos.color === 'amarillo' && /ponen así riesgo país \(900\) y canje/.test(textoSemaforo(dos)), textoSemaforo(dos));
+      const adr = sem({ adr: -0.4 }); // PAM −40% y YPF igual a SPY: en promedio −20%
+      si(adr.color === 'rojo' && adr.por[0].id === 'adr', JSON.stringify(adr.indicadores[3]));
+      cerca(adr.indicadores[3].valor, -0.2, 1e-6, 'promedio de las dos');
+    }],
+
+    ['Semáforo: umbrales editables, no genera tareas ni toca reglas, y sin datos no inventa', async () => {
+      const e = mundo({ ajustar: x => calmo(x), eventos: [evento(60, { tipo: 'supuestos', cambios: { semaforo: { riesgo_pais: { amarillo: 500, rojo: 600 } } } })] }).e;
+      si(semaforoArgentina(e).color === 'rojo', 'tomó el umbral editado');
+      const rojo = mundo({ ajustar: x => calmo(x, { riesgo: 3000 }) }).e, calmoE = mundo({ ajustar: x => calmo(x) }).e;
+      const resumen = e => { const p = planificador(e, e.hoy); return [p.pasos.map(s => s.id), p.reglas.map(r => [r.id, r.nivel])]; };
+      igual(resumen(rojo), resumen(calmoE), 'el semáforo no cambia pasos ni reglas');
+      const sin = semaforoArgentina(mundo({ ajustar: x => { delete x.ext.argentina; delete x.ext.mercado.fx.oficial; delete x.ext.historico.series.YPF; delete x.ext.historico.series.PAM; delete x.ext.historico.series.MEP; x.ext.mercado = null; } }).e);
+      si(sin.color === null && sin.sin_dato.length === 4 && /Sin datos/.test(textoSemaforo(sin)), JSON.stringify(sin));
+    }],
+
+    ['Elecciones: combina los mercados por volumen, avisa si difieren más de 10 puntos y cuenta los días', async () => {
+      const r = eleccion(mundo().e), c = Object.fromEntries(r.candidatos.map(x => [x.nombre, x]));
+      si(r.dias === 328 && r.fecha === '2027-10-24', String(r.dias));
+      igual(r.candidatos.map(x => x.nombre), ['Candidata Uno', 'Candidato Dos', 'Candidato Tres'], 'por probabilidad');
+      cerca(c['Candidata Uno'].combinada, (0.5 * 3000 + 0.38 * 9000) / 12000, 1e-12, 'ponderada por volumen');
+      si(c['Candidata Uno'].difiere && !c['Candidato Dos'].difiere && r.difieren.length === 1, 'diferencia de 12 puntos');
+      cerca(c['Candidato Dos'].combinada, 0.325, 1e-12, 'mismo candidato con apodo en un mercado');
+      si(!c['Candidato Tres'].en.polymarket && c['Candidato Tres'].combinada === 0.1 && c['Candidato Tres'].diferencia === null, 'en uno solo');
+      const uno = eleccion(mundo({ ajustar: x => { x.ext.argentina.elecciones.polymarket = { nombre: 'Polymarket', desactivado: true }; } }).e);
+      si(uno.mercados.find(m => m.id === 'polymarket').desactivado && uno.candidatos[0].combinada === 0.5 && !uno.difieren.length, 'con un mercado apagado');
+      si(eleccion(mundo({ ajustar: x => { delete x.ext.argentina; } }).e).candidatos.length === 0, 'sin datos');
+      const sinVolumen = eleccion(mundo({ ajustar: x => { for (const m of ['kalshi', 'polymarket']) x.ext.argentina.elecciones[m].candidatos.forEach(v => { v.volumen = 0; }); } }).e);
+      cerca(sinVolumen.candidatos.find(x => x.nombre === 'Candidata Uno').combinada, 0.44, 1e-12, 'sin volumen, promedio simple');
+      for (const [a, b] of [['Cristina Fernández de Kirchner', 'Cristina Kirchner'], ['Eduardo "Wado" de Pedro', 'Eduardo de Pedro'], ['Horacio Rodríguez Larreta', 'Horacio Rodriguez Larreta']]) si(claveCandidato(a) === claveCandidato(b), `${a} / ${b}`);
+      si(claveCandidato('Javier Milei') !== claveCandidato('Karina Milei'), 'no mezcla apellidos iguales');
+    }],
+
+    ['Reserva en pesos: cuánto tenía que subir el MEP, cuánto subió y qué rindió cada fondo', async () => {
+      // MEP fijo hasta fines de septiembre y +10% en octubre; noviembre quieto.
+      const { e } = mundo({ ajustar: x => {
+        const h = x.ext.historico;
+        h.series.MEP = h.fechas.map(f => f <= '2026-09-30' ? 1000 : 1100);
+        x.ext.argentina.fondos.fechas = ['2026-08-31', '2026-09-30', '2026-10-30', '2026-11-27'];
+        x.ext.argentina.fondos.series = { 'Fondo Pesos Ejemplo': [100, 102, 104.04, 106.1208], 'Fondo Dolar Ejemplo': [1, 1.004, 1.008016, 1.012048] };
+      } });
+      const r = reservaEnPesos(e), f = Object.fromEntries(r.filas.map(x => [x.mes, x]));
+      igual([r.fondos_pesos, r.fondos_usd], [['FCIP'], ['FCID']], 'tus fondos');
+      const sep = f['2026-09'], oct = f['2026-10'];
+      cerca(sep.tasa, 0.3 * 30 / 365, 1e-12, 'tasa del mes'); cerca(sep.usd, 0.004, 1e-9, 'fondo en dólares');
+      cerca(sep.necesaria, (1 + 0.3 * 30 / 365) / 1.004 - 1, 1e-9, 'cuánto tenía que subir');
+      cerca(sep.mep, 0, 1e-12, 'no subió'); cerca(sep.pesos, 0.02, 1e-9, 'pesos'); si(sep.gano === 'pesos' && sep.usd_real, JSON.stringify(sep));
+      cerca(oct.mep, 0.1, 1e-9, 'subió 10%'); cerca(oct.pesos_en_usd, (1 + oct.pesos) / 1.1 - 1, 1e-12, 'en dólares'); si(oct.gano === 'dólares', JSON.stringify(oct));
+      si(r.filas.at(-1).mes === '2026-11' && r.filas.at(-1).parcial && r.filas.at(-1).hasta === '2026-11-27', JSON.stringify(r.filas.at(-1)));
+      // Sin fondos propios usa la tasa y el supuesto del fondo en dólares.
+      const sin = reservaEnPesos(mundo({ ajustar: x => { x.ext.argentina.fondos.series = {}; } }).e);
+      si(sin.filas.length > 6 && sin.filas.every(x => x.pesos === null && !x.usd_real) && !sin.fondos_pesos.length, JSON.stringify(sin.filas[0]));
+      si(reservaEnPesos(mundo({ ajustar: x => { delete x.ext.argentina.plazo_fijo; } }).e) === null, 'sin tasa no hay tabla');
+    }],
+
+    ['Riesgo: los fondos en pesos cuentan el interés que cobran', async () => {
+      const enLP = x => { x.datos.posiciones.find(p => p.ticker === 'FCIP').bloque = 'renta_fija_ars'; };
+      const con = riesgo(mundo({ ajustar: enLP }).e);
+      si(con.posiciones.FCIP.serie === 'FCI:FCIP' && con.supuestos.some(s => /incluyen el interés/.test(s)), JSON.stringify(con.posiciones.FCIP));
+      const sin = riesgo(mundo({ ajustar: x => { enLP(x); delete x.ext.argentina; } }).e);
+      si(sin.posiciones.FCIP.serie === 'MEP', 'sin datos, como antes');
+      si(con.escenarios.peor_cada_uno.usd < sin.escenarios.peor_cada_uno.usd, 'con interés, el peor mes pierde menos');
+      cerca(con.posiciones.FCIP.vol_anual, sin.posiciones.FCIP.vol_anual, 0.01, 'la volatilidad la sigue poniendo el dólar');
+      // Sin cuotapartes del fondo, el interés sale de la tasa de plazo fijo.
+      const tasa = mundo({ ajustar: x => { enLP(x); x.ext.argentina.fondos.series = {}; } }).e;
+      const r = riesgo(tasa), s = historiaRiesgo(tasa).series['FCI:FCIP'], mep = tasa.historico.series.MEP, n = mep.length - 1;
+      si(r.posiciones.FCIP.serie === 'FCI:FCIP' && s[n] * mep[n] > s[0] * mep[0] * 1.2, 'acumula la tasa');
+    }],
+  ];
+}
+
 export function pruebasRonda2() {
-  return [...etapa1(), ...etapa3()];
+  return [...etapa1(), ...etapa3(), ...etapa4()];
 }

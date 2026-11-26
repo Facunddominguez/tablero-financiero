@@ -7,6 +7,7 @@ import { puntajePredicciones, compararFantasmas, contraReferencia, HORIZONTES } 
 import { nuevaPrediccion, nuevaRotacion, borrarPrediccion, editarFantasma, borrarFantasma } from './diario.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase, parteRiesgo } from './comun.js';
 import { informeProyeccion } from './proyeccion.js';
+import { seccionesArgentina } from './argentina.js';
 
 const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['proyeccion', 'Proyección'], ['trimestral', 'Trimestral'],['diario', 'Predicciones y fantasmas'], ['anual', 'Anual para el contador'], ['allaria', 'Contraste con Allaria']];
 const dato = (etq, valor, sub) => h('div', h('p.dato-etq', etq), h('p.dato-valor', valor), sub ? h('p.dato-sub', sub) : null);
@@ -316,6 +317,7 @@ function trimestral(ctx) {
       item(!fuera.length && R.R5?.nivel === 'ok', 'Satélites', `${fuera.length ? `Fuera de su banda: ${fuera.map(p => `${p.ticker} ${fmt.pct(p.pct_lp)}`).join(', ')}. ` : 'Todos dentro de su banda. '}En total son ${fmt.pct(e.satelites_lp)} de largo plazo${R.R5 && R.R5.nivel !== 'ok' ? ` (regla R5 ${NIVEL[R.R5.nivel][0].toLowerCase()}: los aportes van solo al núcleo)` : ''}.`),
       item(true, 'Watchlist', `${(d.watchlist || []).length} nombres en seguimiento. ${R.R7?.activa ? 'Bloqueada por la regla R7: solo observación.' : 'Habilitada: máximo inicial por nombre según la tabla.'}`))),
     seccionCanje(T, 'Activos y efecto canje, desde el inicio'),
+    seccionesArgentina(e),
     seccionRiesgo(e),
     seccionReferencias(e),
     sec('Satélites contra su banda', tabla([

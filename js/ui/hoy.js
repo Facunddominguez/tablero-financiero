@@ -4,6 +4,7 @@ import { dialogo, campo, entrada, boton, chip, medidor, dialogoCompras, signoCla
 import { proyeccion } from '../motor.js';
 import { marcarPrediccion } from './diario.js';
 import { simular, textoHito } from '../simulacion.js';
+import { lineaSemaforo } from './argentina.js';
 
 function antiguedad(e) {
   if (e.precios.origen === 'archivo') return `precios del resumen del ${fmt.fecha(e.precios.fecha_archivo)}`;
@@ -127,6 +128,7 @@ function vigentes(plan) {
 export function vistaHoy(ctx) {
   const e = ctx.estado, plan = ctx.plan;
   const tareas = plan.pasos.filter(p => !p.informativo), avisos = plan.pasos.filter(p => p.informativo);
+  const lineas = [lineaSemaforo(e)].filter(Boolean);
   let n = 0;
   return h('div.vista.hoy',
     estadoLinea(ctx),
@@ -136,7 +138,9 @@ export function vistaHoy(ctx) {
         ? h('ol.lista-pasos', tareas.map(p => tarjetaPaso(ctx, p, ++n)))
         : h('div.todo-en-orden', h('p.todo-titulo', 'Todo en orden.'),
           plan.proxima ? h('p', `Próxima acción: ${proximaFecha(plan.proxima.fecha)}, ${plan.proxima.texto}.`) : null),
-      avisos.length ? [h('h2.sub', 'Para saber'), h('ol.lista-pasos', avisos.map(p => tarjetaPaso(ctx, p)))] : null),
+      avisos.length || lineas.length ? [h('h2.sub', 'Para saber'),
+        lineas.length ? h('ul.lineas-contexto', lineas) : null,
+        avisos.length ? h('ol.lista-pasos', avisos.map(p => tarjetaPaso(ctx, p))) : null] : null),
     indicadores(e),
     vigentes(plan));
 }
