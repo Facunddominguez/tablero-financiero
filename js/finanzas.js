@@ -55,6 +55,20 @@ function indice(hist, fecha, modo) {
 const SERIES_DE_DOLAR = ['MEP', 'CCL'];
 export const serieDe = (hist, t) => (t && !SERIES_DE_DOLAR.includes(t) ? hist?.series?.[t] || null : null);
 
+// Volatilidad diaria reciente de una serie (promedio móvil exponencial, λ), con los datos anteriores a `hasta`.
+// El mismo cálculo que tools/alertas.py. null si hay menos de `minimo` rendimientos.
+export function volatilidadReciente(hist, serie, hasta, lambda = 0.94, minimo = 40) {
+  const s = serie === 'MEP' ? hist?.series?.MEP : serieDe(hist, serie);
+  if (!s) return null;
+  const precios = s.filter((v, i) => v > 0 && hist.fechas[i] < hasta);
+  const rend = precios.slice(1).map((v, i) => v / precios[i] - 1);
+  if (rend.length < minimo) return null;
+  const primeros = rend.slice(0, 20);
+  let varianza = suma(primeros, r => r * r) / primeros.length;
+  for (const r of rend.slice(20)) varianza = lambda * varianza + (1 - lambda) * r * r;
+  return Math.sqrt(varianza);
+}
+
 // ---------- Canje ----------
 // El canje es la diferencia entre el dólar contado con liqui (CCL) y el dólar MEP. Los CEDEARs y las acciones
 // locales siguen al CCL: valuados en dólares MEP, suben o bajan con el canje aunque el activo no se mueva.

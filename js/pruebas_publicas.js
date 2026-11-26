@@ -2,7 +2,8 @@
 // Devuelve [nombre, fn] como las asincrónicas de js/pruebas.js.
 import { tickersPropios, esRespaldoPlano, snapshotDe, aplicarEventos, valuar } from './estado.js';
 import { precioJusto, referenciaImplicito, especieD, conDolares, ventanaDelDia, textoVentana } from './precios.js';
-import { repartirAporte, planificador } from './motor.js';
+import { repartirAporte, planificador, movimientosFuertes } from './motor.js';
+import { volatilidadReciente } from './finanzas.js';
 import { ejemplo } from './ejemplo.js';
 import { riesgo, inversaNormal } from './riesgo.js';
 import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo, benchmarks, rendimientoPorBloque, canjeDe } from './finanzas.js';
@@ -64,8 +65,53 @@ function carteraDosActivos(a, b, rho, n = 400) {
   };
 }
 
+// Cartera de ejemplo con un movimiento del día elegido y series que siempre se mueven lo mismo.
+function carteraConMovimiento(movimientos, { amplitud = { SPY: 0.01, NVDA: 0.01, PAM: 0.02, MEP: 0.002 }, hoy = '2026-11-30', usa = -3, generado } = {}) {
+  const { datos, ext } = ejemplo({ hoy });
+  datos.alertas = { critico: { dia: { nucleo: 0.05, satelite: 0.1, on: 0.04, mep: 0.05 } }, aviso: { dia: { nucleo: 0.03, satelite: 0.06, on: 0.02, mep: 0.03, watchlist: 0.08 } } };
+  const h = ext.historico;
+  for (const [t, a] of Object.entries(amplitud)) h.series[t] = h.fechas.map((_, i) => 100 * (i % 2 ? 1 + a : 1));
+  for (const [t, pct] of Object.entries(movimientos)) {
+    const tabla = ['PAMP'].includes(t) ? ext.mercado.acciones : t === 'ON1' ? ext.mercado.ons : ext.mercado.cedears;
+    tabla.precios[t][1] = pct;
+  }
+  ext.mercado.cedears.precios = { ...ext.mercado.cedears.precios };
+  for (const t of Object.keys(ext.mercado.cedears.precios)) if (!(t in movimientos)) ext.mercado.cedears.precios[t] = [ext.mercado.cedears.precios[t][0], 0];
+  ext.mercado.acciones.precios.PAMP[1] = movimientos.PAMP ?? 0; ext.mercado.ons.precios.ON1[1] = movimientos.ON1 ?? 0;
+  ext.mercado.fx.mep_prev = ext.mercado.fx.mep;
+  ext.mercado.implicito.usa.precios.NVDA = [150, usa];
+  if (generado) ext.mercado.generado = generado;
+  return valuar(aplicarEventos(datos), ext, hoy);
+}
+
 export function pruebasPublicas() {
   return [
+    ['Avisos de precio: el umbral es un múltiplo de lo que cada activo suele moverse', async () => {
+      // Con ±1% por día: satélite avisa en 2,5% y es crítico en 4%; el núcleo, ×1,25.
+      const e = carteraConMovimiento({ SPY: -4.5, NVDA: -4.5, PAMP: -4.5, ON1: -4.5 });
+      cerca(volatilidadReciente(e.historico, 'SPY', e.hoy), (1.01 - 1 + (1 - 1 / 1.01)) / 2, 2e-4, 'volatilidad');
+      const m = Object.fromEntries(movimientosFuertes(e).map(x => [x.ticker, x]));
+      if (m.SPY.nivel !== 'aviso' || m.NVDA.nivel !== 'critico') throw new Error(JSON.stringify([m.SPY, m.NVDA]));
+      if (m.PAMP) throw new Error('PAMP se mueve ±2% por día: 4,5% no llega a 2,5 veces');
+      if (m.ON1.propio || m.ON1.umbral !== 0.04 || m.ON1.nivel !== 'critico') throw new Error('la ON usa el umbral fijo: ' + JSON.stringify(m.ON1));
+      cerca(m.SPY.umbral / m.NVDA.umbral, 2.5 * 1.25 / 4, 0.01, 'multiplicador del núcleo');
+      // Editable en los datos.
+      e.datos.alertas.volatilidad = { critico: 10, grupo: { nucleo: 3 } };
+      const x = Object.fromEntries(movimientosFuertes(e).map(v => [v.ticker, v]));
+      if (x.SPY || x.NVDA.nivel !== 'aviso') throw new Error('no tomó los parámetros editados');
+    }],
+
+    ['Avisos de precio: un CEDEAR explica cuánto fue EE.UU. y cuánto el dólar implícito', async () => {
+      const paso = e => planificador(e, e.hoy).pasos.find(p => p.id === `precio-NVDA-${e.hoy}`);
+      const p = paso(carteraConMovimiento({ NVDA: -4.5 }));
+      if (!p.informativo || p.accion || !/En EE.UU. NVDA se movió −3,0% y el dólar implícito contra el MEP puso −1,5%/.test(p.porque)) throw new Error(p.porque);
+      const feriado = paso(carteraConMovimiento({ NVDA: -4.5 }, { generado: '2026-11-26T18:00:00Z', hoy: '2026-11-26' }));
+      if (!/Wall Street no operó/.test(feriado.porque)) throw new Error(feriado.porque);
+      if (!/todavía no abrió/.test(paso(carteraConMovimiento({ NVDA: -4.5 }, { generado: '2026-11-30T14:20:00Z' })).porque)) throw new Error('antes de abrir');
+      const pasos = planificador(carteraConMovimiento({ ON1: -4.5 }), '2026-11-30').pasos.find(x => x.id.startsWith('precio-ON1'));
+      if (/EE\.UU/.test(pasos.porque)) throw new Error('una ON no es un CEDEAR');
+    }],
+
     ['Riesgo: dos activos con correlación conocida dan el resultado analítico', async () => {
       for (const rho of [-0.5, 0, 0.3, 1]) {
         const a = 0.01, b = 0.03, w1 = 0.6, w2 = 0.4, n = 400, r = riesgo(carteraDosActivos(a, b, rho, n));

@@ -130,6 +130,29 @@ export function ventanaDelDia(calendario, fecha) {
   };
 }
 
+// ¿Hubo rueda en EE.UU. hasta el momento de los precios (`generado`, ISO)? null si sí; si no, el motivo.
+export function wallStreet(generado, calendario) {
+  if (!generado) return null;
+  const t = new Date(generado), utc = t.getUTCHours() * 60 + t.getUTCMinutes();
+  const dif = desfase(generado.slice(0, 10), NY), min = utc + dif;
+  const fecha = new Date(t.getTime() + dif * 60000).toISOString().slice(0, 10);
+  if ([0, 6].includes(diaSemana(fecha)) || calendario?.feriados?.[fecha]) return 'Wall Street no operó';
+  return min < minutos('9:30') ? 'Wall Street todavía no abrió' : null;
+}
+
+// Por qué se movió un CEDEAR hoy: cuánto fue el subyacente en EE.UU. y cuánto el dólar implícito contra el MEP.
+// diaUsd = movimiento del día en dólares MEP. '' si no hay precios de EE.UU. del momento.
+export function porQueSeMovio(e, ticker, diaUsd) {
+  const info = e.ratios?.[ticker], subyacente = info && 'usa' in info ? info.usa : ticker;
+  const usa = e.mercado?.implicito?.usa, fila = usa?.stale ? null : usa?.precios?.[subyacente];
+  if (!fila) return '';
+  const generado = e.mercado.generado;
+  const cerrado = wallStreet(generado, e.feriados) || (fila[2] && fila[2] !== generado?.slice(0, 10) ? 'Wall Street no operó' : null);
+  if (cerrado) return `${cerrado}: todo el movimiento vino del dólar implícito contra el MEP.`;
+  const afuera = (fila[1] || 0) / 100;
+  return `En EE.UU. ${subyacente} se movió ${fmt.pctSigno(afuera)} y el dólar implícito contra el MEP puso ${fmt.pctSigno((1 + diaUsd) / (1 + afuera) - 1)}.`;
+}
+
 // La frase que acompaña a los pasos de compra: cuándo conviene operar, a partir de `hoy`.
 export function textoVentana(calendario, hoy) {
   const v = ventanaDelDia(calendario, hoy);
