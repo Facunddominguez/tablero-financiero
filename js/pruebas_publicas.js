@@ -175,9 +175,22 @@ export function pruebasPublicas() {
       if (m.ON1.propio || m.ON1.umbral !== 0.04 || m.ON1.nivel !== 'critico') throw new Error('la ON usa el umbral fijo: ' + JSON.stringify(m.ON1));
       cerca(m.SPY.umbral / m.NVDA.umbral, 2.5 * 1.25 / 4, 0.01, 'multiplicador del núcleo');
       // Editable en los datos.
-      e.datos.alertas.volatilidad = { critico: 10, grupo: { nucleo: 3 } };
+      e.datos.alertas.volatilidad = { critico: 10, grupo: { nucleo: 3 }, tope: 0 };
       const x = Object.fromEntries(movimientosFuertes(e).map(v => [v.ticker, v]));
       if (x.SPY || x.NVDA.nivel !== 'aviso') throw new Error('no tomó los parámetros editados');
+    }],
+
+    ['Avisos de precio: después de saltos grandes el umbral no pasa de 1,5 veces el fijo', async () => {
+      // Con ±5% por día, 4 veces serían 20% (25% en el núcleo): quedan en 7,5% el núcleo y 15% los satélites.
+      const volatil = { SPY: 0.05, NVDA: 0.05, PAM: 0.05, MEP: 0.002 };
+      const e = carteraConMovimiento({ SPY: -8, NVDA: -16, PAMP: -10 }, { amplitud: volatil });
+      const m = Object.fromEntries(movimientosFuertes(e).map(x => [x.ticker, x]));
+      cerca(m.SPY.umbral, 0.075, 1e-12, 'núcleo'); cerca(m.NVDA.umbral, 0.15, 1e-12, 'satélite');
+      if (m.SPY.nivel !== 'critico' || m.NVDA.nivel !== 'critico' || !m.SPY.topeado) throw new Error(JSON.stringify([m.SPY, m.NVDA]));
+      // El aviso tiene su propio máximo (1,5 × 6%): −10% no llega a crítico pero sí a aviso.
+      if (m.PAMP.nivel !== 'aviso') throw new Error(JSON.stringify(m.PAMP)); cerca(m.PAMP.umbral, 0.09, 1e-12, 'aviso');
+      const paso = planificador(e, e.hoy).pasos.find(p => p.id === `precio-SPY-${e.hoy}`);
+      if (!/Pasa el máximo de tu umbral \(±7,5%\)/.test(paso.porque)) throw new Error(paso.porque);
     }],
 
     ['Avisos de precio: un CEDEAR explica cuánto fue EE.UU. y cuánto el dólar implícito', async () => {

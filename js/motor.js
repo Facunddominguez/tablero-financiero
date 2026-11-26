@@ -151,13 +151,13 @@ export function proyeccion(e, hoy = e.hoy) {
   };
 }
 
-// Cuántas veces lo habitual tiene que moverse algo para avisar. Editable en los datos (alertas.volatilidad).
-// Los mismos valores que usa el aviso al teléfono (tools/alertas.py).
-export const VOLATILIDAD = { lambda: 0.94, aviso: 2.5, critico: 4, grupo: { nucleo: 1.25 }, min_datos: 40 };
+// Cuántas veces lo habitual tiene que moverse algo para avisar, y el máximo del umbral (`tope` veces el fijo).
+// Editable en los datos (alertas.volatilidad). Los mismos valores que usa el aviso al teléfono (tools/alertas.py).
+export const VOLATILIDAD = { lambda: 0.94, aviso: 2.5, critico: 4, grupo: { nucleo: 1.25 }, min_datos: 40, tope: 1.5 };
 
 // Movimientos fuertes de precio del día, en dólares. El umbral de cada activo es un múltiplo de su volatilidad
-// reciente; sin historia (por ejemplo las ON) se usan los umbrales fijos de `alertas`.
-// { ticker, pct, nivel, umbral, propio, grupo, porque }
+// reciente, con un máximo sobre el umbral fijo de `alertas`; sin historia (por ejemplo las ON) se usa el fijo.
+// { ticker, pct, nivel, umbral, propio, topeado, grupo, porque }
 export function movimientosFuertes(e) {
   const al = e.datos.alertas;
   if (!al || e.precios.origen !== 'mercado') return [];
@@ -166,8 +166,10 @@ export function movimientosFuertes(e) {
   const revisar = (ticker, pct, grupo, serie, niveles, porque) => {
     const v = serie ? volatilidadReciente(e.historico, serie, e.hoy, par.lambda, par.min_datos) : null;
     for (const nivel of niveles) {
-      const umbral = v != null ? par[nivel] * (par.grupo[grupo] ?? 1) * v : al[nivel]?.dia?.[grupo];
-      if (umbral && Math.abs(pct) >= umbral) { out.push({ ticker, pct, nivel, umbral, propio: v != null, grupo, porque: porque?.() || '' }); return; }
+      const fijo = al[nivel]?.dia?.[grupo], propio = v != null ? par[nivel] * (par.grupo[grupo] ?? 1) * v : null;
+      const topeado = propio != null && !!par.tope && !!fijo && propio > par.tope * fijo;
+      const umbral = propio == null ? fijo : topeado ? par.tope * fijo : propio;
+      if (umbral && Math.abs(pct) >= umbral) { out.push({ ticker, pct, nivel, umbral, propio: propio != null, topeado, grupo, porque: porque?.() || '' }); return; }
     }
   };
   for (const p of e.posiciones) {
@@ -493,8 +495,9 @@ export function planificador(e, hoy = e.hoy) {
   }
 
   for (const mv of movimientosFuertes(e)) {
-    const vara = mv.propio ? `Es mucho para lo que suele moverse (tu umbral hoy es ±${fmt.num(mv.umbral * 100, 1)}%).`
-      : `Pasa tu umbral de ±${fmt.num(mv.umbral * 100, 0)}% para ${{ nucleo: 'el núcleo', satelite: 'los satélites', on: 'la ON', watchlist: 'la watchlist', mep: 'el dólar' }[mv.grupo]}.`;
+    const vara = mv.topeado ? `Pasa el máximo de tu umbral (±${fmt.num(mv.umbral * 100, 1)}%).`
+      : mv.propio ? `Es mucho para lo que suele moverse (tu umbral hoy es ±${fmt.num(mv.umbral * 100, 1)}%).`
+        : `Pasa tu umbral de ±${fmt.num(mv.umbral * 100, 0)}% para ${{ nucleo: 'el núcleo', satelite: 'los satélites', on: 'la ON', watchlist: 'la watchlist', mep: 'el dólar' }[mv.grupo]}.`;
     agregar({
       id: `precio-${mv.ticker}-${hoy}`, tipo: 'aviso', informativo: true, etiqueta: mv.nivel === 'critico' ? 'Movimiento crítico' : 'Movimiento fuerte',
       titulo: `${mv.ticker} ${fmt.pctSigno(mv.pct)} hoy, en dólares`,

@@ -92,11 +92,20 @@ m4 = {"generado": HOY + "T18:00:00Z", "fx": {"mep": 1000.0, "mep_prev": 1000.0},
 al, _ = alertas.evaluar(cfg4, m4, {}, HOY, historico=H, ratios={"AAAB": {"ratio": 1, "usa": "AAA.B"}})
 res.append(ok(al and "En EE.UU. AAA.B se movió −3,0%" in al[0]["cuerpo"] and "±4,0%" in al[0]["cuerpo"], "subyacente con otro nombre: usa su serie y su precio"))
 
+# Tope: después de saltos grandes el umbral no pasa de 1,5 veces el fijo
+V = {"fechas": dias, "series": {"AAA": serie(0.05), "BBB": serie(0.05), "MEP": serie(0.03, 1000)}}  # 4 veces serían 25%, 20% y 12%
+res.append(ok(alertas.umbral_del_dia(V, "AAA", "nucleo", HOY, 0.05)[1] == "tope" and cerca(alertas.umbral_del_dia(V, "AAA", "nucleo", HOY, 0.05)[0], 0.075)
+              and cerca(alertas.umbral_del_dia(V, "BBB", "satelite", HOY, 0.10)[0], 0.15) and cerca(alertas.umbral_del_dia(V, "MEP", "mep", HOY, 0.05)[0], 0.075), "el umbral queda en 1,5 veces el fijo"))
+res.append(ok(alertas.umbral_del_dia(H, "AAA", "satelite", HOY, 0.10) == (alertas.umbral(H, "AAA", "satelite", HOY), "volatilidad")
+              and alertas.umbral_del_dia(H, "ZZZ", "on", HOY, 0.04) == (0.04, "fijo"), "por debajo del máximo manda la volatilidad; sin historia, el fijo"))
+al, _ = alertas.evaluar(cfg2, m2(-8.0, -14.0, 0, 0), {}, HOY, historico=V)
+res.append(ok([a["titulo"].split()[0] for a in al] == ["AAA"] and "Pasa el máximo de tu umbral (±7,5%)" in al[0]["cuerpo"], "avisa al pasar el máximo y lo dice"))
+
 # La app usa los mismos parámetros que el aviso al teléfono
 js = (pathlib.Path(__file__).resolve().parent.parent / "js" / "motor.js").read_text(encoding="utf-8")
-js_par = re.search(r"VOLATILIDAD = \{ lambda: ([\d.]+), aviso: ([\d.]+), critico: ([\d.]+), grupo: \{ nucleo: ([\d.]+) \}, min_datos: (\d+) \}", js)
+js_par = re.search(r"VOLATILIDAD = \{ lambda: ([\d.]+), aviso: ([\d.]+), critico: ([\d.]+), grupo: \{ nucleo: ([\d.]+) \}, min_datos: (\d+), tope: ([\d.]+) \}", js)
 p = alertas.PARAMETROS
-res.append(ok(js_par and [float(x) for x in js_par.groups()] == [p["lambda"], p["aviso"], p["critico"], p["grupo"]["nucleo"], p["min_datos"]], "la app y el teléfono usan los mismos parámetros"))
+res.append(ok(js_par and [float(x) for x in js_par.groups()] == [p["lambda"], p["aviso"], p["critico"], p["grupo"]["nucleo"], p["min_datos"], p["tope"]], "la app y el teléfono usan los mismos parámetros"))
 
 # ---------- calibración: los críticos por año no pueden superar los de los umbrales fijos ----------
 # Dos años de cierres públicos (grabados el 26/11/2026): 4 ETF del núcleo, 6 acciones y el dólar. Cada día se evalúa
@@ -120,7 +129,7 @@ def criticos_por_anio(historico):
     return n / ((len(G["fechas"]) - 61) / 252)
 fijos, propios = criticos_por_anio(None), criticos_por_anio(G)
 print(f"     críticos del día por año: {fijos:.1f} con umbrales fijos, {propios:.1f} según la volatilidad de cada activo")
-res.append(ok(propios <= fijos and propios <= 22, "calibración: no hay más críticos que antes (los escalones acumulados no cambian)"))
+res.append(ok(propios <= fijos and propios <= 22, "calibración con el tope: no hay más críticos que antes (los escalones acumulados no cambian)"))
 
 print(f"\n{sum(res)}/{len(res)} pruebas de alertas pasan")
 sys.exit(0 if all(res) else 1)

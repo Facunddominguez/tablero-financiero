@@ -21,13 +21,9 @@ Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inven
 - **"A igual déficit"** = difieren menos de 0,1 punto. **Límite** = precio justo (o el de pantalla, si es menor) + 1%.
 - **Canje**: afecta a CEDEARs y acciones locales; ON, fondos y caja, no. "Efecto canje" = total − activos.
 - **Riesgo**: sobre la cartera de largo plazo (sin emergencia), "mes malo" con distribución normal; volatilidad fija 3% (fondos en dólares), 8% (ON) y 35% (sin historia).
-- **Umbrales de alerta**: núcleo ×1,25. Calibrado sobre dos años (4 ETF, 6 acciones y el MEP): críticos del día 19,7 por año contra 24,2 con los fijos. Los escalones acumulados no cambian.
+- **Umbrales de alerta**: núcleo ×1,25 y **máximo de 1,5 veces el umbral fijo** (aprobado el 26/11/2026: sin máximo, después de saltos grandes el crítico de SPY llegaba a 8,9%). Calibrado sobre dos años (4 ETF, 6 acciones y el MEP): críticos del día 21,5 por año contra 24,2 con los fijos (19,7 sin máximo; con 1,25 veces serían 26,0 y con 1 vez, 32,7). Los escalones acumulados no cambian.
 - **Horario de BYMA desde el 14/03/2027**: sin publicar; se asume cierre 17:00.
 - **Referencias**: satélite sin referencia propia, contra SPY. La ON no se compara.
-
-### Para decidir
-
-- **Tope a los umbrales por volatilidad.** Después de saltos grandes el umbral queda muy alto (con los datos del 26/11, el crítico de SPY es 8,9% y el de la acción más movida de la serie, 34%). Se puede limitar (por ejemplo, nunca por encima del umbral fijo anterior) o dejarlo así.
 
 ### Para probar con los datos reales
 

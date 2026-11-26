@@ -77,9 +77,9 @@ La corrida programada de GitHub queda como respaldo (minuto 40). Las que llegan 
 
 Los movimientos fuertes aparecen en Hoy; los críticos además llegan al teléfono por la app **ntfy** (gratuita): se instala, se toca "Suscribirse a un tema" y se pega el nombre del canal. Los umbrales y el detalle están en `docs/plan.md`.
 
-El umbral del día es **un múltiplo de lo que cada activo suele moverse** (volatilidad de las últimas semanas): aviso 2,5 veces, crítico 4 veces; para el núcleo, además ×1,25. Lo que no tiene historia (las ON, por ejemplo) usa los umbrales fijos. Los escalones acumulados y el tope duro no cambian. Cada aviso de un CEDEAR dice cuánto fue EE.UU. y cuánto el dólar implícito. Los parámetros del teléfono están en `tools/alertas.py` (`PARAMETROS`) y los de la app en los datos (`alertas.volatilidad`); el secreto `ALERTAS_CONFIG` no cambia de formato.
+El umbral del día es **un múltiplo de lo que cada activo suele moverse** (volatilidad de las últimas semanas): aviso 2,5 veces, crítico 4 veces; para el núcleo, además ×1,25. Tiene un **máximo de 1,5 veces el umbral fijo** (crítico: 7,5% el núcleo, 15% los satélites, 7,5% el dólar). Lo que no tiene historia (las ON, por ejemplo) usa los umbrales fijos. Los escalones acumulados y el tope duro no cambian. Cada aviso de un CEDEAR dice cuánto fue EE.UU. y cuánto el dólar implícito. Los parámetros del teléfono están en `tools/alertas.py` (`PARAMETROS`) y los de la app en los datos (`alertas.volatilidad`); el secreto `ALERTAS_CONFIG` no cambia de formato.
 
-Después de un salto muy grande, el umbral de ese activo queda alto durante algunas semanas.
+Después de un salto muy grande la volatilidad queda alta durante algunas semanas: ahí es donde actúa el máximo.
 
 Cuando cambian las tenencias o la watchlist hay que rearmar la configuración privada (con los datos descifrados):
 
@@ -133,7 +133,7 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | `config.empate_deficit` | Atrasos que difieren menos que esto cuentan como iguales | 0,001 |
 | `config.papeles_liquidos` | Papeles para la mediana del dólar implícito | 30 |
 | `riesgo` | `vol_fija` (`fci_usd`, `on`, `sin_serie`), `series`, `percentil`, `ventana_dias`, `sigmas_peor_mes`, `crisis` | 3% · 8% · 35%; 5%; 504; 2,33; YPF, PAM, MEP |
-| `alertas.volatilidad` | `aviso`, `critico`, `grupo`, `lambda`, `min_datos` | 2,5; 4; núcleo 1,25; 0,94; 40 |
+| `alertas.volatilidad` | `aviso`, `critico`, `grupo`, `lambda`, `min_datos`, `tope` (0: sin máximo) | 2,5; 4; núcleo 1,25; 0,94; 40; 1,5 |
 | `referencias` | Con qué se compara cada satélite | ver `js/diario.js` |
 
 ## Mantenimiento

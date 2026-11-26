@@ -6,8 +6,9 @@ no tiene tickers ni precios: solo huellas con sal y contadores, para no repetir 
 Los registros del Action tampoco muestran qué se avisó: solo cuántos avisos salieron.
 
 El umbral del movimiento del día es un múltiplo de lo que cada activo suele moverse (volatilidad reciente, con
-más peso en los últimos días), calculada con datos públicos (data/historico.json). Sin historia de un activo, se usan
-los umbrales fijos de la configuración. Los escalones acumulados y el tope duro son los de la configuración.
+más peso en los últimos días), calculada con datos públicos (data/historico.json), y nunca pasa de 1,5 veces el
+umbral fijo de la configuración (después de un salto grande la volatilidad queda alta). Sin historia de un activo,
+se usan los umbrales fijos. Los escalones acumulados y el tope duro son los de la configuración.
 """
 import datetime as dt
 import hashlib
@@ -21,7 +22,7 @@ RAIZ = pathlib.Path(__file__).resolve().parent.parent
 ESTADO = RAIZ / "data" / "alertas_estado.json"
 
 # Los mismos valores que usa la app (js/motor.js, VOLATILIDAD).
-PARAMETROS = {"lambda": 0.94, "aviso": 2.5, "critico": 4.0, "grupo": {"nucleo": 1.25}, "min_datos": 40}
+PARAMETROS = {"lambda": 0.94, "aviso": 2.5, "critico": 4.0, "grupo": {"nucleo": 1.25}, "min_datos": 40, "tope": 1.5}
 # Acciones locales que se miden con la serie de su ADR.
 ADR_DE_LOCAL = {"PAMP": "PAM", "YPFD": "YPF", "TGSU2": "TGS", "TECO2": "TEO", "CRES": "CRESY", "IRSA": "IRS",
                 "GGAL": "GGAL", "BMA": "BMA", "BBAR": "BBAR", "SUPV": "SUPV", "CEPU": "CEPU", "EDN": "EDN", "LOMA": "LOMA"}
@@ -72,6 +73,20 @@ def umbral(historico, serie, grupo, hoy, nivel="critico", parametros=None):
         return None
     v = volatilidad(historico, serie, hoy, p["lambda"], p["min_datos"])
     return None if v is None else p[nivel] * p.get("grupo", {}).get(grupo, 1.0) * v
+
+
+def umbral_del_dia(historico, serie, grupo, hoy, fijo, parametros=None):
+    """El umbral que se usa: el de la volatilidad con un máximo de `tope` veces el fijo; sin volatilidad, el fijo.
+
+    Devuelve (umbral, clase): "volatilidad", "tope" (quedó en el máximo) o "fijo".
+    """
+    propio = umbral(historico, serie, grupo, hoy, parametros=parametros)
+    if propio is None:
+        return fijo, "fijo"
+    veces = {**PARAMETROS, **(parametros or {})}["tope"]
+    if veces and fijo and propio > veces * fijo:
+        return veces * fijo, "tope"
+    return propio, "volatilidad"
 
 
 # ---------- por qué se movió un CEDEAR ----------
@@ -150,7 +165,7 @@ def evaluar(cfg, mercado, estado, hoy, historico=None, feriados=None, parametros
 
     # Dólar MEP
     s = e.setdefault(clave("MEP"), {})
-    u = umbral(historico, "MEP", "mep", hoy, parametros=parametros) or cfg["dia"].get("mep")
+    u, _ = umbral_del_dia(historico, "MEP", "mep", hoy, cfg["dia"].get("mep"), parametros)
     if u and mep_prev and abs(cambio_mep) >= u and s.get("d") != hoy:
         s["d"] = hoy
         alertas.append({"titulo": f"Dólar MEP {_pct(cambio_mep)} hoy",
@@ -168,12 +183,13 @@ def evaluar(cfg, mercado, estado, hoy, historico=None, feriados=None, parametros
         serie = serie_de(a, ratios)
 
         # 1 · Movimiento del día, en dólares (precio en pesos corregido por el movimiento del MEP)
-        propio = umbral(historico, serie, a["g"], hoy, parametros=parametros)
-        u = propio or cfg["dia"].get(a["g"])
+        u, clase = umbral_del_dia(historico, serie, a["g"], hoy, cfg["dia"].get(a["g"]), parametros)
         dia_usd = (1 + (fila[1] or 0) / 100) / (1 + cambio_mep) - 1
         if u and abs(dia_usd) >= u and s.get("d") != hoy and s.get("p") != fila[1]:
             s["d"], s["p"] = hoy, fila[1]
-            vara = f"Es mucho para lo que suele moverse (tu umbral hoy es ±{_num(u * 100)}%)." if propio else f"Movimiento fuerte en dólares (tu umbral es ±{_num(u * 100)}%)."
+            vara = {"volatilidad": f"Es mucho para lo que suele moverse (tu umbral hoy es ±{_num(u * 100)}%).",
+                    "tope": f"Pasa el máximo de tu umbral (±{_num(u * 100)}%).",
+                    "fijo": f"Movimiento fuerte en dólares (tu umbral es ±{_num(u * 100)}%)."}[clase]
             porque = explicar_dia(mercado, serie, dia_usd, feriados) if es_cedear and serie else ""
             alertas.append({"titulo": f"{a['t']} {_pct(dia_usd)} hoy", "cuerpo": " ".join(x for x in (vara, porque, sufijo) if x), "prioridad": 4})
 
