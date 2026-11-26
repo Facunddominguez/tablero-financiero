@@ -279,6 +279,8 @@ input[type="file"] { width: 100%; font-size: .9rem; }
 .tabla-periodo .tabla td:not(:first-child), .tabla-periodo .tabla th:not(:first-child) { padding-inline: .35rem; }
 .tabla-periodo .tabla td:last-child, .tabla-periodo .tabla th:last-child { padding-right: 0; }
 .informe > .aviso + .conmutador { margin-top: 0; }
+.desglose { display: grid; font-size: .72rem; color: var(--tinta-3); }
+.nota-canje { margin-top: .6rem; }
 .lista-simple { display: grid; gap: .35rem; font-size: .93rem; }
 .lista-simple li { padding-left: 1.1rem; position: relative; }
 .lista-simple li::before { content: "–"; position: absolute; left: 0; color: var(--tinta-3); }

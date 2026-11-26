@@ -1,14 +1,85 @@
 // Pruebas que no necesitan tus datos: corren en cada PR (GitHub Actions) y también dentro de tests.html.
 // Devuelve [nombre, fn] como las asincrónicas de js/pruebas.js.
 import { tickersPropios, esRespaldoPlano, snapshotDe } from './estado.js';
-import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo, benchmarks } from './finanzas.js';
+import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo, benchmarks, rendimientoPorBloque, canjeDe } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
 
 const cerca = (a, b, tol, que) => { if (!(Math.abs(a - b) <= tol)) throw new Error(`${que}: dio ${a}, esperado ≈ ${b}`); };
 
+// Cartera mínima para el canje: un CEDEAR de SPY comprado el primer día, sin movimiento del subyacente.
+// canjes = [CCL/MEP el 1/1, CCL/MEP hoy]. Con registros diarios de los dos días si `registros`.
+function carteraConCanje(canjes, { precios = [100, 100], registros = false } = {}) {
+  const [c0, c1] = canjes, v0 = 10, v1 = 10 * precios[1] / precios[0] * c1 / c0;
+  const hist = { fechas: ['2025-01-02', '2026-03-02'], series: { SPY: precios, MEP: [1000, 1000], CCL: [1000 * c0, 1000 * c1] } };
+  return {
+    hoy: '2026-03-02', historico: hist, total_usd: v1, mep: 1000, ccl: 1000 * c1,
+    posiciones: [{ ticker: 'SPY', tipo: 'cedear', grupo: 'nucleo', subyacente: 'SPY', cantidad: 1, valor_usd: v1 }],
+    datos: {
+      lotes_costo: [{ ticker: 'SPY', cantidad: 1, fecha_compra: '2025-01-02', precio_compra: v0, moneda: 'USD', mep_dia: 1 }],
+      cashflows_externos_usd: [{ fecha: '2025-01-02', usd: v0 }],
+      snapshots: registros ? { '2025-01-02': { t: v0, x: v0, mep: 1000, ccl: 1000 * c0 }, '2026-03-02': { t: v1, x: v1, mep: 1000, ccl: 1000 * c1 } } : { '2026-03-02': { t: v1 } },
+      nucleo: { pesos_internos: { SPY: 1 } },
+    },
+  };
+}
+const periodoTodo = e => { const h = historiaCartera(e); return resumenPeriodo(e, h, benchmarks(e, h.flujos), 'todo'); };
+
 export function pruebasPublicas() {
   return [
+    ['Canje: usa CCL ÷ MEP del día y, si falta, el último anterior', async () => {
+      const c = canjeDe({ hoy: '2026-01-09', datos: { snapshots: { '2026-01-07': { t: 1, mep: 100, ccl: 108 } } },
+        historico: { fechas: ['2026-01-02', '2026-01-05', '2026-01-06'], series: { MEP: [100, null, 100], CCL: [102, 103, 105] } } });
+      cerca(c('2026-01-02'), 1.02, 1e-12, 'ese día'); cerca(c('2026-01-05'), 1.02, 1e-12, 'falta el MEP: el anterior');
+      cerca(c('2026-01-06'), 1.05, 1e-12, 'ese día'); cerca(c('2026-01-08'), 1.08, 1e-12, 'el registro de la app');
+      cerca(c('2025-12-01'), 1.02, 1e-12, 'antes del primer dato');
+      if (canjeDe({ hoy: '2026-01-09', datos: {}, historico: { fechas: ['2026-01-02'], series: {} } }) !== null) throw new Error('sin datos debería ser null');
+    }],
+
+    ['Canje constante: todo coincide con el cálculo sin canje', async () => {
+      for (const registros of [false, true]) {
+        const con = carteraConCanje([1.04, 1.04], { precios: [100, 121], registros });
+        const sin = { ...con, historico: { fechas: con.historico.fechas, series: { SPY: con.historico.series.SPY } }, mep: undefined,
+          datos: { ...con.datos, snapshots: Object.fromEntries(Object.entries(con.datos.snapshots).map(([f, s]) => [f, { t: s.t }])) } };
+        const a = periodoTodo(con), b = periodoTodo(sin);
+        a.filas.forEach((f, i) => {
+          cerca(f.rend, b.filas[i].rend, 1e-9, `${f.nombre}: total`);
+          cerca(f.activos, f.rend, 1e-9, `${f.nombre}: activos`); cerca(f.efecto_canje, 0, 1e-9, `${f.nombre}: canje`);
+          if (b.filas[i].activos !== null) throw new Error('sin datos del canje no hay desglose');
+        });
+        a.usd[1].forEach((v, i) => cerca(v, b.usd[1][i], 1e-9, 'valor de SPY'));
+        const x = rendimientoPorBloque(con)[0], y = rendimientoPorBloque(sin)[0];
+        cerca(x.xirr_spy, y.xirr_spy, 1e-6, 'por bloque, SPY'); cerca(x.xirr_spy_activos, x.xirr_spy, 1e-6, 'activos'); cerca(x.xirr_activos, x.xirr, 1e-6, 'activos propios');
+      }
+    }],
+
+    ['Canje de 2% a 5%: la diferencia es exactamente ese cambio', async () => {
+      const cambio = 1.05 / 1.02 - 1;
+      for (const registros of [false, true]) {
+        // Sin movimiento del subyacente: todo el resultado es canje.
+        const quieto = periodoTodo(carteraConCanje([1.02, 1.05], { registros }));
+        for (const f of quieto.filas) { cerca(f.rend, cambio, 1e-9, `${f.nombre}: total`); cerca(f.activos, 0, 1e-9, `${f.nombre}: activos`); cerca(f.efecto_canje, cambio, 1e-9, `${f.nombre}: canje`); }
+        cerca(quieto.canje.desde, 0.02, 1e-9, 'desde'); cerca(quieto.canje.hasta, 0.05, 1e-9, 'hasta');
+        // Con el subyacente 10% arriba, el canje se multiplica sobre ese resultado.
+        const sube = periodoTodo(carteraConCanje([1.02, 1.05], { precios: [100, 110], registros }));
+        for (const f of sube.filas) {
+          cerca(f.activos, 0.10, 1e-9, `${f.nombre}: activos`); cerca((1 + f.rend) / (1 + f.activos) - 1, cambio, 1e-9, `${f.nombre}: la diferencia`);
+          cerca(f.activos + f.efecto_canje, f.rend, 1e-12, `${f.nombre}: suman el total`);
+        }
+        const b = rendimientoPorBloque(carteraConCanje([1.02, 1.05], { registros }))[0], dias = 424;
+        for (const k of ['xirr', 'xirr_spy', 'xirr_nucleo']) { cerca(b[k + '_activos'], 0, 1e-6, `${k} activos`); cerca(b[k], Math.pow(1.05 / 1.02, 365 / dias) - 1, 1e-6, k); }
+      }
+    }],
+
+    ['Canje: lo que no es CEDEAR ni acción local no se mueve con él', async () => {
+      const e = carteraConCanje([1.02, 1.05], { registros: true });
+      e.posiciones[0].tipo = 'on';
+      e.total_usd = 10; e.posiciones[0].valor_usd = 10;
+      e.datos.snapshots = { '2025-01-02': { t: 10, x: 0, mep: 1000, ccl: 1020 }, '2026-03-02': { t: 10, x: 0, mep: 1000, ccl: 1050 } };
+      const [yo, spy] = periodoTodo(e).filas;
+      cerca(yo.efecto_canje, 0, 1e-12, 'tu cartera'); cerca(spy.efecto_canje, 1.05 / 1.02 - 1, 1e-9, 'SPY con CEDEARs');
+    }],
+
     ['Radar: una acción local se reconoce por su ADR (PAMP → PAM) y el bloque YPF por YPF', async () => {
       const m = tickersPropios([
         { ticker: 'PAMP', subyacente: 'PAMP', grupo: 'satelite' },

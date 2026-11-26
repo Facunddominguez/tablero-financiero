@@ -1,6 +1,6 @@
 // Estado = datos base (descifrados) + registro de eventos locales + precios. Todo puro: no toca red ni DOM.
 import { clon, suma, fechas } from './util.js';
-import { costoLoteUSD, ADR_DE_LOCAL } from './finanzas.js';
+import { costoLoteUSD, expuestoAlCanje, ADR_DE_LOCAL } from './finanzas.js';
 export { ADR_DE_LOCAL };
 
 const GRUPO = { nucleo: 'nucleo', satelite: 'satelite', satelite_argentina: 'satelite', satelite_volatil: 'satelite', satelite_ypf: 'ypf', renta_fija_ars: 'renta_fija', emergencia: 'emergencia' };
@@ -202,7 +202,11 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
 }
 
 // Valores del día para guardar como snapshot (un punto por día en que se abre la app).
-export const snapshotDe = e => ({ t: Math.round(e.total_usd * 100) / 100, lp: Math.round(e.lp_usd * 100) / 100, n: Math.round(e.nucleo_usd * 100) / 100, mep: e.mep, ccl: e.ccl });
+// x = lo que está en CEDEARs y acciones locales (lo que se mueve con el canje).
+export const snapshotDe = e => {
+  const r = v => Math.round(v * 100) / 100;
+  return { t: r(e.total_usd), lp: r(e.lp_usd), n: r(e.nucleo_usd), x: r(suma((e.posiciones || []).filter(expuestoAlCanje), p => p.valor_usd)), mep: e.mep, ccl: e.ccl };
+};
 
 // Totales por grupo para el anillo de Cartera.
 export function porGrupo(e) {

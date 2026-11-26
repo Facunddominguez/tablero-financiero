@@ -14,6 +14,28 @@ const tablaReglas = reglas => tabla([
   { titulo: 'Valor', num: 1, celda: r => r.valor }, { titulo: 'Estado', celda: r => chip(NIVEL[r.nivel][0], NIVEL[r.nivel][1]) },
 ], reglas);
 
+// ---------- Activos y efecto canje ----------
+const EXPLICA_CANJE = 'El canje es la diferencia entre el dólar contado con liqui (CCL) y el dólar bolsa (MEP). Los CEDEARs siguen al primero: si el canje sube, valen más en dólares MEP aunque la acción no se mueva.';
+// La línea que explica el canje, con cuánto se movió en el período si se sabe.
+function notaCanje(canje) {
+  const paso = canje ? ` En este período pasó de ${fmt.pct(canje.desde)} a ${fmt.pct(canje.hasta)}.` : '';
+  return h('p.nota.nota-canje', `${EXPLICA_CANJE}${paso} «Activos» es el rendimiento con el canje quieto; sumado al «Efecto canje» da el total.`);
+}
+const hayCanje = R => !!R.filas?.some(f => f.activos != null);
+const columnasCanje = pc => [
+  { titulo: 'Activos', num: 1, celda: f => pc(f.activos) },
+  { titulo: 'Efecto canje', num: 1, celda: f => pc(f.efecto_canje) },
+];
+// Tu cartera y los benchmarks, separando activos y canje (Mensual y Trimestral).
+function seccionCanje(R, titulo) {
+  if (!R.filas) return null;
+  if (!hayCanje(R)) return sec(titulo, h('p.nota', 'Todavía no hay datos del canje: aparecen cuando se actualicen los precios.'));
+  const pc = x => x == null ? '—' : color(x, fmt.pctSigno(x, 1));
+  return sec(titulo,
+    h('div.tabla-periodo', tabla([{ titulo: '', celda: f => h('strong', f.nombre) }, { titulo: 'Total', num: 1, celda: f => pc(f.rend) }, ...columnasCanje(pc)], R.filas)),
+    notaCanje(R.canje));
+}
+
 // Rendimiento de la canasta núcleo (pesos fijos) entre dos fechas.
 function rendNucleo(e, desde, hasta) {
   const partes = Object.entries(e.datos.nucleo.pesos_internos).map(([t, w]) => [w, rendimientoHist(e.historico, t, desde, hasta)]);
@@ -40,6 +62,7 @@ function mensual(ctx) {
       dato('Aportes del período', fmt.usd(aportado), aportes.length ? aportes.map(a => fmt.fecha(a.fecha)).join(', ') : 'ninguno'),
       dato('Tasa de ahorro', m ? fmt.pct((m.ingreso - m.gasto) / m.ingreso, 0) : '—', m ? `meta ${fmt.pct(d.perfil.meta_tasa_ahorro, 0)}` : 'mes sin cargar')),
       h('p.nota', `En USD, sin descontar inflación. Los aportes no cuentan como ganancia; es el mismo número que Rendimiento → "Este mes". ${f0 >= inicio ? 'Todavía no hay un dato anterior al inicio del mes: se mide desde el primero.' : ''}`)),
+    seccionCanje(R, `Activos y efecto canje, desde el ${fmt.fecha(f0)}`),
     sec('Cumplimiento de reglas', tablaReglas(ctx.plan.reglas)),
     sec('Qué se hizo', hechos.length ? h('ul.lista-simple', hechos.map(x => h('li', `${fmt.fecha(x.fecha)} · ${x.texto}`))) : h('p.nota', 'Nada registrado este mes.')),
     sec('Qué sigue', tareas.length ? h('ul.lista-simple', tareas.map(p => h('li', p.titulo))) : h('p', `Todo en orden. Próxima acción: ${fmt.fecha(ctx.plan.proxima.fecha)}, ${ctx.plan.proxima.texto}.`)));
@@ -90,19 +113,21 @@ function contenidoPeriodo(e, historia, bench, per) {
       ...otros.map(b => dato(b.nombre, pc(b.rend), `${fmt.signo(b.ganancia)} USD con los mismos aportes`)),
       dato('Aportes', fmt.usd(R.aportado), [per === 'todo' ? `desde el ${fmt.fecha(R.f0)}` : `del ${fmt.fecha(R.f0)} a hoy`, R.implicito > 0.5 ? `; ${fmt.usd(R.implicito)} estimados por compras sin aporte cargado` : ''])),
     sec(`Detalle ${per === 'todo' ? 'desde el inicio' : `desde el ${fmt.fecha(R.f0)}`}`,
-      // La tabla solo aparece si suma algo a las tarjetas: la tasa por año (períodos de un año o más) o sin inflación.
-      R.dias >= 365 || R.inflacion ? h('div.tabla-periodo', tabla([
+      // La tabla solo aparece si suma algo a las tarjetas: activos y canje, la tasa por año (un año o más) o sin inflación.
+      R.dias >= 365 || R.inflacion || hayCanje(R) ? h('div.tabla-periodo', tabla([
         { titulo: '', celda: f => h('strong', f.nombre) },
         { titulo: 'En dólares', num: 1, celda: f => pc(f.rend) },
+        ...(hayCanje(R) ? columnasCanje(pc) : []),
         ...(R.dias >= 365 ? [{ titulo: 'Por año', num: 1, celda: f => pc(f.anual) }] : []),
         ...(R.inflacion ? [{ titulo: 'Descontando inflación', num: 1, celda: f => pc(f.real) }] : []),
       ], R.filas)) : null,
+      hayCanje(R) ? notaCanje(R.canje) : h('p.nota', { style: 'margin-top:.6rem' }, 'Todavía no hay datos del canje: aparecen cuando se actualicen los precios.'),
       h('p.nota', { style: 'margin-top:.6rem' }, [
         dif == null ? '' : `${dif >= 0 ? 'Le ganaste' : 'Quedaste'} ${fmt.num(Math.abs(dif) * 100, 1)} puntos ${dif >= 0 ? 'a' : 'debajo de'} SPY en el período. `,
         R.inflacion
           ? `Las tarjetas, los gráficos y la columna "En dólares" no descuentan la inflación. La columna "Descontando inflación" sí: le resta la inflación de EE.UU. del período (${fmt.pctSigno(R.inflacion.valor, 1)}, según el IPC hasta ${fmt.mes(R.inflacion.hasta)}). `
           : 'En dólares MEP, sin descontar inflación: el IPC de EE.UU. de este período todavía no se publicó. ',
-        'Los aportes no cuentan como ganancia; SPY y el núcleo simulan poner cada aporte ese mismo día.',
+        'Los aportes no cuentan como ganancia; SPY y el núcleo simulan comprar CEDEARs con cada aporte, ese mismo día.',
       ])),
     sec('Evolución en USD', puntos.length < 3
       ? h('p.nota', `El gráfico aparece a partir del tercer día con datos en el período (hay ${puntos.length}).`)
@@ -162,12 +187,16 @@ function rendimientoInforme(ctx) {
     bloquePeriodo(e),
     sec('Por bloque, desde cada compra (tasa anual)', (() => {
       const filas = rendimientoPorBloque(e), pc = x => x == null ? '—' : color(x, fmt.pctSigno(x));
+      // Cada tasa anual, y debajo cuánto es de los activos y cuánto del canje.
+      const tasa = (f, k) => f.reciente || f[k] == null ? '—' : [pc(f[k]), f[k + '_activos'] == null ? null : h('span.desglose',
+        h('span', `activos ${fmt.pctSigno(f[k + '_activos'])}`), h('span', `canje ${fmt.pctSigno(f[k] - f[k + '_activos'])}`))];
       return [tabla([
         { titulo: '', celda: f => h('strong', f.nombre) }, { titulo: 'Costó', num: 1, celda: f => fmt.num(f.costo) }, { titulo: 'Vale', num: 1, celda: f => fmt.num(f.valor) },
         { titulo: 'Ganancia', num: 1, celda: f => color(f.ganancia, fmt.signo(f.ganancia)) }, { titulo: 'Antigüedad', num: 1, celda: f => `${fmt.num(f.meses, 0)} m` },
-        { titulo: 'Anual', num: 1, celda: f => f.reciente ? '—' : pc(f.xirr) }, { titulo: 'En el núcleo', num: 1, celda: f => f.reciente ? '—' : pc(f.xirr_nucleo) }, { titulo: 'En SPY', num: 1, celda: f => f.reciente ? '—' : pc(f.xirr_spy) },
+        { titulo: 'Anual', num: 1, celda: f => tasa(f, 'xirr') }, { titulo: 'En el núcleo', num: 1, celda: f => tasa(f, 'xirr_nucleo') }, { titulo: 'En SPY', num: 1, celda: f => tasa(f, 'xirr_spy') },
       ], filas),
-      h('p.nota', { style: 'margin-top:.6rem' }, 'Este cuadro no sigue el período de arriba: mide lo que hoy tenés desde la compra de cada lote (no cuenta lo ya vendido), como tasa anual, y lo compara con haber puesto esa misma plata, esos mismos días, en el núcleo o en SPY. Deja afuera el fondo de emergencia, que no está para rendir. Con menos de tres meses de antigüedad media no se muestra la tasa anual: todavía no dice nada.')];
+      h('p.nota', { style: 'margin-top:.6rem' }, 'Este cuadro no sigue el período de arriba: mide lo que hoy tenés desde la compra de cada lote (no cuenta lo ya vendido), como tasa anual, y lo compara con haber puesto esa misma plata, esos mismos días, en el núcleo o en SPY con CEDEARs. Deja afuera el fondo de emergencia, que no está para rendir. Con menos de tres meses de antigüedad media no se muestra la tasa anual: todavía no dice nada.'),
+      filas.some(f => f.xirr_activos != null) ? notaCanje(null) : null];
     })()),
     sec('Costos (regla C3)', h('div.resumen',
       dato('Últimos 12 meses', fmt.usd(c.usd, 2), 'comisiones y gastos de operaciones'),
@@ -195,6 +224,7 @@ function trimestral(ctx) {
       item(!R.C3?.activa, 'Costos', `${fmt.pct(c.pct, 2)} del patrimonio medio en los últimos 12 meses (${fmt.usd(c.usd, 2)}).`),
       item(!fuera.length && R.R5?.nivel === 'ok', 'Satélites', `${fuera.length ? `Fuera de su banda: ${fuera.map(p => `${p.ticker} ${fmt.pct(p.pct_lp)}`).join(', ')}. ` : 'Todos dentro de su banda. '}En total son ${fmt.pct(e.satelites_lp)} de largo plazo${R.R5 && R.R5.nivel !== 'ok' ? ` (regla R5 ${NIVEL[R.R5.nivel][0].toLowerCase()}: los aportes van solo al núcleo)` : ''}.`),
       item(true, 'Watchlist', `${(d.watchlist || []).length} nombres en seguimiento. ${R.R7?.activa ? 'Bloqueada por la regla R7: solo observación.' : 'Habilitada: máximo inicial por nombre según la tabla.'}`))),
+    seccionCanje(T, 'Activos y efecto canje, desde el inicio'),
     sec('Satélites contra su banda', tabla([
       { titulo: 'Activo', celda: p => h('strong.num', p.ticker) }, { titulo: '% LP', num: 1, celda: p => fmt.pct(p.pct_lp) },
       { titulo: 'Banda', num: 1, celda: p => { const b = d.objetivos_por_activo[p.ticker]?.banda; return b ? `${fmt.pct(b[0], 0)}–${fmt.pct(b[1], 1)}` : '—'; } },

@@ -50,10 +50,40 @@ function indice(hist, fecha, modo) {
   return r;
 }
 
+// ---------- Series del histórico ----------
+// MEP y CCL son dólares, no activos (además, CCL es el ticker de Carnival): nunca se usan como precio de algo.
+const SERIES_DE_DOLAR = ['MEP', 'CCL'];
+export const serieDe = (hist, t) => (t && !SERIES_DE_DOLAR.includes(t) ? hist?.series?.[t] || null : null);
+
+// ---------- Canje ----------
+// El canje es la diferencia entre el dólar contado con liqui (CCL) y el dólar MEP. Los CEDEARs y las acciones
+// locales siguen al CCL: valuados en dólares MEP, suben o bajan con el canje aunque el activo no se mueva.
+export const expuestoAlCanje = p => p.tipo === 'cedear' || p.tipo === 'accion_ar';
+
+// Devuelve canje(fecha) = CCL ÷ MEP de ese día (si falta, el último anterior; antes del primer dato, el primero),
+// o null si no hay ningún dato. Fuentes: el histórico, los registros diarios de la app y los precios de hoy.
+export function canjeDe(estado) {
+  const dias = new Map(), hist = estado.historico, mep = hist?.series?.MEP, ccl = hist?.series?.CCL;
+  if (mep && ccl) hist.fechas.forEach((f, i) => { if (mep[i] > 0 && ccl[i] > 0) dias.set(f, ccl[i] / mep[i]); });
+  for (const [f, s] of Object.entries(estado.datos?.snapshots || {})) if (s.mep > 0 && s.ccl > 0) dias.set(f, s.ccl / s.mep);
+  if (estado.precios?.origen === 'mercado' && estado.mep > 0 && estado.ccl > 0) dias.set(estado.hoy, estado.ccl / estado.mep);
+  if (!dias.size) return null;
+  const fs = [...dias.keys()].sort();
+  return fecha => {
+    let lo = 0, hi = fs.length - 1, r = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (fs[mid] <= fecha) { r = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return dias.get(fs[r]);
+  };
+}
+
 // Simula invertir cada aporte en una canasta fija (pesos {ticker: fracción}) sin rebalanceo. Cada aporte se compra
 // al cierre del primer día hábil desde su fecha y cuenta desde ese día (un aporte de sábado entra el lunes).
+// Con `canje` (de canjeDe) la canasta se compra con CEDEARs: cada precio vale subyacente × (CCL ÷ MEP) del día.
 // Devuelve una función valorEn(fecha) → USD, con .flujos: los aportes en la fecha en que entran; null si falta historia.
-export function simularBenchmark(aportes, hist, pesos) {
+export function simularBenchmark(aportes, hist, pesos, canje = null) {
   if (!hist?.fechas?.length) return null;
   const compras = [], flujos = [];
   for (const a of aportes) {
@@ -62,31 +92,37 @@ export function simularBenchmark(aportes, hist, pesos) {
     const entra = hist.fechas[i] > a.fecha ? hist.fechas[i] : a.fecha;
     flujos.push({ fecha: entra, usd: a.usd });
     for (const [t, w] of Object.entries(pesos)) {
-      const serie = hist.series[t];
+      const serie = serieDe(hist, t);
       if (!serie) return null;
-      compras.push({ fecha: entra, t, unidades: a.usd * w / serie[i] });
+      compras.push({ fecha: entra, t, unidades: a.usd * w / (serie[i] * (canje ? canje(entra) : 1)) });
     }
   }
   const valorEn = fecha => {
     const i = indice(hist, fecha, 'valuacion');
     if (i < 0) return 0;
-    return suma(compras, c => c.fecha <= fecha ? c.unidades * hist.series[c.t][i] : 0);
+    return suma(compras, c => c.fecha <= fecha ? c.unidades * hist.series[c.t][i] : 0) * (canje ? canje(fecha) : 1);
   };
   valorEn.flujos = flujos;
   return valorEn;
 }
 
-// SPY y el núcleo simulados con unos flujos dados. [{ nombre, valorEn }].
+const canastas = pesosNucleo => [['SPY', { SPY: 1 }], ['Núcleo ' + Object.values(pesosNucleo).map(w => Math.round(w * 100)).join('/'), pesosNucleo]];
+
+// SPY y el núcleo simulados con unos flujos dados, como si se compraran con CEDEARs.
+// [{ nombre, valorEn, activos }]: `activos` es la misma simulación sin canje (null si no hay datos del canje).
 export function benchmarks(estado, flujos) {
-  const pn = estado.datos.nucleo.pesos_internos;
-  return [['SPY', { SPY: 1 }], ['Núcleo ' + Object.values(pn).map(w => Math.round(w * 100)).join('/'), pn]]
-    .map(([nombre, pesos]) => { const valorEn = simularBenchmark(flujos, estado.historico, pesos); return valorEn && { nombre, valorEn }; })
+  const canje = canjeDe(estado);
+  return canastas(estado.datos.nucleo.pesos_internos)
+    .map(([nombre, pesos]) => {
+      const valorEn = simularBenchmark(flujos, estado.historico, pesos, canje);
+      return valorEn && { nombre, valorEn, activos: canje ? simularBenchmark(flujos, estado.historico, pesos) : null };
+    })
     .filter(Boolean);
 }
 
 // Rendimiento de un ticker del histórico entre dos fechas (cierre ajustado). null si no hay datos.
 export function rendimientoHist(hist, ticker, desde, hasta) {
-  if (!hist?.fechas?.length || !hist.series[ticker]) return null;
+  if (!hist?.fechas?.length || !serieDe(hist, ticker)) return null;
   const a = indice(hist, desde, 'valuacion'), b = indice(hist, hasta, 'valuacion');
   if (a < 0 || b < 0 || a === b) return null;
   return hist.series[ticker][b] / hist.series[ticker][a] - 1;
@@ -127,13 +163,9 @@ export function rendimiento(estado) {
     aportado, cartera: fila('Tu cartera', estado.total_usd), benchmarks: [], valorEn: {},
     inflacion: def && primero ? { hasta: def.ultimo, desde: primero.slice(0, 7), acumulada: def.factor(primero) - 1 } : null,
   };
-  const hist = estado.historico;
-  const canastas = [['SPY', { SPY: 1 }], ['Núcleo ' + Object.values(estado.datos.nucleo.pesos_internos).map(w => Math.round(w * 100)).join('/'), estado.datos.nucleo.pesos_internos]];
-  for (const [nombre, pesos] of canastas) {
-    const sim = simularBenchmark(aportes, hist, pesos);
-    if (!sim) continue;
-    out.benchmarks.push(fila(nombre, sim(hoy)));
-    out.valorEn[nombre] = sim;
+  for (const b of benchmarks(estado, aportes)) {
+    out.benchmarks.push(fila(b.nombre, b.valorEn(hoy)));
+    out.valorEn[b.nombre] = b.valorEn;
   }
   return out;
 }
@@ -166,8 +198,10 @@ export function curvaPorcentual(puntos, aportes) {
 // dé el valor real) o, si no hay serie (ON, FCI), en línea recta entre lo que costó y lo que vale hoy. Se suma
 // la caja estimada: aportes, cupones, dividendos y resultados de ventas cargados, menos lo que costaron las compras
 // (si una compra no tiene plata cargada que la cubra, se toma como aporte implícito).
-// Devuelve { puntos: [{ f, v, rec }], indice, ganancia, flujos, cierre }:
+// Devuelve { puntos: [{ f, v, rec }], indice, ganancia, indiceCanje, flujos, cierre }:
 //   indice/ganancia: factor y USD acumulados (los aportes no cuentan como ganancia);
+//   indiceCanje: cuánto de ese factor se debe al canje (null sin datos): en cada tramo, la parte de la cartera
+//                en CEDEARs y acciones locales por lo que se movió CCL ÷ MEP;
 //   flujos: aportes cargados en su fecha + implícitos (los mismos que se simulan en SPY y el núcleo);
 //   cierre: lo estimado contra el primer registro diario, para avisar si no coinciden.
 export function historiaCartera(estado) {
@@ -181,42 +215,62 @@ export function historiaCartera(estado) {
     const ts = a.evento && momentos.get(a.evento), cargado = ts ? fechas.deMomento(ts) : null;
     return { fecha: cargado && cargado > a.fecha ? cargado : a.fecha, usd: a.usd };
   });
-  const rec = reconstruir(estado, primero);
+  const canje = canjeDe(estado);
+  const rec = reconstruir(estado, primero, canje);
 
-  const puntos = [], indice = [], ganancia = [];
-  let I = 1, G = 0;
+  const puntos = [], indice = [], ganancia = [], indiceCanje = [];
+  let I = 1, G = 0, C = 1;
+  // Parte del valor expuesta al canje (w) entre dos fechas.
+  const sumarCanje = (w, desde, hasta) => { if (canje && w > 0) C *= 1 + w * (canje(hasta) / canje(desde) - 1); };
   if (rec) {
     rec.puntos.forEach((p, k) => {
       if (k > 0) {
         const ant = rec.puntos[k - 1];
-        if (ant.v > 0) { I *= (p.v - p.entra) / ant.v; G += p.v - ant.v - p.entra; }
+        if (ant.v > 0) { I *= (p.v - p.entra) / ant.v; G += p.v - ant.v - p.entra; sumarCanje(ant.x / ant.v, ant.f, p.f); }
       }
-      if (p.f < primero) { puntos.push({ f: p.f, v: p.v, rec: true }); indice.push(I); ganancia.push(G); }
+      if (p.f < primero) { puntos.push({ f: p.f, v: p.v, rec: true }); indice.push(I); ganancia.push(G); indiceCanje.push(C); }
     });
   }
+  const parte = canje ? parteExpuesta(estado, snaps, canje) : () => 0;
   // Registros diarios: Dietz modificado con los aportes, como curvaPorcentual.
   snaps.forEach((p, k) => {
     if (k > 0) {
       const ant = snaps[k - 1], largo = Math.max(1, fechas.dias(ant.f, p.f));
       const tramo = visibles.filter(a => a.fecha > ant.f && a.fecha <= p.f);
       const flujo = suma(tramo, a => a.usd), pond = suma(tramo, a => a.usd * fechas.dias(a.fecha, p.f) / largo);
-      if (ant.v > 0 && ant.v + pond > 0) { I *= 1 + (p.v - ant.v - flujo) / (ant.v + pond); G += p.v - ant.v - flujo; }
+      if (ant.v > 0 && ant.v + pond > 0) { I *= 1 + (p.v - ant.v - flujo) / (ant.v + pond); G += p.v - ant.v - flujo; sumarCanje(parte(ant.f), ant.f, p.f); }
     }
-    puntos.push({ f: p.f, v: p.v, rec: false }); indice.push(I); ganancia.push(G);
+    puntos.push({ f: p.f, v: p.v, rec: false }); indice.push(I); ganancia.push(G); indiceCanje.push(C);
   });
   const flujos = [...aportes.map(a => ({ fecha: a.fecha, usd: a.usd })), ...(rec ? rec.implicitos : [])]
     .sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
   const fin = rec?.puntos[rec.puntos.length - 1];
   const cierre = rec && snaps.length ? { fecha: primero, estimado: fin.v, registrado: snaps[0].v } : null;
-  return { puntos, indice, ganancia, flujos, cierre };
+  return { puntos, indice, ganancia, indiceCanje: canje ? indiceCanje : null, flujos, cierre };
+}
+
+// Parte de la cartera en CEDEARs y acciones locales en la fecha de cada registro diario: la guardada en el registro (x);
+// si es viejo y no la tiene, la que surge de los lotes de ese día; y si no hay lotes ni precios, la de hoy.
+function parteExpuesta(estado, snaps, canje) {
+  const guardado = estado.datos.snapshots || {};
+  const faltan = snaps.some(s => guardado[s.f]?.x == null);
+  const rec = faltan ? reconstruir(estado, estado.hoy, canje) : null;
+  const hoy = estado.total_usd > 0 ? suma((estado.posiciones || []).filter(expuestoAlCanje), p => p.valor_usd) / estado.total_usd : 0;
+  return fecha => {
+    const s = guardado[fecha];
+    if (s?.x != null && s.t > 0) return s.x / s.t;
+    let p = null;
+    for (const q of rec?.puntos || []) { if (q.f <= fecha) p = q; else break; }
+    return p && p.v > 0 ? p.x / p.v : hoy;
+  };
 }
 
 // Puntos diarios (días hábiles de la serie histórica) desde el primer aporte o compra hasta `hasta` inclusive.
-// Cada punto: { f, v: tenencias + caja en USD, entra: lo que entró en el tramo y no es ganancia }.
+// Cada punto: { f, v: tenencias + caja en USD, x: la parte de v expuesta al canje, entra: lo que entró en el tramo y no es ganancia }.
 // "entra" = aportes del tramo + aportes implícitos + (valor estimado − costo) de lo comprado en el tramo,
 // así la diferencia entre el precio estimado y el que pagaste no se cuenta como ganancia ni pérdida.
 // Cupones, dividendos y resultados de ventas suman a la caja como ganancia (las amortizaciones no: devuelven capital).
-function reconstruir(estado, hasta) {
+function reconstruir(estado, hasta, canje) {
   const d = estado.datos, hist = estado.historico, hoy = estado.hoy;
   if (!hist?.fechas?.length) return null;
   const lotes = (d.lotes_costo || []).filter(l => l.fecha_compra && l.fecha_compra < hasta && l.cantidad > 0);
@@ -234,8 +288,9 @@ function reconstruir(estado, hasta) {
   if (meta.fecha_snapshot === hasta && mepBase > 0) {
     for (const p of d.posiciones || []) if (p.precio > 0) anclas.set(p.ticker, { fecha: hasta, unit: p.moneda_precio === 'USD' ? p.precio : p.precio / mepBase });
   }
-  const precios = lotes.map(l => precioLote(estado, l, iHoy, anclas.get(l.ticker)));
+  const precios = lotes.map(l => precioLote(estado, l, iHoy, anclas.get(l.ticker), canje));
   const costos = lotes.map(l => costoLoteUSD(l));
+  const expuestos = lotes.map(l => { const p = estado.posiciones.find(x => x.ticker === l.ticker); return !!p && expuestoAlCanje(p); });
   // Dividendos en acciones (lotes de costo cero, como el de YPFD): no son plata que entra. Antes de esa fecha, los
   // lotes previos del mismo activo valen por las acciones que se convirtieron después (así el valor no salta).
   const gratis = lotes.map((l, k) => costos[k] === 0);
@@ -253,12 +308,13 @@ function reconstruir(estado, hasta) {
   const out = [], implicitos = [];
   let previa = null, implicito = 0;
   for (const f of dias) {
-    let tenencia = 0, costoAcum = 0, ajuste = 0;
+    let tenencia = 0, costoAcum = 0, ajuste = 0, expuesto = 0;
     lotes.forEach((l, k) => {
       if (l.fecha_compra > f) return;
       costoAcum += costos[k];
       const valor = precios[k] ? l.cantidad * multiplicador(k, f) * precios[k](f) : costos[k];
       tenencia += valor;
+      if (expuestos[k]) expuesto += valor;
       if (!gratis[k] && (previa === null || l.fecha_compra > previa)) ajuste += valor - costos[k];
     });
     const aportado = suma(aportes.filter(a => a.fecha <= f), a => a.usd);
@@ -269,7 +325,7 @@ function reconstruir(estado, hasta) {
     if (entraImplicito > 1e-9) implicitos.push({ fecha: f, usd: entraImplicito, implicito: true });
     implicito = nuevoImplicito;
     const caja = aportado + ganado - costoAcum + implicito;
-    out.push({ f, v: tenencia + caja, entra: tramo + entraImplicito + ajuste });
+    out.push({ f, v: tenencia + caja, x: expuesto, entra: tramo + entraImplicito + ajuste });
     previa = f;
   }
   return { puntos: out, implicitos };
@@ -277,22 +333,25 @@ function reconstruir(estado, hasta) {
 
 // Precio unitario en USD de un lote en cualquier fecha posterior a su compra.
 // Se escala contra un precio conocido: el del resumen base (el día del primer registro) si lo hay, si no el de hoy.
-function precioLote(estado, l, iHoy, ancla) {
+// Los CEDEARs y las acciones locales además acompañan el canje (CCL ÷ MEP) de cada día.
+function precioLote(estado, l, iHoy, ancla, canje) {
   const p = estado.posiciones.find(x => x.ticker === l.ticker);
   if (!p || !(p.cantidad > 0) || !(p.valor_usd > 0)) return null;
   const hist = estado.historico;
   const refFecha = ancla ? ancla.fecha : estado.hoy, hoyUnit = ancla ? ancla.unit : p.valor_usd / p.cantidad;
   if (ancla) iHoy = indice(hist, refFecha, 'valuacion');
   const conSerie = p.tipo !== 'on' && p.tipo !== 'fci';
-  const t = conSerie ? [p.ticker_subyacente_usa, p.subyacente, ADR_DE_LOCAL[p.ticker], p.ticker].find(x => x && hist.series[x]) : null;
+  const t = conSerie ? [p.ticker_subyacente_usa, p.subyacente, ADR_DE_LOCAL[p.ticker], p.ticker].find(x => serieDe(hist, x)) : null;
   if (t && iHoy >= 0) {
     const s = hist.series[t];
     let j = iHoy; while (j >= 0 && s[j] == null) j--;
     if (j >= 0) {
       const factor = hoyUnit / s[j];
+      const c = canje && expuestoAlCanje(p) ? canje : null;
+      const base = c ? c(refFecha) : 1;
       return f => {
         let i = indice(hist, f, 'valuacion'); while (i > 0 && s[i] == null) i--;
-        return i >= 0 && s[i] != null ? s[i] * factor : hoyUnit;
+        return i >= 0 && s[i] != null ? s[i] * factor * (c ? c(f) / base : 1) : hoyUnit;
       };
     }
   }
@@ -304,7 +363,9 @@ function precioLote(estado, l, iHoy, ancla) {
 // Todo lo de un período (mes, año o desde el inicio) para tu cartera y los benchmarks, con una sola vara:
 // rendimiento por tiempo (los aportes no cuentan como ganancia), en USD sin ajustar por inflación.
 // bench: benchmarks(estado, historia.flujos), así SPY y el núcleo simulan exactamente la misma plata que entró.
-// Devuelve { puntos, k, nombres, usd, pct, filas: [{ nombre, rend, anual, real, ganancia }], aportado, implicito, inflacion, dias, f0 }.
+// Cada fila separa `activos` (con el canje quieto) y `efecto_canje` (lo que sumó o restó que cambiara): suman `rend`.
+// Devuelve { puntos, k, nombres, usd, pct, filas: [{ nombre, rend, activos, efecto_canje, anual, real, ganancia }],
+//            aportado, implicito, inflacion, canje: { desde, hasta }, dias, f0 }.
 export function resumenPeriodo(estado, historia, bench, per) {
   const todos = historia.puntos;
   const k = inicioDelPeriodo(todos.map(p => p.f), estado.hoy, per);
@@ -323,13 +384,24 @@ export function resumenPeriodo(estado, historia, bench, per) {
   // Si todavía no hay un mes publicado posterior al del inicio, no se puede medir.
   const def = deflactor(estado.mercado?.cpi_usa?.meses);
   const inflacion = def && def.ultimo > f0.slice(0, 7) ? { valor: def.factor(f0) - 1, desde: f0.slice(0, 7), hasta: def.ultimo } : null;
+  // Rendimiento con el canje quieto: el de la cartera, sacando lo que se debe al canje; el de cada benchmark, simulado sin él.
+  const sinCanje = i => {
+    if (i === 0) {
+      const c = historia.indiceCanje;
+      return c ? (pct[0][pct[0].length - 1] + 1) / (c[c.length - 1] / c[k]) - 1 : null;
+    }
+    const a = bench[i - 1].activos;
+    return a ? curvaPorcentual(puntos.map(p => ({ f: p.f, v: a(p.f) })), a.flujos).at(-1) : null;
+  };
+  const canje = canjeDe(estado);
   const filas = nombres.map((nombre, i) => {
     const rend = pct[i][pct[i].length - 1];
+    const activos = sinCanje(i);
     const ganancia = i === 0
       ? historia.ganancia[historia.ganancia.length - 1] - historia.ganancia[k]
       : usd[i][usd[i].length - 1] - usd[i][0] - suma(bench[i - 1].valorEn.flujos.filter(enTramo), a => a.usd);
     return {
-      nombre, rend, ganancia,
+      nombre, rend, ganancia, activos, efecto_canje: activos == null ? null : rend - activos,
       anual: dias >= 365 ? Math.pow(1 + rend, 365 / dias) - 1 : null,
       real: inflacion ? (1 + rend) / (1 + inflacion.valor) - 1 : null,
     };
@@ -338,6 +410,7 @@ export function resumenPeriodo(estado, historia, bench, per) {
   const delPeriodo = historia.flujos.filter(a => (per === 'todo' || a.fecha > f0) && a.fecha <= fin);
   return {
     puntos, k, nombres, usd, pct, filas, inflacion, dias, f0,
+    canje: canje ? { desde: canje(f0) - 1, hasta: canje(fin) - 1 } : null,
     aportado: suma(delPeriodo, a => a.usd), implicito: suma(delPeriodo.filter(a => a.implicito), a => a.usd),
   };
 }
@@ -372,9 +445,16 @@ export function brechaAportes(estado) {
 }
 
 // Rendimiento de lo que hoy hay en cartera, por bloque, medido desde la compra de cada lote (no incluye lo ya vendido).
-// Cada fila se compara con haber puesto esa misma plata, en esas mismas fechas, en el núcleo y en SPY.
+// Cada fila se compara con haber puesto esa misma plata, en esas mismas fechas, en el núcleo y en SPY (con CEDEARs).
+// Las tasas *_activos son con el canje quieto; la diferencia con la tasa total es el efecto canje.
 export function rendimientoPorBloque(estado) {
-  const d = estado.datos, hoy = estado.hoy, hist = estado.historico;
+  const d = estado.datos, hoy = estado.hoy, hist = estado.historico, canje = canjeDe(estado);
+  // Valor de hoy de una posición si el canje hubiera quedado como el día de cada compra.
+  const valorSinCanje = p => {
+    const lotes = d.lotes_costo.filter(l => l.ticker === p.ticker), cantidad = suma(lotes, l => l.cantidad);
+    if (!expuestoAlCanje(p) || !(cantidad > 0)) return p.valor_usd;
+    return p.valor_usd * suma(lotes, l => l.cantidad / cantidad * canje(l.fecha_compra) / canje(hoy));
+  };
   const grupoDeTicker = Object.fromEntries(estado.posiciones.map(p => [p.ticker, p.grupo]));
   const fila = (nombre, grupos) => {
     const pos = estado.posiciones.filter(p => grupos.includes(p.grupo));
@@ -383,9 +463,16 @@ export function rendimientoPorBloque(estado) {
     const costo = suma(aportes, a => a.usd), valor = suma(pos, p => p.valor_usd);
     if (!(costo > 0)) return null;
     const flujos = aportes.map(a => ({ fecha: a.fecha, monto: -a.usd }));
-    const contra = pesos => { const sim = simularBenchmark(aportes, hist, pesos); return sim ? xirr([...flujos, { fecha: hoy, monto: sim(hoy) }]) : null; };
+    const tasa = v => xirr([...flujos, { fecha: hoy, monto: v }]);
+    const contra = (pesos, c) => { const sim = simularBenchmark(aportes, hist, pesos, c); return sim ? tasa(sim(hoy)) : null; };
     const meses = suma(aportes, a => a.usd * fechas.dias(a.fecha, hoy)) / costo / 30.44; // antigüedad media, ponderada por costo
-    return { nombre, costo, valor, ganancia: valor - costo, meses, reciente: meses < 3, xirr: xirr([...flujos, { fecha: hoy, monto: valor }]), xirr_nucleo: contra(d.nucleo.pesos_internos), xirr_spy: contra({ SPY: 1 }) };
+    return {
+      nombre, costo, valor, ganancia: valor - costo, meses, reciente: meses < 3,
+      xirr: tasa(valor), xirr_nucleo: contra(d.nucleo.pesos_internos, canje), xirr_spy: contra({ SPY: 1 }, canje),
+      xirr_activos: canje ? tasa(suma(pos, valorSinCanje)) : null,
+      xirr_nucleo_activos: canje ? contra(d.nucleo.pesos_internos) : null,
+      xirr_spy_activos: canje ? contra({ SPY: 1 }) : null,
+    };
   };
   return [fila('Largo plazo (todo)', ['nucleo', 'satelite', 'ypf', 'renta_fija']), fila('Núcleo', ['nucleo']), fila('Satélites', ['satelite']), fila('YPF', ['ypf']), fila('Renta fija en pesos', ['renta_fija'])].filter(Boolean);
 }
