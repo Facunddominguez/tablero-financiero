@@ -30,17 +30,21 @@ def ahora():
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def bajar(url, intentos=3, espera=4, timeout=30):
+def bajar_bytes(url, intentos=3, espera=4, timeout=30):
     ultimo = None
     for i in range(intentos):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.read().decode("utf-8", errors="replace")
+                return r.read()
         except Exception as e:  # noqa: BLE001
             ultimo = e
             time.sleep(espera * (i + 1))
     raise RuntimeError(f"{url[:60]}…: {ultimo}")
+
+
+def bajar(url, **k):
+    return bajar_bytes(url, **k).decode("utf-8", errors="replace")
 
 
 def leer(nombre):
@@ -362,6 +366,129 @@ def sumar_canje(hist, anterior):
     return hist
 
 
+def hoy_argentina():
+    return (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=3)).strftime("%Y-%m-%d")
+
+
+def al_dia(anterior, dias=1):
+    """¿El dato anterior es bueno y tiene menos de `dias` días calendario? Para no pedir a cada rato lo que casi no cambia."""
+    a = anterior or {}
+    if a.get("stale") or not a.get("actualizado"):
+        return False
+    try:
+        edad = dt.datetime.now(dt.timezone.utc).date() - dt.date.fromisoformat(a["actualizado"][:10])
+    except ValueError:
+        return False
+    return edad.days < dias
+
+
+def seccion_diaria(nombre, anterior, fn, dias=1, vigente=lambda a: True):
+    """Como seccion(), pero si el dato anterior está al día (y sigue sirviendo) lo reusa sin volver a pedirlo."""
+    if al_dia(anterior, dias) and vigente(anterior):
+        print(f"ok   {nombre} (al día)")
+        return anterior
+    return seccion(nombre, anterior, fn)
+
+
+# ---------- feriados argentinos ----------
+
+def feriados_ar(anterior):
+    """Feriados argentinos de este año y del que viene (ArgentinaDatos). Los años ya guardados se conservan."""
+    anio = int(hoy_argentina()[:4])
+    feriados = dict((anterior or {}).get("feriados") or {})
+    anios = set((anterior or {}).get("anios") or [])
+    for a in (anio, anio + 1):
+        try:
+            filas = json.loads(bajar(f"https://api.argentinadatos.com/v1/feriados/{a}", intentos=2))
+            nuevos = {f["fecha"]: {"nombre": f["nombre"], "tipo": f.get("tipo") or "inamovible"}
+                      for f in filas if str(f.get("fecha", "")).startswith(f"{a}-") and f.get("nombre")}
+            if len(nuevos) < 8:
+                raise RuntimeError(f"feriados {a}: lista incompleta ({len(nuevos)})")
+        except Exception as e:  # noqa: BLE001
+            if a == anio:
+                raise
+            print(f"FALLA feriados {a} (puede no estar publicado): {e}", file=sys.stderr)
+            continue
+        feriados = {f: v for f, v in feriados.items() if not f.startswith(f"{a}-")}
+        feriados.update(nuevos)
+        anios.add(a)
+    return {"fuente": "ArgentinaDatos /v1/feriados/{año}", "anios": sorted(anios), "feriados": dict(sorted(feriados.items()))}
+
+
+# ---------- ratios de BYMA: solo avisa si cambió alguno ----------
+
+BYMA_PAGINA = "https://www.byma.com.ar/productos/productos-financieros/cedears"
+_MERCADOS_BYMA = r"NYSE Arca|NYSE ARCA|NYSE American|NYSE|NASDAQ GS|NASDAQ GM|NASDAQ CM|NASDAQ|XETRA|B3|FRANKFURT|OTC US|OTC|CBOE|BOVESPA|New York|-"
+
+
+def enlace_lista_byma(pagina):
+    """(fecha, url) de la lista de CEDEARs más nueva enlazada en la página de BYMA."""
+    enlaces = {m.group(2): m.group(1) for m in re.finditer(r'(https://[^"\'\s<>]+?_BYMA-CEDEARs-(\d{4}-\d{2}-\d{2})\.pdf)', pagina)}
+    if not enlaces:
+        raise RuntimeError("byma: no encuentro el enlace a la lista de CEDEARs")
+    fecha = max(enlaces)
+    return fecha, enlaces[fecha]
+
+
+def leer_lista_byma(texto):
+    """{ticker: set de ratios} desde el texto de la lista. Cada fila termina en "MERCADO a:b" (a CEDEARs = b acciones);
+    las de Londres vienen partidas: nombre y código, "LONDON STOCK", "EXCHANGE" y la relación."""
+    filas, previa = {}, ""
+    patron = re.compile(rf"^(.*)\s(\S+)\s+(?:{_MERCADOS_BYMA})\s+(\d+)\s*:\s*(\d+)$")
+    sola = re.compile(r"^(\d+)\s*:\s*(\d+)$")
+    for linea in texto.replace("\xa0", " ").splitlines():
+        linea = linea.strip()
+        m, s = patron.match(linea), sola.match(linea)
+        if m:
+            ticker, a, b = m.group(2), m.group(3), m.group(4)
+        elif s and previa:
+            ticker, a, b = previa.split()[-1], s.group(1), s.group(2)
+        else:
+            if linea and linea not in ("LONDON STOCK", "EXCHANGE"):
+                previa = linea
+            continue
+        previa = ""
+        if int(b) > 0 and int(a) > 0:
+            filas.setdefault(ticker, set()).add(round(int(a) / int(b), 6))
+    return filas
+
+
+def comparar_ratios(archivo, lista, minimo=0.8):
+    """{ticker: [ratio del tablero, ratio de BYMA]} para los que cambiaron. Si BYMA repite un código con dos valores
+    y uno coincide, no es un cambio. Si no se reconoce la mayoría de la lista, el formato cambió: falla."""
+    comunes = [t for t in archivo if t in lista]
+    if not archivo or len(comunes) < minimo * len(archivo):
+        raise RuntimeError(f"byma: solo reconozco {len(comunes)} de {len(archivo)} códigos; revisar el formato de la lista")
+    cambios = {}
+    for t in comunes:
+        viejo, nuevos = archivo[t]["ratio"], lista[t]
+        if not any(abs(n / viejo - 1) < 1e-4 for n in nuevos):
+            cambios[t] = [viejo, sorted(nuevos)[0]]
+    return cambios
+
+
+def texto_pdf(contenido):
+    import io
+    import pypdf  # se importa acá para que el resto funcione aunque no esté instalado
+    return "\n".join(p.extract_text() for p in pypdf.PdfReader(io.BytesIO(contenido)).pages)
+
+
+def archivo_ratios():
+    try:
+        return json.loads(RATIOS.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def ratios_byma():
+    """Compara la lista vigente de BYMA con tools/cedear_ratios.json. No cambia el archivo: solo informa."""
+    fecha, url = enlace_lista_byma(bajar(BYMA_PAGINA, intentos=2, timeout=20))
+    propio = archivo_ratios()
+    lista = leer_lista_byma(texto_pdf(bajar_bytes(url, intentos=2, timeout=20)))
+    cambios = comparar_ratios(propio.get("ratios") or {}, lista)
+    return {"lista_fecha": fecha, "url": url, "archivo_fecha": propio.get("fecha"), "revisados": len(lista), "cambios": cambios}
+
+
 def insiders():
     pagina = bajar(CFG["insiders_url"])
     m = re.search(r'<table[^>]*class="tinytable".*?</table>', pagina, re.S)
@@ -414,6 +541,11 @@ def main():
     mercado["mep_mensual"] = seccion("mep_mensual", m_prev.get("mep_mensual"), mep_mensual)
     mercado["cpi_usa"] = seccion("cpi_usa", m_prev.get("cpi_usa"), cpi_usa)
     mercado["implicito"] = implicito(m_prev.get("implicito"), mercado)
+    # La lista de BYMA cambia poco: una vez por día, o cuando se actualiza el archivo de ratios del repositorio.
+    mercado["ratios_byma"] = seccion_diaria("ratios_byma", m_prev.get("ratios_byma"), ratios_byma,
+                                            vigente=lambda a: a.get("archivo_fecha") == archivo_ratios().get("fecha"))
+    f_prev = leer("feriados_ar.json")
+    escribir("feriados_ar.json", seccion_diaria("feriados_ar", f_prev, lambda: feriados_ar(f_prev)))
 
     hist = h_prev
     try:
@@ -432,6 +564,12 @@ def main():
     escribir("market.json", mercado)
     escribir("historico.json", hist)
     escribir("insiders.json", seccion("insiders", i_prev, insiders))
+
+    try:  # contexto: riesgo país, tasas, fondos, FRED, historia larga y elecciones
+        import contexto
+        contexto.correr(sys.modules[__name__])
+    except Exception as e:  # noqa: BLE001
+        print(f"FALLA contexto: {e}", file=sys.stderr)
 
     try:  # alertas de precio al teléfono (no detienen el resto si fallan)
         import alertas

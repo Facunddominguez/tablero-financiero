@@ -1,38 +1,51 @@
-// Formularios del diario: anotar predicciones, marcar si se cumplieron, seguir fantasmas y cargar rotaciones.
+// Formularios del diario: anotar, editar y borrar predicciones y carteras fantasma, y cargar rotaciones.
 import { h, fmt, fechas, aNumero } from '../util.js';
 import { dialogo, campo, entrada, boton } from './comun.js';
 import { eventosRotacion, serieDeTicker, comoPedirlo } from '../diario.js';
 
-const texto = (placeholder, filas = 2) => h('textarea', { rows: filas, placeholder });
+const texto = (placeholder, filas = 2, value = '') => h('textarea', { rows: filas, placeholder, value });
 const acciones = (d, guardar) => h('div.acciones', boton('Cancelar', () => d().close(), 'fantasma'), h('button.boton.primario', { type: 'submit' }, guardar));
+const tickers = f => [...new Set(f.value.toUpperCase().split(/[\s,;]+/).filter(Boolean))];
 
-export function nuevaPrediccion(ctx, ticker = '') {
-  const e = ctx.estado;
-  const fTexto = texto('Ej.: NVDA sube más que SMH en los próximos 6 meses');
-  const fProb = entrada({ inputmode: 'numeric', placeholder: '70' });
-  const fVence = entrada({ type: 'date', inputmode: null, value: fechas.sumarMeses(e.hoy, 3), min: fechas.sumar(e.hoy, 1) });
-  const fCambio = texto('Ej.: si dos trimestres seguidos caen las ventas');
-  const fTicker = entrada({ inputmode: 'text', value: ticker, autocapitalize: 'characters', placeholder: 'Opcional' });
+// Sin `existente` anota una nueva; con él, la edita. De una ya resuelta no se cambia la probabilidad
+// (cambiarla después de saber qué pasó arruinaría el puntaje), pero sí el resultado.
+export function nuevaPrediccion(ctx, ticker = '', existente = null) {
+  const e = ctx.estado, x = existente, resuelta = typeof x?.cumplio === 'boolean';
+  const fTexto = texto('Ej.: NVDA sube más que SMH en los próximos 6 meses', 2, x?.texto || '');
+  const fProb = entrada({ inputmode: 'numeric', placeholder: '70', value: x ? fmt.num(x.probabilidad * 100) : '', disabled: resuelta });
+  const fVence = entrada({ type: 'date', inputmode: null, value: x?.vence || fechas.sumarMeses(e.hoy, 3), min: x ? null : fechas.sumar(e.hoy, 1) });
+  const fCambio = texto('Ej.: si dos trimestres seguidos caen las ventas', 2, x?.cambio || '');
+  const fTicker = entrada({ inputmode: 'text', value: x ? x.ticker || '' : ticker, autocapitalize: 'characters', placeholder: 'Opcional' });
+  const fResultado = resuelta ? h('select', [['si', 'Se cumplió'], ['no', 'No se cumplió'], ['abierta', 'Sin marcar (volver a preguntar)']].map(([v, t]) => h('option', { value: v, selected: v === (x.cumplio ? 'si' : 'no') }, t))) : null;
   const error = h('p.error', { role: 'alert' });
-  const d = dialogo('Anotar una predicción', h('form.formulario', {
+  const d = dialogo(x ? 'Editar la predicción' : 'Anotar una predicción', h('form.formulario', {
     onsubmit: async ev => {
       ev.preventDefault();
-      const prob = aNumero(fProb.value), t = fTexto.value.trim(), cambio = fCambio.value.trim();
+      const prob = resuelta ? x.probabilidad * 100 : aNumero(fProb.value), t = fTexto.value.trim(), cambio = fCambio.value.trim(), vence = fVence.value;
       if (!t || !cambio) { error.textContent = 'Escribí qué esperás y qué te haría cambiar de idea.'; return; }
       if (!(prob >= 1 && prob <= 99)) { error.textContent = 'La probabilidad va de 1 a 99: si estás 100% seguro, no es una predicción.'; return; }
-      if (!(fVence.value > e.hoy)) { error.textContent = 'La fecha de vencimiento tiene que ser futura.'; return; }
+      if (!vence || (vence !== x?.vence && !(vence > e.hoy))) { error.textContent = 'La fecha de vencimiento tiene que ser futura.'; return; }
       const activo = fTicker.value.trim().toUpperCase();
-      await ctx.registrar({ tipo: 'prediccion', fecha: e.hoy, texto: t, probabilidad: prob / 100, vence: fVence.value, cambio, ...(activo ? { ticker: activo } : {}) },
-        { tipo: 'decision', fecha: e.hoy, texto: `Predicción (${fmt.num(prob)}%, vence ${fmt.fecha(fVence.value)}): ${t}` });
+      if (!x) await ctx.registrar({ tipo: 'prediccion', fecha: e.hoy, texto: t, probabilidad: prob / 100, vence, cambio, ...(activo ? { ticker: activo } : {}) },
+        { tipo: 'decision', fecha: e.hoy, texto: `Predicción (${fmt.num(prob)}%, vence ${fmt.fecha(vence)}): ${t}` });
+      else await ctx.registrar({ tipo: 'prediccion_editar', ref: x.id, fecha: e.hoy, cambios: {
+        texto: t, cambio, vence, ticker: activo, ...(resuelta ? { cumplio: { si: true, no: false, abierta: null }[fResultado.value] } : { probabilidad: prob / 100 }),
+      } }, { tipo: 'decision', fecha: e.hoy, texto: `Editada la predicción: ${t}` });
       d.close();
     },
   },
     h('p.nota', 'Escribila de forma que en la fecha se pueda contestar sí o no. Cuando venza, aparece en Hoy para marcar qué pasó.'),
     campo('Qué esperás que pase', fTexto),
-    h('div.fila-campos', campo('Probabilidad (%)', fProb), campo('Vence', fVence), campo('Activo', fTicker)),
+    h('div.fila-campos', campo('Probabilidad (%)', fProb, resuelta ? 'Ya se resolvió: no se cambia.' : null), campo('Vence', fVence), campo('Activo', fTicker)),
     campo('Qué te haría cambiar de idea', fCambio),
+    fResultado ? campo('Resultado', fResultado) : null,
     error, acciones(() => d, 'Guardar')), { ancho: '32rem' });
   return d;
+}
+
+export async function borrarPrediccion(ctx, p) {
+  if (!confirm(`¿Borrar la predicción "${p.texto}"? Sale del puntaje y no vuelve a aparecer.`)) return;
+  await ctx.registrar({ tipo: 'prediccion_borrar', ref: p.id }, { tipo: 'decision', fecha: ctx.estado.hoy, texto: `Borrada la predicción: ${p.texto}` });
 }
 
 export function marcarPrediccion(ctx, paso) {
@@ -57,6 +70,35 @@ export function botonFantasma(ctx, origen, ticker) {
   } }, 'Seguir como fantasma');
 }
 
+// Cambiar el nombre, la fecha o los tickers de una cartera fantasma (grupo de compararFantasmas).
+export function editarFantasma(ctx, g) {
+  const e = ctx.estado;
+  const fNombre = entrada({ inputmode: 'text', value: g.grupo || '', placeholder: 'Opcional: nombre de la cartera' });
+  const fFecha = entrada({ type: 'date', inputmode: null, value: g.fecha, max: e.hoy });
+  const fTickers = entrada({ inputmode: 'text', autocapitalize: 'characters', value: g.filas.map(f => f.ticker).join(', ') });
+  const error = h('p.error', { role: 'alert' });
+  const d = dialogo('Editar la cartera fantasma', h('form.formulario', {
+    onsubmit: async ev => {
+      ev.preventDefault();
+      const lista = tickers(fTickers), nombre = fNombre.value.trim();
+      if (!fFecha.value || !lista.length) { error.textContent = 'Completá la fecha y al menos un ticker. Para sacarla entera, usá Borrar.'; return; }
+      await ctx.registrar({ tipo: 'fantasma_editar', clave: g.clave, grupo: nombre || (lista.length > 1 ? g.nombre : ''), fecha: fFecha.value, tickers: lista },
+        { tipo: 'decision', fecha: e.hoy, texto: `Editada la cartera fantasma ${nombre || g.nombre}: ${lista.join(', ')} desde el ${fmt.fecha(fFecha.value)}` });
+      d.close();
+    },
+  },
+    h('div.fila-campos', campo('Nombre', fNombre), campo('Desde', fFecha)),
+    campo('Tickers', fTickers, 'Separados por comas.'), error, acciones(() => d, 'Guardar')), { ancho: '30rem' });
+  return d;
+}
+
+// Borra una cartera fantasma entera, o un solo ticker de ella.
+export async function borrarFantasma(ctx, g, ticker = null) {
+  const que = ticker ? `${ticker} de la cartera fantasma "${g.nombre}"` : `la cartera fantasma "${g.nombre}"`;
+  if (!confirm(`¿Quitar ${que}? Deja de compararse; tus datos reales no cambian.`)) return;
+  await ctx.registrar({ tipo: 'fantasma_borrar', clave: g.clave, ...(ticker ? { ticker } : {}) }, { tipo: 'decision', fecha: ctx.estado.hoy, texto: `Quitado ${que}` });
+}
+
 export function nuevaRotacion(ctx) {
   const e = ctx.estado, a = e.datos.cartera_modelo_allaria;
   const n = Number(String(a?.rotacion || '').replace(/\D/g, ''));
@@ -65,11 +107,10 @@ export function nuevaRotacion(ctx) {
   const fEntra = entrada({ inputmode: 'text', autocapitalize: 'characters', placeholder: 'Ej.: KO, PEP' });
   const fSale = entrada({ inputmode: 'text', autocapitalize: 'characters', placeholder: 'Ej.: AAPL' });
   const error = h('p.error', { role: 'alert' });
-  const lista = f => [...new Set(f.value.toUpperCase().split(/[\s,;]+/).filter(Boolean))];
   const d = dialogo('Cargar una rotación de Allaria', h('form.formulario', {
     onsubmit: async ev => {
       ev.preventDefault();
-      const entra = lista(fEntra), sale = lista(fSale), rotacion = fNombre.value.trim();
+      const entra = tickers(fEntra), sale = tickers(fSale), rotacion = fNombre.value.trim();
       const actuales = new Set((a?.activos || []).map(x => x.ticker));
       const falta = sale.filter(t => !actuales.has(t));
       if (!rotacion || !fFecha.value || (!entra.length && !sale.length)) { error.textContent = 'Completá el nombre, la fecha y qué entra o sale.'; return; }

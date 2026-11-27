@@ -2,10 +2,13 @@
 import { h, poner, fmt, aNumero } from '../util.js';
 import { fortaleza, generarFrase, bloqueo } from '../seguridad.js';
 import { enlacePermiso, enlacePermisoCron, LISTA_PERMISOS, urlDisparo, cuerpoDisparo } from '../sync.js';
-import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN, botonPrecios } from './comun.js';
+import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN, botonPrecios, notaPrecios } from './comun.js';
+import { paraVender, textoPrima, textoVentana, avisoPrecioJusto } from '../precios.js';
 import { esSobreCifrado } from '../cripto.js';
 import { esRespaldoPlano } from '../estado.js';
 import { nuevaPrediccion } from './diario.js';
+import { supuestos, EDITABLES } from '../supuestos.js';
+import { ajustesAporteExtra } from '../clima.js';
 
 const descargar = (nombre, texto, tipo = 'application/json') => {
   const a = h('a', { href: URL.createObjectURL(new Blob([texto], { type: tipo })), download: nombre });
@@ -139,11 +142,23 @@ function registrarMovimiento(ctx, inicial = 'dividendo') {
   const fFecha = entrada({ type: 'date', inputmode: null, value: e.hoy, max: e.hoy });
   const fUsd = entrada({ placeholder: '0,00' }), fCant = entrada({ inputmode: 'numeric' }), fPrecio = entrada(), fGastos = entrada({ value: '0' }), fMep = entrada({ value: fmt.num(e.mep, 2) });
   const cTicker = campo('Activo', fTicker), cUsd = campo('Monto (USD)', fUsd);
-  const venta = h('div', h('div.fila-campos', campo('Cantidad', fCant), campo('Precio $ por unidad', fPrecio)), h('div.fila-campos', campo('Gastos $', fGastos), campo('Dólar MEP', fMep)),
+  const justo = h('div.nota-precios');
+  const venta = h('div', justo, h('div.fila-campos', campo('Cantidad', fCant), campo('Precio $ por unidad', fPrecio)), h('div.fila-campos', campo('Gastos $', fGastos), campo('Dólar MEP', fMep)),
     h('p.nota', 'Antes de vender: la ida y vuelta no debería costar más de lo que fija la regla C2.'));
   const error = h('p.error', { role: 'alert' });
-  const ver = () => { const t = fTipo.value; venta.hidden = t !== 'venta'; cUsd.hidden = t === 'venta'; cTicker.hidden = t === 'aporte_historico'; };
-  fTipo.addEventListener('change', ver); ver();
+  // El precio justo de lo elegido, con la misma vara que en las compras.
+  const pintarJusto = () => {
+    const e = ctx.estado, p = e.posiciones.find(x => x.ticker === fTicker.value);
+    const j = p ? paraVender(e, p.ticker) : null;
+    poner(justo, !p ? null : j ? [
+      j.revisar ? aviso(`Revisá el ratio de ${p.ticker}: los precios no cierran y no hay precio justo.`, 'alerta')
+        : h('p.nota', `${textoVentana(e.feriados, e.hoy, { vender: true })} Precio justo de ${p.ticker}: ${fmt.ars(j.justo_ars)}; en pantalla ${fmt.ars(j.precio_ars)} (${textoPrima(j.prima)}). Límite sugerido para vender: ${fmt.ars(j.limite)}.`),
+      j.barato ? aviso(`Hoy ${p.ticker} está ${textoPrima(j.prima)} contra su precio justo: conviene esperar antes de vender.`, 'alerta') : null,
+      notaPrecios(ctx, pintarJusto),
+    ] : h('p.nota', `${textoVentana(e.feriados, e.hoy, { vender: true })} ${p.tipo === 'cedear' ? avisoPrecioJusto(e) || `Sin precio justo para ${p.ticker}.` : 'El precio justo es solo para CEDEARs.'}`));
+  };
+  const ver = () => { const t = fTipo.value; venta.hidden = t !== 'venta'; cUsd.hidden = t === 'venta'; cTicker.hidden = t === 'aporte_historico'; if (t === 'venta') pintarJusto(); };
+  fTipo.addEventListener('change', ver); fTicker.addEventListener('change', ver); ver();
   const d = dialogo('Registrar un movimiento', h('form.formulario', {
     onsubmit: async ev => {
       ev.preventDefault();
@@ -183,6 +198,29 @@ function decisiones(ctx) {
 }
 
 // ---------- Configuración ----------
+// Aviso opcional (apagado de fábrica): usar parte de la reserva que sobra cuando el núcleo cae fuerte.
+function formularioAporteExtra(ctx, cerrar) {
+  const e = ctx.estado, c = ajustesAporteExtra(e);
+  const fActivo = h('input', { type: 'checkbox', checked: c.activo });
+  const fCaida = entrada({ value: fmt.num(c.caida * 100, 0) }), fParte = entrada({ value: fmt.num(c.parte * 100, 0) });
+  const error = h('p.error', { role: 'alert' });
+  return h('form.bloque', {
+    onsubmit: async ev => {
+      ev.preventDefault();
+      const caida = aNumero(fCaida.value) / 100, parte = aNumero(fParte.value) / 100;
+      if (!(caida > 0 && caida < 1) || !(parte > 0 && parte <= 1)) { error.textContent = 'La caída va de 1 a 99% y la parte, de 1 a 100%.'; return; }
+      const cambios = { activo: fActivo.checked, caida, parte };
+      if (cambios.activo !== c.activo || caida !== c.caida || parte !== c.parte) await ctx.registrar({ tipo: 'aporte_extra', fecha: e.hoy, cambios },
+        { tipo: 'decision', fecha: e.hoy, texto: cambios.activo ? `Aviso de aporte extra activado: caída de ${fmt.pct(caida, 0)}, ${fmt.pct(parte, 0)} del excedente` : 'Aviso de aporte extra apagado' });
+      cerrar();
+    },
+  },
+    h('h3', 'Aporte extra en una caída'),
+    h('label.casilla', fActivo, h('span', 'Avisarme en "Para saber"'), h('small', 'Si la reserva tiene excedente (regla R1) y el núcleo cae desde su máximo. Nunca sugiere vender ni frenar aportes.')),
+    h('div.fila-campos', campo('Caída desde el máximo (%)', fCaida), campo('Parte del excedente (%)', fParte)),
+    error, h('div.acciones.izq', h('button.boton', { type: 'submit' }, 'Guardar')));
+}
+
 function configuracion(ctx) {
   const e = ctx.estado, p = e.datos.perfil;
   const fDia = entrada({ value: String(e.datos.config.dia_cobro), inputmode: 'numeric' });
@@ -206,7 +244,52 @@ function configuracion(ctx) {
       h('div.fila-campos', campo('Ingreso mensual (USD)', fIngreso), campo('Gasto habitual (USD)', fGasto), campo('Día de cobro', fDia)),
       h('small', 'El ingreso y el gasto son la referencia para calcular cuánto invertir; desde el día de cobro aparece el paso "Aportá".'),
       h('div.acciones.izq', h('button.boton', { type: 'submit' }, 'Guardar'))),
+    formularioAporteExtra(ctx, () => d.close()),
     h('div.bloque', h('h3', 'Apariencia'), fTema)), { ancho: '32rem' });
+  return d;
+}
+
+// ---------- Supuestos ----------
+// Los números que no salen de ningún dato (retornos esperados, umbrales): se cambian acá y se guardan en tus datos.
+function editarSupuestos(ctx) {
+  const e = ctx.estado, s = supuestos(e);
+  const mostrar = (v, f) => f === 'pct' ? fmt.num(v * 100, Math.abs(v * 100 - Math.round(v * 100)) < 1e-9 ? 0 : 2) : fmt.num(v, Number.isInteger(v) ? 0 : 2);
+  const filas = [];
+  const bloques = EDITABLES.filter(([g]) => s[g]).map(([g, titulo, campos]) => h('div.bloque', h('h3', titulo),
+    h('div.fila-campos', campos.map(([k, etq, f]) => {
+      const actual = k.split('.').reduce((o, p) => o?.[p], s[g]);
+      const input = entrada({ value: actual == null ? '' : mostrar(actual, f) });
+      filas.push({ g, k, f, input, actual });
+      return campo(etq, input);
+    })),
+    s[g].fuente ? h('small', `${s[g].fuente} (${fmt.fecha(s[g].fecha)})`) : null));
+  const error = h('p.error', { role: 'alert' });
+  const d = dialogo('Supuestos', h('form.formulario', {
+    onsubmit: async ev => {
+      ev.preventDefault();
+      const cambios = {};
+      for (const x of filas) {
+        const n = aNumero(x.input.value);
+        if (!Number.isFinite(n)) { error.textContent = 'Hay un campo vacío o que no es un número.'; return; }
+        const v = x.f === 'pct' ? n / 100 : n;
+        if (x.actual != null && Math.abs(v - x.actual) < 1e-12) continue;
+        const ruta = x.k.split('.');
+        let o = cambios[x.g] = cambios[x.g] || {};
+        for (const p of ruta.slice(0, -1)) o = o[p] = o[p] || {};
+        o[ruta.at(-1)] = v;
+        // lo editado queda marcado como tuyo, con la fecha de hoy
+        Object.assign(cambios[x.g], { fuente: `Editado por vos. Original: ${(e.supuestos?.[x.g]?.fuente) || 'sin fuente'}`, fecha: e.hoy });
+      }
+      if (Object.keys(cambios).length) await ctx.registrar({ tipo: 'supuestos', fecha: e.hoy, cambios }, { tipo: 'decision', fecha: e.hoy, texto: `Cambiados los supuestos: ${Object.keys(cambios).join(', ')}` });
+      d.close();
+    },
+  },
+    h('p.nota', 'Son supuestos, no pronósticos: cambian las proyecciones y los colores del semáforo y del clima. Las reglas no cambian.'),
+    bloques, error,
+    h('div.acciones', e.datos.supuestos && Object.keys(e.datos.supuestos).length ? boton('Volver a los originales', async () => {
+      await ctx.registrar({ tipo: 'supuestos', fecha: e.hoy, restaurar: true }, { tipo: 'decision', fecha: e.hoy, texto: 'Supuestos vueltos a los originales' });
+      d.close();
+    }, 'fantasma') : null, boton('Cancelar', () => d.close(), 'fantasma'), h('button.boton.primario', { type: 'submit' }, 'Guardar'))), { ancho: '36rem' });
   return d;
 }
 
@@ -247,6 +330,20 @@ function seguridad(ctx) {
 }
 
 // ---------- Fuentes y fechas ----------
+// Riesgo país, tasas, fondos, indicadores de EE.UU., historia larga y mercados de predicción.
+function filasContexto(e) {
+  const a = e.argentina || {}, c = e.clima?.series || {}, l = e.largo_plazo, el = a.elecciones || {};
+  const fred = Object.values(c), poly = el.polymarket;
+  return [
+    ['Riesgo país', 'argentinadatos.com', a.riesgo_pais?.ultimo?.fecha, a.riesgo_pais?.stale],
+    ['Tasa de plazo fijo (30 días)', 'argentinadatos.com (datos del BCRA)', a.plazo_fijo?.ultimo?.fecha, a.plazo_fijo?.stale],
+    ['Historia de cuotapartes de fondos', 'argentinadatos.com (datos de CAFCI)', a.fondos?.fechas?.at(-1), a.fondos?.stale],
+    ['Bonos de alto rendimiento, curva, VIX y condiciones financieras', 'FRED, Reserva Federal de St. Louis', fred.map(s => s.ultimo?.fecha).filter(Boolean).sort()[0], fred.some(s => s.stale)],
+    ['ETF: cierres mensuales desde 2005', 'Yahoo Finance (vía yfinance)', l?.actualizado, l?.stale],
+    ['Elección 2027: Kalshi', 'API pública de Kalshi (solo lectura)', el.kalshi?.actualizado, el.kalshi?.stale],
+    ['Elección 2027: Polymarket', poly?.desactivado ? 'Apagado: está bloqueado en Argentina por orden judicial' : 'API gamma de Polymarket (solo lectura, desde GitHub)', poly?.actualizado, poly?.stale, poly?.desactivado ? '—' : null],
+  ];
+}
 function fuentes(ctx) {
   const e = ctx.estado, m = e.mercado || {}, d = e.datos;
   const cuando = iso => !iso ? '—' : iso.length > 10 ? `${fmt.fecha(iso.slice(0, 10))} · ${fmt.hace(iso)}` : fmt.fecha(iso);
@@ -262,10 +359,13 @@ function fuentes(ctx) {
     ['Dólar implícito de cada CEDEAR', m.implicito?.ccl?.fuente === 'calculado' ? 'Calculado con precios de data912 y ratios de BYMA' : 'data912.com', m.implicito?.ccl?.actualizado, m.implicito?.ccl?.stale],
     ['Dólar MEP y contado con liqui de cada día', 'argentinadatos.com', e.historico?.canje?.actualizado, e.historico?.canje?.stale],
     ['Ratios de CEDEARs', 'BYMA, lista oficial', e.ratios_fecha],
+    ['Control de cambios de ratios', m.ratios_byma?.lista_fecha ? `Lista de BYMA del ${fmt.fecha(m.ratios_byma.lista_fecha)}` : 'Lista de BYMA', m.ratios_byma?.actualizado, m.ratios_byma?.stale],
     ['Feriados de EE.UU. y horario de BYMA', 'NYSE y BYMA', e.feriados?.consultado],
+    ['Feriados argentinos', 'argentinadatos.com y calendario de BYMA', e.feriados?.argentina?.actualizado, e.feriados?.argentina?.stale],
     ['Dólar MEP promedio por mes', 'argentinadatos.com', m.mep_mensual?.actualizado, m.mep_mensual?.stale],
     ['Inflación de EE.UU. (IPC mensual)', 'FRED, Reserva Federal de St. Louis (serie CPIAUCSL)', m.cpi_usa?.actualizado, m.cpi_usa?.stale],
     ['Compras de directivos', 'OpenInsider (formularios 4 de la SEC)', e.insiders?.actualizado, e.insiders?.stale],
+    ...filasContexto(e),
     ['Cupones y amortización de la ON', 'Suplemento de prospecto del emisor', null, false, 'fijo'],
     ['Cantidades, lotes y caja', `Resumen de ${d.meta.broker || 'tu broker'}`, e.fecha_resumen],
     ['Aportes', 'Cargados a mano', ultimoAporte?.fecha],
@@ -347,6 +447,7 @@ const SECCIONES = {
   prediccion: ['Anotar una predicción', 'Qué esperás, con qué probabilidad y hasta cuándo', nuevaPrediccion],
   fuentes: ['Fuentes y fechas', 'De dónde sale cada dato y de cuándo es', fuentes],
   configuracion: ['Configuración', 'Ingreso, día de cobro, apariencia', configuracion],
+  supuestos: ['Supuestos', 'Retornos esperados y umbrales, con su fuente', editarSupuestos],
   seguridad: ['Seguridad', 'Bloqueo, clave y este dispositivo', seguridad],
   respaldo: ['Respaldo', 'Exportar o importar los datos', respaldo],
 };

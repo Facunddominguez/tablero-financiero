@@ -308,7 +308,8 @@ async function leerLocal(k, frase) {
 
 let vigilando = false;
 async function cargarTodo(frase) {
-  const [mercado, calendario, insiders, historico, ratios, feriados] = await Promise.all([json('data/market.json'), json('data/calendario.json'), json('data/insiders.json'), json('data/historico.json'), json('tools/cedear_ratios.json'), json('data/feriados_eeuu.json')]);
+  const publicos = { mercado: 'data/market.json', calendario: 'data/calendario.json', insiders: 'data/insiders.json', historico: 'data/historico.json', ratios: 'tools/cedear_ratios.json', feriados: 'data/feriados_eeuu.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', supuestos: 'data/supuestos.json' };
+  const ext = Object.fromEntries(await Promise.all(Object.entries(publicos).map(async ([k, url]) => [k, await json(url)])));
   const [eventos, snaps, local, gh, sync] = [await leerLocal('eventos', frase), await leerLocal('snapshots', frase), await leerLocal('base_local', frase), await leerLocal('github', frase), await leerLocal('sync', frase)];
   // Un respaldo importado manda hasta que se suba.
   S.localManda = !!(local && (!S.base.meta.sincronizado || S.base.meta.sincronizado < local.guardado));
@@ -317,7 +318,7 @@ async function cargarTodo(frase) {
   S.snaps = snaps || {};
   S.gh = gh?.token ? gh : null;
   S.sync = { fecha: sync?.fecha || null, ids: new Set(sync?.ids || []), error: null, enCurso: false };
-  S.ext = { mercado, calendario, insiders, historico, ratios, feriados };
+  S.ext = ext;
   recalcular();
   await guardarSnapshot();
   armarMarco();

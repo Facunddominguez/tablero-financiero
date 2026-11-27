@@ -3,7 +3,20 @@ import { h, fmt } from '../util.js';
 import { tabla, chip, aviso, boton } from './comun.js';
 import { botonFantasma, nuevaPrediccion } from './diario.js';
 import { proyeccion } from '../motor.js';
+import { simular, textoHito } from '../simulacion.js';
 import { tickersPropios } from '../estado.js';
+
+// Cuándo se podría abrir una tesis nueva, con rango (misma simulación que Informes → Proyección).
+function cuandoTesis(e) {
+  const sim = simular(e), t = sim?.hitos.tesis, R7 = e.datos.reglas.find(r => r.id === 'R7');
+  if (!t) return null;
+  const llena = R7?.max_tesis != null && e.tesis_activas >= R7.max_tesis ? ` Además, hoy tenés ${e.tesis_activas} tesis y el máximo es ${R7.max_tesis}: habría que cerrar una.` : '';
+  return h('p.nota.cuando-tesis',
+    h('strong', 'Cuándo se podría abrir una tesis: '),
+    t.cumplida ? `el núcleo y los satélites ya lo permiten.${llena}`
+      : `${textoHito(t, sim.horizonte)}. Chance de que pase antes de 12 meses: ${fmt.pct(t.en12, 0)}; antes de 24: ${fmt.pct(t.en24, 0)}.${llena} `,
+    t.cumplida ? null : h('a', { href: '#informes/proyeccion' }, 'Ver la proyección →'));
+}
 
 export function vistaRadar(ctx) {
   const e = ctx.estado, d = e.datos;
@@ -52,6 +65,7 @@ export function vistaRadar(ctx) {
         if (enSpy) partes.push(`${enSpy} de los ${d.watchlist.length} nombres ya están dentro de SPY.`);
         return h('p.nota', partes.join(' '));
       })(),
+      cuandoTesis(e),
       h('details.otra-forma', h('summary', 'Antes de abrir una tesis nueva'),
         d.reglas_tesis ? [
           h('p.nota', `Esperar ${d.reglas_tesis.espera_horas} horas desde que la escribís (${d.reglas_tesis.espera_cambio_estrategico_horas} si cambia la estrategia). La pérdida prevista si sale mal no puede pasar de ${fmt.pct(d.reglas_tesis.riesgo_normal, 1)} del patrimonio (${fmt.usd(e.total_usd * d.reglas_tesis.riesgo_normal)} hoy); nunca más de ${fmt.pct(d.reglas_tesis.riesgo_max, 0)}.`),

@@ -1,6 +1,8 @@
 // Estado = datos base (descifrados) + registro de eventos locales + precios. Todo puro: no toca red ni DOM.
 import { clon, suma, fechas } from './util.js';
 import { costoLoteUSD, expuestoAlCanje, ADR_DE_LOCAL } from './finanzas.js';
+import { claveFantasma } from './diario.js';
+import { fundir } from './supuestos.js';
 export { ADR_DE_LOCAL };
 
 const GRUPO = { nucleo: 'nucleo', satelite: 'satelite', satelite_argentina: 'satelite', satelite_volatil: 'satelite', satelite_ypf: 'ypf', renta_fija_ars: 'renta_fija', emergencia: 'emergencia' };
@@ -115,9 +117,36 @@ export function aplicarEventos(base, eventosLocales = []) {
         if (p) { p.cumplio = !!e.cumplio; p.resuelta = e.fecha; }
         break;
       }
-      case 'fantasma': // algo que no compraste, para ver después cómo le fue contra SPY
-        if (!d.fantasmas.some(f => f.origen === e.origen && f.ticker === e.ticker && f.fecha === e.fecha)) d.fantasmas.push({ origen: e.origen, ticker: e.ticker, fecha: e.fecha, grupo: e.grupo });
+      case 'prediccion_editar': { // cumplio: null deja la predicción abierta de nuevo
+        const p = d.predicciones.find(x => x.id === e.ref);
+        if (!p) break;
+        const c = e.cambios || {};
+        if (c.vence && c.vence !== p.vence || c.cumplio === null) delete d.pasos[`prediccion-${p.id}`]; // vuelve a preguntar
+        for (const k of ['texto', 'probabilidad', 'vence', 'cambio']) if (c[k] != null && c[k] !== '') p[k] = c[k];
+        if ('ticker' in c) { if (c.ticker) p.ticker = c.ticker; else delete p.ticker; }
+        if (c.cumplio === null) { delete p.cumplio; delete p.resuelta; }
+        else if (typeof c.cumplio === 'boolean') { p.cumplio = c.cumplio; p.resuelta = p.resuelta || e.fecha; }
         break;
+      }
+      case 'prediccion_borrar':
+        d.predicciones = d.predicciones.filter(x => x.id !== e.ref);
+        delete d.pasos[`prediccion-${e.ref}`];
+        break;
+      case 'fantasma': // algo que no compraste, para ver después cómo le fue contra SPY
+        if (!d.fantasmas.some(f => f.origen === e.origen && f.ticker === e.ticker && f.fecha === e.fecha && f.grupo === e.grupo)) d.fantasmas.push({ origen: e.origen, ticker: e.ticker, fecha: e.fecha, grupo: e.grupo });
+        break;
+      case 'fantasma_borrar': // toda la cartera (por su clave) o un solo ticker
+        d.fantasmas = d.fantasmas.filter(f => claveFantasma(f) !== e.clave || (e.ticker && f.ticker !== e.ticker));
+        break;
+      case 'fantasma_editar': { // nombre, fecha y tickers de una cartera fantasma
+        const i = d.fantasmas.findIndex(f => claveFantasma(f) === e.clave);
+        if (i < 0) break;
+        const { origen } = d.fantasmas[i];
+        const nuevos = [...new Set(e.tickers)].map(ticker => ({ origen, ticker, fecha: e.fecha, grupo: e.grupo || undefined }));
+        const resto = d.fantasmas.filter(f => claveFantasma(f) !== e.clave);
+        d.fantasmas = [...resto.slice(0, i), ...nuevos, ...resto.slice(i)];
+        break;
+      }
       case 'rotacion_allaria': {
         const a = d.cartera_modelo_allaria = d.cartera_modelo_allaria || { activos: [] };
         const activos = (a.activos || []).filter(x => !e.sale.includes(x.ticker));
@@ -128,6 +157,16 @@ export function aplicarEventos(base, eventosLocales = []) {
         a.rotacion = e.rotacion; a.fecha = e.fecha;
         break;
       }
+      case 'supuestos': // lo que cambiaste de data/supuestos.json; restaurar: volver a los originales
+        d.supuestos = e.restaurar ? {} : fundir(d.supuestos || {}, e.cambios || {});
+        break;
+      case 'objetivo': { // una meta de patrimonio con fecha (un evento nuevo con el mismo objetivo la reemplaza)
+        const o = { id: e.objetivo_id, nombre: e.nombre, monto_usd: e.monto_usd, fecha: e.fecha };
+        d.objetivos = [...(d.objetivos || []).filter(x => x.id !== o.id), o];
+        break;
+      }
+      case 'objetivo_borrar': d.objetivos = (d.objetivos || []).filter(x => x.id !== e.ref); break;
+      case 'aporte_extra': d.aporte_extra = { ...d.aporte_extra, ...e.cambios }; break;
       case 'config': Object.assign(d.config, e.cambios); break;
       case 'perfil': Object.assign(d.perfil, e.cambios); break;
       case 'fecha_aporte': { // se busca por monto y fecha original; el índice queda como respaldo para eventos viejos
@@ -228,7 +267,10 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     precios: { origen: m ? 'mercado' : 'archivo', generado: m?.generado || null, fecha_archivo: datos.meta.fecha_snapshot, viejos, fecha_fci: m?.fci?.fecha || null },
     fecha_resumen: datos.meta.fecha_resumen || datos.meta.fecha_snapshot,
     mercado: m, calendario: ext.calendario || { flujos: [] }, insiders: ext.insiders || { filas: [] }, historico: ext.historico || null,
-    ratios: ext.ratios?.ratios || null, ratios_fecha: ext.ratios?.fecha || null, feriados: ext.feriados || null,
+    ratios: ext.ratios?.ratios || null, ratios_fecha: ext.ratios?.fecha || null,
+    argentina: ext.argentina || null, clima: ext.clima || null, largo_plazo: ext.largoPlazo || null, supuestos: ext.supuestos || null,
+    // calendario de mercado: EE.UU. y BYMA, más los feriados argentinos que guarda el Action
+    feriados: ext.feriados || ext.feriadosAr ? { ...ext.feriados, argentina: ext.feriadosAr || null } : null,
   };
 }
 

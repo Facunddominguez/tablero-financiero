@@ -53,6 +53,8 @@ function tramo(hist, serie, referencia, desde, hasta) {
 
 // ---------- carteras fantasma ----------
 export const HORIZONTES = [1, 3, 6, 12];
+// Identifica una cartera fantasma (para agrupar, editar y borrar): origen, nombre o ticker, y fecha.
+export const claveFantasma = f => `${f.origen}|${f.grupo || f.ticker}|${f.fecha}`;
 
 // Cada fantasma contra SPY desde su fecha. Devuelve { grupos: [{ nombre, origen, fecha, filas, promedio }], faltan: [tickers a pedir] }.
 // En cada fila y en el promedio: plazos {1,3,6,12} (null si todavía no pasó) y hoy.
@@ -68,8 +70,8 @@ export function compararFantasmas(e) {
       plazos: Object.fromEntries(HORIZONTES.map(n => { const hasta = fechas.sumarMeses(f.fecha, n); return [n, ultimo && hasta <= ultimo ? medir(hasta) : null]; })),
       hoy: ultimo ? medir(ultimo) : null,
     };
-    const clave = `${f.origen}|${f.grupo || f.ticker}|${f.fecha}`;
-    if (!grupos.has(clave)) grupos.set(clave, { nombre: f.grupo || f.ticker, origen: f.origen, fecha: f.fecha, filas: [] });
+    const clave = claveFantasma(f);
+    if (!grupos.has(clave)) grupos.set(clave, { clave, nombre: f.grupo || f.ticker, grupo: f.grupo || null, origen: f.origen, fecha: f.fecha, filas: [] });
     grupos.get(clave).filas.push(fila);
   }
   // Cartera con varios papeles: todos con el mismo peso.

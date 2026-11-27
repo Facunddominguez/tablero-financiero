@@ -12,6 +12,7 @@ import { fusionar } from './sync.js';
 import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo, benchmarks, rendimientoPorBloque, canjeDe } from './finanzas.js';
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
+import { pruebasRonda2 } from './pruebas_ronda2.js';
 
 const cerca = (a, b, tol, que) => { if (!(Math.abs(a - b) <= tol)) throw new Error(`${que}: dio ${a}, esperado ≈ ${b}`); };
 
@@ -657,5 +658,6 @@ export function pruebasPublicas() {
       try { await descifrar(sobre, otra); } catch { abrio = false; }
       if (abrio) throw new Error('abrió con otra clave');
     }],
+    ...pruebasRonda2(),
   ];
 }

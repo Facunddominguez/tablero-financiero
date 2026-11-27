@@ -47,6 +47,7 @@ export const fmt = {
   fecha: f => f ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : '—',
   fechaLarga: f => f ? `${+f.slice(8, 10)} de ${MESES[+f.slice(5, 7) - 1]}` : '—',
   mes: f => f ? `${MESES[+f.slice(5, 7) - 1]} de ${f.slice(0, 4)}` : '—',
+  mesCorto: f => f ? `${MESES[+f.slice(5, 7) - 1].slice(0, 3)} ${f.slice(0, 4)}` : '—',
   hace(iso, ahora = Date.now()) {
     if (!iso) return 'sin fecha';
     const min = Math.max(0, Math.round((ahora - new Date(iso).getTime()) / 60000));
@@ -58,13 +59,14 @@ export const fmt = {
   },
 };
 
-// Acepta "1.234,56", "1234.56" o "1234,56".
+// Acepta "1.234,56", "1.234", "1234.56" o "1234,56". Un punto seguido de tres cifras separa miles, como se escribe
+// acá y como lo muestran los campos ya completados ("1.200" es mil doscientos).
 export function aNumero(v) {
   if (typeof v === 'number') return v;
-  let s = String(v ?? '').trim().replace(/[^\d.,\-]/g, '');
+  let s = String(v ?? '').trim().replace(/−/g, '-').replace(/[^\d.,\-]/g, '');
   if (!s) return NaN;
   if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
-  else if ((s.match(/\./g) || []).length > 1) s = s.replace(/\./g, '');
+  else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(s) || (s.match(/\./g) || []).length > 1) s = s.replace(/\./g, '');
   return Number(s);
 }
 

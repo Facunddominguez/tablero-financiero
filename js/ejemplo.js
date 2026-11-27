@@ -32,6 +32,7 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
       regla('R1', 'Fondo de emergencia'), regla('R2', 'Ahorro mínimo'), regla('R3', 'Núcleo en rango'), regla('R3B-E', 'Banda interna del núcleo'),
       regla('R4', 'Tope por satélite', { alerta: 0.1, duro: 0.15 }), regla('R4B', 'Tope por satélite volátil', { alerta: 0.06, duro: 0.1 }),
       regla('R5', 'Satélites en total', { objetivo: 0.2, alerta: 0.22, techo: 0.25 }), regla('R6', 'Bloque YPF', { objetivo: 0.1, maximo_aceptado: 0.2 }),
+      regla('R6B', 'Riesgo argentino', { objetivo: 0.2, alerta: 0.25, techo: 0.3 }),
       regla('R7', 'Tesis nuevas', { max_tesis: 5 }), regla('C1', 'Costo de entrada', { max: 0.0075 }), regla('C3', 'Costo anual', { alerta: 0.01, auditoria: 0.015 }),
     ],
     objetivos_por_activo: { NVDA: { objetivo: 0.05, banda: [0.03, 0.07] }, PAMP: { objetivo: 0.03 } }, objetivos_externos: [],
@@ -76,7 +77,7 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
   const sec = o => ({ ...o, stale: false, actualizado: `${hoy}T15:00:00Z` });
   const mercado = {
     generado: `${hoy}T15:00:00Z`,
-    fx: sec({ mep: MEP, ccl: CCL, mep_prev: MEP * 0.998, fecha: `${hoy}T14:00:00Z`, dia: hoy }),
+    fx: sec({ mep: MEP, ccl: CCL, oficial: 960, mep_prev: MEP * 0.998, fecha: `${hoy}T14:00:00Z`, dia: hoy }),
     cedears: sec({ precios: cedears }),
     acciones: sec({ precios: { PAMP: [4100, 1.2] } }),
     ons: sec({ precios: { ON1: [1035, 0.2] } }),
@@ -85,13 +86,55 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
     usd: sec({ precios: {} }),
     cpi_usa: sec({ meses: { '2025-11': 320, '2026-03': 323, '2026-06': 325, '2026-10': 328 } }),
   };
+  // Historia larga (mensual, 2019 en adelante) y supuestos inventados para las proyecciones.
+  const meses = [];
+  for (let a = 2019, m = 1; `${a}-${String(m).padStart(2, '0')}` < hoy.slice(0, 7); m === 12 ? (a++, m = 1) : m++) meses.push(`${a}-${String(m).padStart(2, '0')}`);
+  const largoPlazo = {
+    fechas: meses, hasta: meses.at(-1),
+    series: Object.fromEntries(['SPY', 'EFA', 'EEM', 'IWM'].map((t, k) => {
+      let v = 100;
+      return [t, meses.map((_, i) => Math.round((v *= 1 + 0.007 + (0.03 + 0.004 * k) * Math.sin(i * 1.7) + 0.015 * Math.sin(i * 0.4 + k)) * 100) / 100)];
+    })),
+  };
+  const supuestos = {
+    retornos_etf: { fuente: 'Ejemplo', fecha: '2026-09-30', SPY: 0.06, EFA: 0.065, EEM: 0.05, IWM: 0.06 },
+    acciones: { fuente: 'Ejemplo', fecha: '2026-09-30', prima_mercado: 0.04 },
+    otros: { fuente: 'Ejemplo', fecha: '2026-09-30', on: 0.05, fci_usd: 0.04, caja_usd: 0, pesos: 0 },
+    semaforo: { fuente: 'Ejemplo', fecha: '2026-11-26', riesgo_pais: { amarillo: 800, rojo: 1500 }, canje: { amarillo: 0.05, rojo: 0.1 }, brecha: { amarillo: 0.1, rojo: 0.3 }, adr: { amarillo: -0.07, rojo: -0.15 } },
+    elecciones: { fuente: 'Ejemplo', fecha: '2026-11-26', diferencia: 0.1 },
+    clima: { fuente: 'Ejemplo', fecha: '2026-11-26', alto_rendimiento: { atento: 4, tenso: 6 }, curva: { atento: 0.25, tenso: 0 }, vix: { atento: 20, tenso: 30 }, spy_promedio: { atento: 0, tenso: -0.05 } },
+  };
+  const semanas = fechasHist.filter((_, i) => i % 5 === 4);
+  const fred = (base, amplitud) => sec({ fechas: semanas, valores: semanas.map((_, i) => Math.round((base + amplitud * Math.sin(i * 0.4)) * 100) / 100), ultimo: { fecha: fechasHist.at(-1), valor: base } });
+  const clima = { series: { BAMLH0A0HYM2: fred(3.5, 0.5), T10Y3M: fred(0.6, 0.3), VIXCLS: fred(16, 4), NFCI: fred(-0.4, 0.1) } };
+  // Riesgo país, tasa de plazo fijo, cuotapartes de fin de mes y mercados de la elección: todo inventado.
+  const finesDeMes = meses.slice(-24).map(m => new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).toISOString().slice(0, 10)).concat(fechasHist.at(-1)).filter((f, i, a) => !i || f > a[i - 1]);
+  const dias = f => (Date.parse(f) - Date.parse(finesDeMes[0])) / 86400000;
+  const argentina = {
+    generado: `${hoy}T15:00:00Z`,
+    riesgo_pais: sec({ fechas: [fechasHist.at(-2), fechasHist.at(-1)], valores: [620, 650], ultimo: { fecha: fechasHist.at(-1), valor: 650 } }),
+    plazo_fijo: sec({ fechas: [finesDeMes[0], fechasHist.at(-1)], valores: [0.3, 0.3], ultimo: { fecha: fechasHist.at(-1), valor: 0.3 } }),
+    fondos: sec({
+      fechas: finesDeMes,
+      series: {
+        'Fondo Pesos Ejemplo': finesDeMes.map(f => Math.round(Math.pow(1.32, dias(f) / 365) * 1e6) / 1e6),
+        'Fondo Dolar Ejemplo': finesDeMes.map(f => Math.round(Math.pow(1.05, dias(f) / 365) * 1e6) / 1e6),
+      },
+    }),
+    elecciones: {
+      fecha: '2027-10-24',
+      kalshi: sec({ nombre: 'Kalshi', url: 'https://kalshi.com/', volumen_unidad: 'contratos de USD 1', candidatos: [{ nombre: 'Candidata Uno', prob: 0.5, volumen: 3000 }, { nombre: 'Candidato Dos', prob: 0.3, volumen: 1000 }, { nombre: 'Candidato Tres', prob: 0.1, volumen: 500 }] }),
+      polymarket: sec({ nombre: 'Polymarket', url: 'https://polymarket.com/', volumen_unidad: 'USD operados', candidatos: [{ nombre: 'Candidata Uno', prob: 0.38, volumen: 9000 }, { nombre: 'Candidato "Apodo" Dos', prob: 0.35, volumen: 1000 }] }),
+    },
+  };
   const ext = {
-    mercado, historico,
+    mercado, historico, largoPlazo, supuestos, argentina, clima,
     ratios: { fecha: '2026-11-19', ratios: Object.fromEntries(Object.entries(ratios).map(([t, r]) => [t, { ratio: r }])) },
     feriados: {
       anios: [2026, 2027], feriados: { '2026-11-26': 'Acción de Gracias', '2026-12-25': 'Navidad' }, medias_ruedas: { '2026-11-27': 'día después de Acción de Gracias', '2026-12-24': 'Nochebuena' },
       byma: { horarios: [{ desde: '2026-11-02', apertura: '10:30', cierre: '18:00' }, { desde: '2027-03-14', apertura: '10:30', cierre: '17:00', confirmado: false }] },
     },
+    feriadosAr: { anios: [2026, 2027], feriados: { '2026-12-07': { nombre: 'Puente turístico no laborable', tipo: 'puente' }, '2026-12-08': { nombre: 'Inmaculada Concepción de María', tipo: 'inamovible' }, '2026-12-25': { nombre: 'Navidad', tipo: 'inamovible' } } },
     calendario: { flujos: [{ ticker: 'ON1', fecha: '2027-01-14', tipo: 'cupon', moneda: 'USD', por_vn: 0.04, detalle: 'Cupón de ejemplo' }] },
     insiders: { filas: [] },
   };

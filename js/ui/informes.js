@@ -4,10 +4,13 @@ import { costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, hi
 import { NOMBRE_GRUPO } from '../estado.js';
 import { riesgo } from '../riesgo.js';
 import { puntajePredicciones, compararFantasmas, contraReferencia, HORIZONTES } from '../diario.js';
-import { nuevaPrediccion, nuevaRotacion } from './diario.js';
+import { nuevaPrediccion, nuevaRotacion, borrarPrediccion, editarFantasma, borrarFantasma } from './diario.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase, parteRiesgo } from './comun.js';
+import { informeProyeccion } from './proyeccion.js';
+import { seccionesArgentina } from './argentina.js';
+import { seccionClima } from './clima.js';
 
-const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['trimestral', 'Trimestral'], ['diario', 'Predicciones y fantasmas'], ['anual', 'Anual para el contador'], ['allaria', 'Contraste con Allaria']];
+const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['proyeccion', 'Proyección'], ['trimestral', 'Trimestral'],['diario', 'Predicciones y fantasmas'], ['anual', 'Anual para el contador'], ['allaria', 'Contraste con Allaria']];
 const dato = (etq, valor, sub) => h('div', h('p.dato-etq', etq), h('p.dato-valor', valor), sub ? h('p.dato-sub', sub) : null);
 const color = (n, txt) => h('span.' + (signoClase(n) || 'plano'), txt);
 const hoja = (titulo, sub, ...secciones) => h('article.informe', h('header.informe-cab', h('h1', titulo), h('p', sub)), secciones);
@@ -88,8 +91,10 @@ function diario(ctx) {
   const abiertas = (d.predicciones || []).filter(x => typeof x.cumplio !== 'boolean').sort(orden);
   const cerradas = (d.predicciones || []).filter(x => typeof x.cumplio === 'boolean').sort(orden).reverse();
   const fantasmas = compararFantasmas(e);
+  const enlace = (txt, fn) => h('button.enlace.accion-fila', { type: 'button', onclick: fn }, txt);
   const columnas = [
-    { titulo: 'Predicción', celda: x => [x.ticker && !x.texto.includes(x.ticker) ? h('strong.num', x.ticker + ' ') : null, x.texto, h('small.desglose', `cambiaría de idea si: ${x.cambio}`)] },
+    { titulo: 'Predicción', celda: x => [x.ticker && !x.texto.includes(x.ticker) ? h('strong.num', x.ticker + ' ') : null, x.texto, h('small.desglose', `cambiaría de idea si: ${x.cambio}`),
+      h('span.acciones-fila.no-imprimir', enlace('Editar', () => nuevaPrediccion(ctx, '', x)), enlace('Borrar', () => borrarPrediccion(ctx, x)))] },
     { titulo: 'Prob.', num: 1, celda: x => fmt.pct(x.probabilidad, 0) },
     { titulo: 'Vence', num: 1, celda: x => [fmt.fecha(x.vence), typeof x.cumplio !== 'boolean' && x.vence <= e.hoy ? h('div', chip('Falta marcarla', 'alerta')) : null] },
   ];
@@ -115,8 +120,9 @@ function diario(ctx) {
       pedirSeries(fantasmas.faltan),
       fantasmas.grupos.map(g => h('div.fantasma-grupo',
         h('h3', `${g.nombre} · ${ORIGEN[g.origen] || g.origen} · desde el ${fmt.fecha(g.fecha)}`),
+        h('p.acciones-fila.no-imprimir', enlace('Editar', () => editarFantasma(ctx, g)), enlace('Borrar', () => borrarFantasma(ctx, g))),
         tabla([
-          { titulo: 'Ticker', celda: f => h('strong.num', f.ticker) },
+          { titulo: 'Ticker', celda: f => [h('strong.num', f.ticker), g.filas.length > 1 && g.filas.includes(f) ?h('span.acciones-fila.no-imprimir', enlace('Quitar', () => borrarFantasma(ctx, g, f.ticker))) : null] },
           ...HORIZONTES.map(n => ({ titulo: `${n} ${n === 1 ? 'mes' : 'meses'}`, num: 1, celda: f => contra(f.plazos[n], 'SPY') })),
           { titulo: 'Hasta hoy', num: 1, celda: f => contra(f.hoy, 'SPY') },
         ], g.promedio ? [...g.filas, { ticker: 'Promedio', ...g.promedio }] : g.filas))),
@@ -312,6 +318,8 @@ function trimestral(ctx) {
       item(!fuera.length && R.R5?.nivel === 'ok', 'Satélites', `${fuera.length ? `Fuera de su banda: ${fuera.map(p => `${p.ticker} ${fmt.pct(p.pct_lp)}`).join(', ')}. ` : 'Todos dentro de su banda. '}En total son ${fmt.pct(e.satelites_lp)} de largo plazo${R.R5 && R.R5.nivel !== 'ok' ? ` (regla R5 ${NIVEL[R.R5.nivel][0].toLowerCase()}: los aportes van solo al núcleo)` : ''}.`),
       item(true, 'Watchlist', `${(d.watchlist || []).length} nombres en seguimiento. ${R.R7?.activa ? 'Bloqueada por la regla R7: solo observación.' : 'Habilitada: máximo inicial por nombre según la tabla.'}`))),
     seccionCanje(T, 'Activos y efecto canje, desde el inicio'),
+    seccionesArgentina(e),
+    seccionClima(ctx),
     seccionRiesgo(e),
     seccionReferencias(e),
     sec('Satélites contra su banda', tabla([
@@ -397,7 +405,7 @@ function allaria(ctx) {
     ], a.activos)));
 }
 
-const FN = { mensual, rendimiento: rendimientoInforme, trimestral, diario, anual, allaria };
+const FN = { mensual, rendimiento: rendimientoInforme, proyeccion: informeProyeccion, trimestral, diario, anual, allaria };
 
 export function vistaInformes(ctx, sub) {
   const id = FN[sub] ? sub : 'mensual';
