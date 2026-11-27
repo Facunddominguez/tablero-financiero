@@ -17,6 +17,7 @@ INTERVALO = 0.15  # segundos entre pedidos: menos de 10 por segundo
 _ultimo = [0.0]
 _reloj = time.monotonic
 _dormir = time.sleep
+_envios = {}  # presentaciones ya bajadas en esta corrida (noticias y directivos piden las mismas)
 
 
 class SinContacto(RuntimeError):
@@ -42,6 +43,13 @@ def pedir(m, url, intentos=2, timeout=20):
         _dormir(espera)
     _ultimo[0] = _reloj()
     return m.bajar(url, intentos=intentos, timeout=timeout, cabeceras={"User-Agent": ua, "Accept-Encoding": "identity"})
+
+
+def envios(m, cik):
+    """Las presentaciones recientes de una empresa o de un directivo (data.sec.gov/submissions)."""
+    if cik not in _envios:
+        _envios[cik] = json.loads(pedir(m, URL_ENVIOS.format(cik=cik), intentos=1))
+    return _envios[cik]
 
 
 def clave_ticker(t):

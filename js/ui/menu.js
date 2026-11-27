@@ -357,6 +357,7 @@ function filasSenales(e) {
     ['Presentaciones a la SEC de lo que seguís', f.sec?.aviso || 'SEC EDGAR (data.sec.gov)', f.sec?.actualizado, f.sec?.stale],
     ['Noticias de lo que seguís', 'Google News (RSS), en español e inglés', f.google?.actualizado, f.google?.stale],
     ['Clasificación de las noticias', quienClasifica(e), e.ia_uso?.corridas?.at(-1)?.fecha, !!e.ia_uso?.corridas?.at(-1)?.sin_ia],
+    ['Formularios 4 de directivos', e.directivos?.aviso || 'SEC EDGAR; precio y tamaño de Yahoo Finance', e.directivos?.actualizado, e.directivos?.stale],
     ['Hechos relevantes de BYMA y CNV', f.byma?.nota || 'Sin acceso público estable: se usan los 6-K de la SEC', null, false, 'sin fuente'],
   ];
 }

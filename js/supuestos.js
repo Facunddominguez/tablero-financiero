@@ -23,6 +23,7 @@ export const EDITABLES = [
     ['brecha.amarillo', 'Brecha: amarillo desde (%)', 'pct'], ['brecha.rojo', 'Brecha: rojo desde (%)', 'pct'],
     ['adr.amarillo', 'Acciones contra SPY: amarillo (%)', 'pct'], ['adr.rojo', 'Acciones contra SPY: rojo (%)', 'pct'],
   ]],
+  ['radar_directivos', 'Radar de directivos', [['umbral', 'Puntaje mínimo para seguir una compra como fantasma (0 a 100)', 'num']]],
   ['elecciones', 'Elección 2027', [['diferencia', 'Avisar si los mercados difieren (%)', 'pct']]],
   ['clima', 'Clima de mercado', [
     ['alto_rendimiento.atento', 'Bonos de riesgo: atento desde (puntos)', 'num'], ['alto_rendimiento.tenso', 'Bonos de riesgo: tenso desde (puntos)', 'num'],

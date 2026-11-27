@@ -136,6 +136,10 @@ h2.sub { margin-top: 2rem; }
 .noticia { padding: .55rem 0; border-top: 1px solid var(--linea); }
 .noticia-linea { font-size: .93rem; }
 .noticia-meta { font-size: .8rem; color: var(--tinta-3); margin-top: .15rem; overflow-wrap: anywhere; }
+.puntaje summary { cursor: pointer; list-style: none; }
+.puntaje summary .alto { color: var(--acento); }
+.puntaje ul { list-style: none; margin: .4rem 0 0; padding: 0; font: .78rem/1.5 var(--f-texto); color: var(--tinta-2); text-align: left; min-width: 11rem; }
+.directivos h3 { font-size: .95rem; margin: 1.25rem 0 .35rem; }
 .proximos details { min-width: 0; }
 .proximos summary { cursor: pointer; }
 .agenda { list-style: none; margin: .6rem 0 .4rem; padding: 0; }

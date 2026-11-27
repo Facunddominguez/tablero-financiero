@@ -1,7 +1,7 @@
 // Estado = datos base (descifrados) + registro de eventos locales + precios. Todo puro: no toca red ni DOM.
 import { clon, suma, fechas } from './util.js';
 import { costoLoteUSD, expuestoAlCanje, ADR_DE_LOCAL } from './finanzas.js';
-import { claveFantasma } from './diario.js';
+import { claveFantasma, DIAS_ENTRE_SENALES } from './diario.js';
 import { fundir } from './supuestos.js';
 export { ADR_DE_LOCAL };
 
@@ -45,6 +45,7 @@ export function aplicarEventos(base, eventosLocales = []) {
   d.pasos = d.pasos || {}; d.meses = d.meses || {}; d.decisiones = d.decisiones || [];
   d.cobros = d.cobros || []; d.realizados = d.realizados || []; d.snapshots = d.snapshots || {};
   d.predicciones = d.predicciones || []; d.fantasmas = d.fantasmas || [];
+  d.senales_radar = d.senales_radar || {}; // empresa → cuándo se anotó sola su última señal
   const vistos = new Set();
   const todos = [...(base.eventos || []), ...eventosLocales]
     .filter(e => !vistos.has(e.id) && vistos.add(e.id))
@@ -133,6 +134,11 @@ export function aplicarEventos(base, eventosLocales = []) {
         delete d.pasos[`prediccion-${e.ref}`];
         break;
       case 'fantasma': // algo que no compraste, para ver después cómo le fue contra SPY
+        if (e.senal) { // anotada sola por el radar: si otro dispositivo ya la anotó, no se repite; borrarla no la trae de vuelta
+          const previa = d.senales_radar[e.ticker];
+          if (previa && Math.abs(fechas.dias(previa, e.fecha)) < DIAS_ENTRE_SENALES) break;
+          d.senales_radar[e.ticker] = e.fecha;
+        }
         if (!d.fantasmas.some(f => f.origen === e.origen && f.ticker === e.ticker && f.fecha === e.fecha && f.grupo === e.grupo)) d.fantasmas.push({ origen: e.origen, ticker: e.ticker, fecha: e.fecha, grupo: e.grupo });
         break;
       case 'fantasma_borrar': // toda la cartera (por su clave) o un solo ticker
@@ -272,7 +278,7 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     // balances y dividendos de lo que seguís, y eventos con fecha fija
     agenda: ext.agenda || null, eventos_fijos: ext.eventosFijos || null,
     // noticias de lo que seguís (SEC y Google News), con su clasificación
-    noticias: ext.noticias || null, ia_uso: ext.iaUso || null,
+    noticias: ext.noticias || null, ia_uso: ext.iaUso || null, directivos: ext.directivos || null,
     // calendario de mercado: EE.UU. y BYMA, más los feriados argentinos que guarda el Action
     feriados: ext.feriados || ext.feriadosAr ? { ...ext.feriados, argentina: ext.feriadosAr || null } : null,
   };

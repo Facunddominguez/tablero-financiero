@@ -53,6 +53,7 @@ function tramo(hist, serie, referencia, desde, hasta) {
 
 // ---------- carteras fantasma ----------
 export const HORIZONTES = [1, 3, 6, 12];
+export const DIAS_ENTRE_SENALES = 90; // el radar anota como mucho una señal por empresa en este plazo
 // Identifica una cartera fantasma (para agrupar, editar y borrar): origen, nombre o ticker, y fecha.
 export const claveFantasma = f => `${f.origen}|${f.grupo || f.ticker}|${f.fecha}`;
 

@@ -6,6 +6,7 @@ import { proyeccion } from '../motor.js';
 import { simular, textoHito } from '../simulacion.js';
 import { tickersPropios } from '../estado.js';
 import { seccionNoticias } from './noticias.js';
+import { seccionDirectivos } from './directivos.js';
 
 // Cuándo se podría abrir una tesis nueva, con rango (misma simulación que Informes → Proyección).
 function cuandoTesis(e) {
@@ -36,8 +37,10 @@ export function vistaRadar(ctx) {
 
     seccionNoticias(e),
 
+    seccionDirectivos(ctx),
+
     h('section',
-      h('h2', 'Compras de directivos · últimos 7 días'),
+      h('h2', 'Compras en grupo · filtro de la semana'),
       filas.length ? tabla([
         // Las marcas van debajo del nombre: así se ven en el celular sin deslizar la tabla.
         { titulo: 'Ticker', celda: f => [h('strong.num', f.ticker), h('span.empresa', f.empresa), marcas(f.ticker), botonFantasma(ctx, 'radar', f.ticker)] },

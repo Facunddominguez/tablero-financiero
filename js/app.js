@@ -5,6 +5,7 @@ import { derivarClave, descifrar, cifrar } from './cripto.js';
 import { guardarCifrado, leerCifrado, bloqueo } from './seguridad.js';
 import { sincronizar, leerRemoto, repoDeUbicacion, actualizarMercado, leerArchivosMercado, probarActions, publicarSeguimiento } from './sync.js';
 import { seguimiento } from './seguimiento.js';
+import { eventosSenales } from './directivos.js';
 import { aplicarEventos, valuar, snapshotDe } from './estado.js';
 import { planificador } from './motor.js';
 import { vistaHoy } from './ui/hoy.js';
@@ -86,7 +87,15 @@ async function usarMercado(nuevos, { forzar = false } = {}) {
   if (!forzar && nuevos.mercado.generado <= actual) return false;
   S.ext = { ...S.ext, ...Object.fromEntries(Object.entries(nuevos).filter(([, v]) => v)) };
   recalcular(); await guardarSnapshot(); pintar();
+  await registrarSenales();
   return true;
+}
+
+// Las señales de directivos que se ven por primera vez quedan como carteras fantasma, para medirlas contra SPY.
+async function registrarSenales() {
+  if (!S.estado || S.localManda) return;
+  const nuevas = eventosSenales(S.estado);
+  if (nuevas.length) await ctx.registrar(...nuevas);
 }
 
 // Publica la lista de tickers a seguir (data/seguimiento.json). Si falla, no frena nada: se reintenta en la próxima.
@@ -320,7 +329,7 @@ async function leerLocal(k, frase) {
 
 let vigilando = false;
 async function cargarTodo(frase) {
-  const publicos = { mercado: 'data/market.json', calendario: 'data/calendario.json', insiders: 'data/insiders.json', historico: 'data/historico.json', ratios: 'tools/cedear_ratios.json', feriados: 'data/feriados_eeuu.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', supuestos: 'data/supuestos.json', agenda: 'data/agenda.json', eventosFijos: 'data/eventos.json', noticias: 'data/noticias.json', iaUso: 'data/ia_uso.json' };
+  const publicos = { mercado: 'data/market.json', calendario: 'data/calendario.json', insiders: 'data/insiders.json', historico: 'data/historico.json', ratios: 'tools/cedear_ratios.json', feriados: 'data/feriados_eeuu.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', supuestos: 'data/supuestos.json', agenda: 'data/agenda.json', eventosFijos: 'data/eventos.json', noticias: 'data/noticias.json', iaUso: 'data/ia_uso.json', directivos: 'data/directivos.json' };
   const ext = Object.fromEntries(await Promise.all(Object.entries(publicos).map(async ([k, url]) => [k, await json(url)])));
   const [eventos, snaps, local, gh, sync] = [await leerLocal('eventos', frase), await leerLocal('snapshots', frase), await leerLocal('base_local', frase), await leerLocal('github', frase), await leerLocal('sync', frase)];
   // Un respaldo importado manda hasta que se suba.
@@ -337,7 +346,8 @@ async function cargarTodo(frase) {
   pintar();
   if (!vigilando) { vigilando = true; bloqueo.vigilar(() => bloquear('Se bloqueó por inactividad. Escribí la clave para seguir.')); }
   // Sin cambios por subir, la lista de seguimiento se revisa al abrir; con cambios, después de sincronizar.
-  refrescarRemoto().then(() => { if (ctx.pendientes) programarSync(); else publicarLista(); });
+  // Las señales del radar se anotan recién con los datos más nuevos, para no repetir lo que ya anotó otro dispositivo.
+  refrescarRemoto().then(registrarSenales).catch(() => {}).then(() => { if (ctx.pendientes) programarSync(); else publicarLista(); });
   refrescarMercado();
 }
 

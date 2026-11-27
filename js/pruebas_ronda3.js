@@ -1,11 +1,13 @@
 // Pruebas públicas de la ronda 3 (sin datos privados). Corren junto con js/pruebas_publicas.js.
-import { aplicarEventos } from './estado.js';
+import { aplicarEventos, valuar } from './estado.js';
 import { tickersASeguir, seguimiento, subyacenteUsa } from './seguimiento.js';
 import { publicarSeguimiento } from './sync.js';
 import { cerca, igual, si, mundo } from './pruebas_ronda2.js';
 import { agendaProxima, calendarioPorVencer, comoLoSeguis, fechaCorta } from './calendario.js';
 import { planificador } from './motor.js';
 import { noticiasMateriales, avisoIA, usoIA, porReglas } from './noticias.js';
+import { comprasPuntuadas, ventasDestacadas, senalesRadar, eventosSenales, umbralRadar } from './directivos.js';
+import { compararFantasmas } from './diario.js';
 
 const evento = (id, resto) => ({ id: 'r3-' + id, ts: `2026-11-30T12:00:00.${String(id).padStart(3, '0')}Z`, ...resto });
 
@@ -139,6 +141,45 @@ function etapa4() {
   ];
 }
 
+// ---------- etapa 5 · radar de directivos ----------
+const aplicar = (x, eventos) => valuar(aplicarEventos(x.datos, eventos), x.ext, x.hoy || '2026-11-30');
+function etapa5() {
+  const conId = (l, desde = 100) => l.map((x, i) => evento(desde + i, x));
+  return [
+    ['Directivos: accionable si hay CEDEAR o la tenés; el resto aparte; ventas solo de 3 o más', async () => {
+      const { e } = mundo();
+      const c = comprasPuntuadas(e);
+      igual(c.accionables.map(x => `${x.t}:${x.puntaje}`), ['NVDA:74', 'NVDA:66', 'KO:61', 'AAPL:35'], 'por puntaje, sin lo viejo');
+      igual(c.otras.map(x => x.t), ['SINCEDEAR'], 'sin CEDEAR');
+      si(c.accionables[0].propio === 'NVDA' && c.accionables[2].cedear && !c.accionables[2].propio, 'motivo');
+      igual(ventasDestacadas(e).map(v => v.t), ['NVDA'], 'solo en grupo');
+      si(comprasPuntuadas(mundo({ ajustar: x => { delete x.ext.directivos; } }).e).accionables.length === 0, 'sin archivo');
+    }],
+    ['Directivos: cada señal accionable sobre el umbral entra sola como fantasma "radar", una vez', async () => {
+      const x = mundo();
+      igual(senalesRadar(x.e).map(s => s.t), ['NVDA', 'KO'], 'una por empresa, desde 60 puntos y accionable');
+      const evs = eventosSenales(x.e);
+      igual(evs.map(v => [v.tipo, v.origen, v.ticker, v.fecha, v.puntaje]), [['fantasma', 'radar', 'NVDA', '2026-11-30', 74], ['fantasma', 'radar', 'KO', '2026-11-30', 61]], 'eventos');
+      const e2 = aplicar(x, conId(evs));
+      igual(e2.datos.fantasmas.map(f => f.ticker), ['NVDA', 'KO'], 'anotadas');
+      igual(eventosSenales(e2), [], 'no se repite');
+      // Otro dispositivo la anotó otro día: al unir los eventos queda una sola.
+      const doble = aplicar(x, [...conId(evs), ...conId(evs.map(v => ({ ...v, fecha: '2026-12-02' })), 200)]);
+      si(doble.datos.fantasmas.length === 2, 'sin duplicar entre dispositivos');
+      // Borrarla no la trae de vuelta; pasados 90 días, una señal nueva sí.
+      const borrada = aplicar(x, [...conId(evs), evento(300, { tipo: 'fantasma_borrar', clave: 'radar|NVDA|2026-11-30' })]);
+      si(!borrada.datos.fantasmas.some(f => f.ticker === 'NVDA') && !eventosSenales(borrada).length, 'borrada');
+      si(compararFantasmas(e2).grupos.every(g => g.origen === 'radar'), 'se comparan con SPY como las demás');
+    }],
+    ['Directivos: el umbral se cambia en Supuestos y no toca pasos ni reglas', async () => {
+      const x = mundo({ ajustar: y => { y.datos.supuestos = { radar_directivos: { umbral: 70 } }; } });
+      si(umbralRadar(x.e) === 70 && senalesRadar(x.e).map(s => s.t).join() === 'NVDA', 'umbral propio');
+      const sin = mundo({ ajustar: y => { delete y.ext.directivos; } }).e;
+      igual(planificador(mundo().e, sin.hoy).pasos, planificador(sin, sin.hoy).pasos, 'informativo');
+    }],
+  ];
+}
+
 export function pruebasRonda3() {
-  return [...etapa1(), ...etapa2(), ...etapa4()];
+  return [...etapa1(), ...etapa2(), ...etapa4(), ...etapa5()];
 }

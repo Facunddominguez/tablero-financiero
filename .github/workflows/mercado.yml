@@ -77,7 +77,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # solo lo que escribe este Action (nunca el archivo cifrado); lo que todavía no existe se saltea
-          for f in market insiders historico alertas_estado feriados_ar argentina clima largo_plazo sec_cik agenda noticias ia_uso; do
+          for f in market insiders historico alertas_estado feriados_ar argentina clima largo_plazo sec_cik agenda noticias ia_uso directivos; do
             if [ -f "data/$f.json" ]; then git add "data/$f.json"; fi
           done
           if git diff --cached --quiet; then

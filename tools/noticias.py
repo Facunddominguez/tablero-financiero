@@ -212,8 +212,7 @@ def buscar_sec(m, tickers, cik, desde, previas, limite):
             continue
         pedidos += 1
         try:
-            datos = json.loads(sec.pedir(m, sec.URL_ENVIOS.format(cik=r["cik"]), intentos=1))
-            nuevas += desde_envios(datos, t, r["cik"], desde)
+            nuevas += desde_envios(sec.envios(m, r["cik"]), t, r["cik"], desde)
         except Exception as e:  # noqa: BLE001
             fallas += 1
             print(f"FALLA sec {t}: {type(e).__name__}")

@@ -15,6 +15,7 @@ import sys
 
 import calendario
 import clasificar
+import directivos
 import noticias
 import sec
 
@@ -78,12 +79,14 @@ def correr(m, origen=None):
     if not lista:
         print("señales: falta data/seguimiento.json (lo escribe la app al sincronizar)")
     tickers = subyacentes(lista)
-    parte("sec_cik", lambda: sec_cik(m, tickers))
-    if not tickers:  # sin lista no hay nada que buscar (y no se borra lo guardado)
-        return
-    parte("calendario", lambda: m.escribir("agenda.json", calendario.agenda(m, tickers, m.leer("agenda.json"))))
-    parte("noticias", lambda: noticias.correr(m, tickers))
-    parte("clasificación", lambda: clasificar.correr(m))
+    radar = [f.get("ticker") for f in m.leer("insiders.json").get("filas") or [] if f.get("ticker")]
+    sec._envios.clear()
+    parte("sec_cik", lambda: sec_cik(m, sorted(set(tickers) | set(radar))))
+    if tickers:  # sin lista no hay nada que seguir (y no se borra lo guardado)
+        parte("calendario", lambda: m.escribir("agenda.json", calendario.agenda(m, tickers, m.leer("agenda.json"))))
+        parte("noticias", lambda: noticias.correr(m, tickers))
+        parte("clasificación", lambda: clasificar.correr(m))
+    parte("directivos", lambda: directivos.correr(m, lista))  # también puntúa el radar general
 
 
 def main():

@@ -16,6 +16,7 @@ import urllib.error
 
 import calendario
 import clasificar
+import directivos
 import mercado
 import noticias
 import sec
@@ -255,6 +256,7 @@ def red_noticias(cambios=None, pedidos=None):
 
 def con_noticias(fn, hoy="2026-11-27", **archivos):
     cfg = dict(mercado.CFG, noticias={"nombres": {"YPF": "YPF"}, "sin_google": ["SPY"]})
+    sec._envios.clear()
     with datos_temporales(sec_cik=CIK, **archivos), parches(
             (mercado, "hoy_argentina", lambda: hoy), (mercado, "CFG", cfg), SIN_ESPERA, (noticias, "_dormir", lambda s: None)):
         return fn()
@@ -332,11 +334,13 @@ def noticias_completas():
         google = [u for u, _ in pedidos if "google" in u]
         assert any("gl=AR" in u for u in google) and any("gl=US" in u and "stock" in u for u in google), google
         antes = len([u for u, _ in pedidos if u.endswith("ypf6k.htm")])
+        sec._envios.clear()  # cada corrida vuelve a pedir
         noticias.correr(mercado, ["NVDA", "YPF", "SPY"])
         assert len([u for u, _ in pedidos if u.endswith("ypf6k.htm")]) == antes == 1, "el 6-K no se vuelve a abrir"
         # si se cae todo, se conserva lo anterior marcado como viejo
         caida = RuntimeError("503")
         mercado.bajar = red_noticias({"CIK0001045810.json": caida, "CIK0000904851.json": caida, "news.google.com/rss": caida})
+        sec._envios.clear()
         s = noticias.correr(mercado, ["NVDA", "YPF", "SPY"])
         assert s["fuentes"]["sec"]["stale"] and s["fuentes"]["google"]["stale"] and len(s["items"]) == len(r["items"]), s["fuentes"]
         assert s["fuentes"]["google"]["actualizado"]
@@ -624,7 +628,165 @@ def corrida_guarda_el_uso():
     assert clasificar.configuracion(mercado)["proveedor"] == "haiku"
 
 
+# ---------- etapa 5 · directivos ----------
+def formulario4(dueno=111, ops=(("2026-11-18", "P", 1000, 100.0, 3000),), cargo="Chief Executive Officer", oficial=1, director=0, emisor=1045810, plan=0):
+    filas = "".join(
+        f"""<nonDerivativeTransaction><securityTitle><value>Common Stock</value></securityTitle><transactionDate><value>{f}</value></transactionDate>
+        <transactionCoding><transactionFormType>4</transactionFormType><transactionCode>{c}</transactionCode></transactionCoding>
+        <transactionAmounts><transactionShares><value>{n}</value></transactionShares>{"<transactionPricePerShare><value>%s</value></transactionPricePerShare>" % p if p else ""}
+        <transactionAcquiredDisposedCode><value>{"A" if c == "P" else "D"}</value></transactionAcquiredDisposedCode></transactionAmounts>
+        <postTransactionAmounts><sharesOwnedFollowingTransaction><value>{d}</value></sharesOwnedFollowingTransaction></postTransactionAmounts>
+        <ownershipNature><directOrIndirectOwnership><value>D</value></directOrIndirectOwnership></ownershipNature></nonDerivativeTransaction>"""
+        for f, c, n, p, d in ops)
+    return f"""<?xml version="1.0"?><ownershipDocument><documentType>4</documentType><issuer><issuerCik>{emisor:010d}</issuerCik>
+    <issuerTradingSymbol>NVDA</issuerTradingSymbol></issuer><reportingOwner><reportingOwnerId><rptOwnerCik>{dueno:010d}</rptOwnerCik>
+    <rptOwnerName>Persona {dueno}</rptOwnerName></reportingOwnerId><reportingOwnerRelationship><isDirector>{director}</isDirector>
+    <isOfficer>{oficial}</isOfficer><officerTitle>{cargo}</officerTitle></reportingOwnerRelationship></reportingOwner>
+    <aff10b5One>{plan}</aff10b5One><nonDerivativeTable>{filas}
+    <nonDerivativeTransaction><transactionDate><value>2026-11-18</value></transactionDate><transactionCoding><transactionCode>A</transactionCode></transactionCoding>
+    <transactionAmounts><transactionShares><value>99999</value></transactionShares></transactionAmounts></nonDerivativeTransaction>
+    </nonDerivativeTable></ownershipDocument>"""
+
+
+def envios4(*filas):
+    """Respuesta de submissions con formularios 4: [(número, fecha)]."""
+    return {"filings": {"recent": {"form": ["4"] * len(filas), "accessionNumber": [a for a, _ in filas], "filingDate": [f for _, f in filas],
+                                   "primaryDocument": [f"xslF345X06/{a}.xml" for a, _ in filas], "items": [""] * len(filas)}}}
+
+
+def leer_formulario_4():
+    f = directivos.leer_formulario(formulario4(ops=(("2026-11-18", "P", 1000, 100.0, 3000), ("2026-11-18", "S", 50, 101.0, 2950))))
+    assert f["emisor"] == 1045810 and f["ticker"] == "NVDA" and f["duenos"][0]["cik"] == 111 and f["duenos"][0]["oficial"]
+    assert [o["codigo"] for o in f["ops"]] == ["P", "S"], "las concesiones y ejercicios no cuentan"
+    assert f["ops"][0] == {"fecha": "2026-11-18", "codigo": "P", "acciones": 1000.0, "precio": 100.0, "despues": 3000.0, "tenencia": "D|"}
+    assert directivos.leer_formulario(formulario4(ops=(("2026-11-18", "P", 10, None, 20),)))["ops"][0]["precio"] is None
+    try:
+        directivos.leer_formulario("<html>no</html>")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("aceptó otra cosa")
+    assert directivos.url_formulario(1045810, "0001696841-26-000016", "xslF345X06/wk.xml") == \
+        "https://www.sec.gov/Archives/edgar/data/1045810/000169684126000016/wk.xml"
+
+
+def roles_y_tenencia():
+    r = lambda cargo, **k: directivos.rol(dict({"cargo": cargo, "oficial": True}, **k))[0]  # noqa: E731
+    assert [r("CEO"), r("EVP & Chief Financial Officer"), r("President"), r("Senior Vice President"), r("Chief Operating Officer")] == \
+        ["ceo_cfo", "ceo_cfo", "presidente", "directivo", "presidente"]
+    assert r("", oficial=False, director=True) == "director" and r("", oficial=False, dueno10=True) == "dueno" and r("", oficial=False) == "otro"
+    ops = [{"fecha": "2026-11-01", "codigo": "P", "acciones": 100, "despues": 1100, "tenencia": "D|"},
+           {"fecha": "2026-11-02", "codigo": "P", "acciones": 100, "despues": 1200, "tenencia": "D|"}]
+    assert directivos.aumento(ops) == 0.2
+    assert directivos.aumento([dict(ops[0], despues=100)]) == 1.0, "una tenencia nueva cuenta como el doble"
+    assert directivos.aumento([dict(ops[0], despues=None)]) is None
+
+
+def rutina_u_oportunidad():
+    compra = {"fecha": "2026-11-18", "emisor": 1045810}
+
+    def leer(operados):
+        return lambda acceso, doc: directivos.leer_formulario(formulario4(ops=((operados[acceso], "P", 1, 1, 1),)))
+    tres = envios4(("a", "2025-11-10"), ("b", "2024-11-12"), ("c", "2023-12-02"))
+    en_noviembre = {"a": "2025-11-07", "b": "2024-11-08", "c": "2023-11-29"}
+    assert directivos.clasificar_rutina(compra, tres, leer(en_noviembre)) == "rutinaria"
+    assert directivos.clasificar_rutina(compra, tres, leer(dict(en_noviembre, b="2024-10-30"))) == "oportunista", "un año operó otro mes"
+    otros_meses = envios4(("a", "2025-03-10"), ("b", "2024-11-12"), ("c", "2023-05-02"))
+    assert directivos.clasificar_rutina(compra, otros_meses, leer({})) == "oportunista"
+    assert directivos.clasificar_rutina(compra, envios4(("a", "2025-11-10"), ("b", "2024-11-12")), leer({})) == "sin_historia"
+    otra_empresa = lambda a, d: directivos.leer_formulario(formulario4(emisor=999, ops=((en_noviembre[a], "P", 1, 1, 1),)))  # noqa: E731
+    assert directivos.clasificar_rutina(compra, tres, otra_empresa) == "oportunista", "cuenta solo lo operado en esta empresa"
+
+
+def puntaje_con_pesos():
+    p = directivos.PESOS
+    mejor = {"rutina": "oportunista", "rol": "ceo_cfo", "aumento": 0.8, "monto": 2_000_000}
+    total, partes, faltan = directivos.puntaje(mejor, 4, {"capitalizacion": 1e9, "cambio_6m": -0.45}, p)
+    assert total == 100 and not faltan and all(v == 1 for v in partes.values()), (total, partes)
+    total, partes, _ = directivos.puntaje({"rutina": "rutinaria", "rol": "director", "aumento": 0.05, "monto": 50_000}, 1, {"capitalizacion": 1e10, "cambio_6m": 0.2}, p)
+    # cargo 0,4×20 + tenencia 0,1×15 + tamaño 0,005×15 = 9,6 de 100
+    assert total == 10 and partes["oportunista"] == 0 and partes["caida"] == 0 and partes["cantidad"] == 0, (total, partes)
+    total, partes, faltan = directivos.puntaje({"rutina": None, "rol": "ceo_cfo", "aumento": None, "monto": None}, 1, None, p)
+    assert total == 35 and sorted(faltan) == ["caida", "tamano", "tenencia"], (total, faltan)
+    with datos_temporales(supuestos={"radar_directivos": {"pesos": {"cargo": 100}, "umbral": 40}}):
+        mio = directivos.pesos(mercado)
+    assert mio["umbral"] == 40 and mio["pesos"]["cargo"] == 100 and mio["pesos"]["oportunista"] == 30 and mio["topes"]["tamano"] == 0.001
+    reales = json.loads((GRABADAS.parent.parent / "data" / "supuestos.json").read_text(encoding="utf-8"))["radar_directivos"]
+    assert "a calibrar" in reales["fuente"] and sum(reales["pesos"].values()) == 100
+    assert {k: reales[k] for k in directivos.PESOS} == directivos.PESOS, "el archivo y los valores por defecto coinciden"
+
+
+def cierres_y_caida():
+    cierres = [("2026-04-01", 100), ("2026-05-18", 120), ("2026-11-17", 90), ("2026-11-20", 60)]
+    assert directivos.cambio_previo(cierres, "2026-11-18") == -0.25, "contra el cierre de unos 6 meses antes de la compra"
+    assert directivos.cambio_previo([("2026-11-01", 5)], "2026-11-18") is None
+
+
+def radar_completo():
+    pedidos = []
+    lista = [{"t": "NVDA", "tipo": "cedear", "usa": "NVDA", "en": ["cartera"]}]
+    cik = {"mapa": {"NVDA": {"cik": 1045810, "nombre": "NVIDIA CORP"}, "CTSO": {"cik": 1175151, "nombre": "CYTOSORBENTS CORP"}}}
+    ventas = {f"v{i}": formulario4(dueno=200 + i, cargo="", oficial=0, director=1, ops=(("2026-11-10", "S", 500, 150.0, 100),)) for i in range(3)}
+    mapa = {
+        "CIK0001045810.json": json.dumps(envios4(("c1", "2026-11-19"), ("v0", "2026-11-12"), ("v1", "2026-11-12"), ("v2", "2026-11-12"), ("viejo", "2026-09-01"))),
+        "CIK0001175151.json": json.dumps(envios4(("c2", "2026-11-21"))),
+        "CIK0000000111.json": json.dumps(envios4(("h1", "2025-03-01"), ("h2", "2024-04-01"), ("h3", "2023-06-01"))),
+        "CIK0000000300.json": json.dumps(envios4()),
+        "/c1.xml": formulario4(), "/c2.xml": formulario4(dueno=300, emisor=1175151, cargo="CFO", ops=(("2026-11-20", "P", 5000, 5.0, 15000),)),
+        **{f"/{k}.xml": v for k, v in ventas.items()},
+    }
+    with entorno(SEC_CONTACTO="x x@example.com"), datos_temporales(sec_cik=cik, insiders={"filas": [{"ticker": "CTSO"}]}), parches(
+            SIN_ESPERA, (mercado, "bajar", red(mapa, pedidos)), (mercado, "hoy_argentina", lambda: "2026-11-27"),
+            (directivos, "yf_empresa", lambda t, hasta: {"capitalizacion": 3e8 if t == "CTSO" else 3.6e12, "cambio_6m": -0.3 if t == "CTSO" else 0.1})):
+        sec._envios.clear()
+        r = directivos.correr(mercado, lista)
+        compras = {x["t"]: x for x in r["compras"]}
+        assert not r["stale"] and set(compras) == {"NVDA", "CTSO"} and r["pendientes"] == 0, r
+        n, c = compras["NVDA"], compras["CTSO"]
+        assert n["cargo"] == "CEO" and n["rutina"] == "oportunista" and n["monto"] == 100000 and n["aumento"] == 0.5 and n["cartera"] and n["accionable"]
+        assert c["rutina"] == "sin_historia" and not c["cartera"] and c["accionable"] == c["cedear"] is False, c
+        # NVDA: oportunista 30 + CEO 20 + tenencia +50% 15. CTSO: sin historia 15 + CFO 20 + tenencia 15 + tamaño 1,25 + caída 10.
+        assert n["puntaje"] == 65 and c["puntaje"] == 61 and [x["t"] for x in r["compras"]] == ["NVDA", "CTSO"], (n["puntaje"], c["puntaje"])
+        v = r["ventas"][0]
+        assert v["t"] == "NVDA" and v["vendedores"] == 3 and v["destacar"] and v["monto"] == 225000, v
+        assert not [u for u, _ in pedidos if "viejo" in u], "solo los últimos 30 días"
+        assert all(cab.get("User-Agent") == "x x@example.com" for u, cab in pedidos)
+        # la segunda corrida no vuelve a abrir los documentos ni a mirar la historia
+        antes = len([u for u, _ in pedidos if u.endswith(".xml")])
+        sec._envios.clear()
+        r2 = directivos.correr(mercado, lista)
+        assert len([u for u, _ in pedidos if u.endswith(".xml")]) == antes and r2["compras"] == r["compras"]
+        # si la SEC se cae, conserva lo anterior marcado como viejo
+        mercado.bajar = red({"CIK": RuntimeError("503")})
+        sec._envios.clear()
+        r3 = directivos.correr(mercado, lista)
+        assert r3["stale"] and r3["compras"] == r["compras"] and r3["actualizado"] == r2["actualizado"]
+
+
+def radar_con_tope_y_sin_contacto():
+    lista = [{"t": "NVDA", "tipo": "cedear", "usa": "NVDA", "en": ["watchlist"]}]
+    cik = {"mapa": {"NVDA": {"cik": 1045810, "nombre": "NVIDIA CORP"}}}
+    mapa = {"CIK0001045810.json": json.dumps(envios4(("c1", "2026-11-19"), ("c3", "2026-11-18"))), "CIK0000000111.json": json.dumps(envios4()), "/c1.xml": formulario4()}
+    with entorno(SEC_CONTACTO="x x@example.com"), datos_temporales(sec_cik=cik), parches(
+            SIN_ESPERA, (mercado, "bajar", red(mapa)), (mercado, "hoy_argentina", lambda: "2026-11-27"), (directivos, "FORMULARIOS_POR_CORRIDA", 1),
+            (directivos, "yf_empresa", lambda t, h: (_ for _ in ()).throw(RuntimeError("sin red")))):
+        sec._envios.clear()
+        r = directivos.correr(mercado, lista)
+    assert r["pendientes"] == 1 and len(r["compras"]) == 1 and "tamano" in r["compras"][0]["faltan"], r
+    with entorno(SEC_CONTACTO=None), datos_temporales(directivos=r), parches((mercado, "bajar", red({}))):
+        assert directivos.correr(mercado, lista) is None
+        g = mercado.leer("directivos.json")
+    assert g["stale"] and "SEC_CONTACTO" in g["aviso"] and g["compras"] == r["compras"]
+
+
 PRUEBAS = [
+    ("Directivos: lee el formulario 4 y cuenta solo compras y ventas de mercado", leer_formulario_4),
+    ("Directivos: cargo y cuánto sube la tenencia", roles_y_tenencia),
+    ("Directivos: rutinaria si operó el mismo mes tres años seguidos", rutina_u_oportunidad),
+    ("Directivos: puntaje de 0 a 100 con los pesos del archivo; lo que falta suma cero", puntaje_con_pesos),
+    ("Directivos: caída del precio en los 6 meses previos", cierres_y_caida),
+    ("Directivos: lo tuyo y el radar general, ventas de 3 o más, sin repetir pedidos", radar_completo),
+    ("Directivos: tope por corrida, y sin SEC_CONTACTO conserva lo anterior", radar_con_tope_y_sin_contacto),
     ("IA: filtro por reglas (ítems del 8-K y palabras clave)", filtro_por_reglas),
     ("IA: la línea no puede inventar números ni recomendar; el JSON se valida", lineas_y_json),
     ("IA: cadena de Gemini ante 429, 503 y tiempo agotado, con espera creciente", cadena_gemini),

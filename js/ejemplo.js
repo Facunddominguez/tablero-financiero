@@ -162,8 +162,19 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
     ],
   };
   const iaUso = { corridas: [{ fecha: `${hoy}T15:00:00Z`, proveedor: 'haiku', modelos: { 'claude-haiku-5-5': { pedidos: 1, ok: 1, errores: {}, tokens_entrada: 900, tokens_salida: 200, costo_usd: 0.00019 } }, avisos: [], con_ia: 6, por_reglas: 1, pendientes: 0, sin_ia: false, costo_usd: 0.00019 }] };
+  // Compras y ventas de directivos inventadas, ya puntuadas (como las deja el Action).
+  const compra = (t, dueno, puntaje, extra = {}) => ({ id: `${t}:${dueno}`, t, empresa: `${t} de ejemplo`, dueno_cik: dueno, dueno: `Persona ${dueno}`, rol: 'ceo_cfo', cargo: 'CEO', acciones: 1000, monto: 150000, precio: 150, desde: dia(-6), fecha: dia(-5), presentado: dia(-4), aumento: 0.2, plan: false, url: 'https://example.com/f4', rutina: 'oportunista', puntaje, partes: { oportunista: 1, cargo: 1, tenencia: 0.4, tamano: null, caida: 0.5, cantidad: 0 }, faltan: ['tamano'], compradores: 1, ...extra });
+  const directivos = sec({
+    generado: `${hoy}T15:00:00Z`, umbral: 60, pendientes: 0,
+    compras: [compra('SINCEDEAR', 1, 88), compra('NVDA', 2, 74), compra('NVDA', 3, 66, { cargo: 'Director', rol: 'director' }), compra('KO', 4, 61), compra('AAPL', 5, 35, { rutina: 'rutinaria' }), compra('MELI', 6, 90, { fecha: dia(-40) })],
+    ventas: [
+      { t: 'NVDA', empresa: 'NVDA de ejemplo', vendedores: 3, monto: 900000, desde: dia(-12), hasta: dia(-3), destacar: true, url: 'https://example.com/v', quienes: [] },
+      { t: 'KO', empresa: 'KO de ejemplo', vendedores: 1, monto: 5000, desde: dia(-2), hasta: dia(-2), destacar: false, url: 'https://example.com/v2', quienes: [] },
+    ],
+  });
+  supuestos.radar_directivos = { fuente: 'Ejemplo', fecha: '2026-11-27', pesos: { oportunista: 30, cargo: 20, tenencia: 15, tamano: 15, caida: 10, cantidad: 10 }, umbral: 60 };
   const ext = {
-    mercado, historico, largoPlazo, supuestos, argentina, clima, agenda, eventosFijos, noticias, iaUso,
+    mercado, historico, largoPlazo, supuestos, argentina, clima, agenda, eventosFijos, noticias, iaUso, directivos,
     ratios: { fecha: '2026-11-19', ratios: Object.fromEntries(Object.entries(ratios).map(([t, r]) => [t, { ratio: r }])) },
     feriados: {
       anios: [2026, 2027], feriados: { '2026-11-26': 'Acción de Gracias', '2026-12-25': 'Navidad' }, medias_ruedas: { '2026-11-27': 'día después de Acción de Gracias', '2026-12-24': 'Nochebuena' },
