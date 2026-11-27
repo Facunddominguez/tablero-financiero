@@ -10,6 +10,12 @@ import { comprasPuntuadas, ventasDestacadas, senalesRadar, eventosSenales, umbra
 import { compararFantasmas } from './diario.js';
 import { hechos, plantilla, redactar, revisar, numeros, aviso as avisoTelefono, pedidoModelo, sumarDia, lecturaDelDia, LARGO_AVISO } from './resumen.js';
 import { resumenSinLeer } from './ui/resumen.js';
+import { simular } from './simulacion.js';
+import { climaMercado, textoClima } from './clima.js';
+import { proponerUmbrales, percentil } from './calibrar.js';
+import { leerHistorialAllaria, medirHistorialAllaria, contraReferencia, FORMATO_ALLARIA } from './diario.js';
+import { rendimientoHist } from './finanzas.js';
+import { precioJusto } from './precios.js';
 
 const evento = (id, resto) => ({ id: 'r3-' + id, ts: `2026-11-30T12:00:00.${String(id).padStart(3, '0')}Z`, ...resto });
 
@@ -272,6 +278,99 @@ function etapa6() {
   ];
 }
 
+// ---------- etapa 7 · pendientes de la ronda 2 ----------
+// Todo quieto: sin volatilidad ni retornos, para ver solo adónde va la plata.
+const SIN_RETORNOS = { escala_volatilidad: 0, retornos_etf: { SPY: 0, EFA: 0, EEM: 0, IWM: 0 }, acciones: { prima_mercado: 0 }, otros: { on: 0, fci_usd: 0, caja_usd: 0, pesos: 0 } };
+const bono = flujos => mundo({ ajustar: x => { x.datos.supuestos = SIN_RETORNOS; x.datos.perfil.ingreso_mensual_usd = 500; x.ext.calendario = { flujos }; } }).e;
+const CUPON = { ticker: 'ON1', fecha: '2027-01-14', tipo: 'cupon', por_vn: 0.04 };
+const DEVOLUCION = { ticker: 'ON1', fecha: '2027-03-15', tipo: 'amortizacion', por_vn: 1 };
+
+function etapa7() {
+  return [
+    ['Proyección: el cupón pasa al núcleo y la devolución de capital saca la ON de la cartera', async () => {
+      const e = bono([CUPON, DEVOLUCION, { ...CUPON, fecha: '2026-11-01' }, { ...CUPON, ticker: 'OTRA' }]);
+      const sim = simular(e, { escenarios: 3 });
+      igual(sim.modelo.pagos.map(p => [p.mes, p.usd, p.fin]), [[2, 20, false], [4, 500, true]], 'solo lo futuro de lo que tenés');
+      // El cupón no crea plata: sale de la ON (517,50 → 497,50) y entra al núcleo. Al vencer devuelve 500 (la par).
+      cerca(sim.anios[0].p50, e.total_usd + 12 * sim.aporte + (500 - (517.5 - 20)), 0.01, 'a un año');
+      si(sim.hitos.ypf.m50 === 4 && sim.hitos.ypf.m90 === 4, 'YPF queda en su objetivo cuando vence: ' + JSON.stringify(sim.hitos.ypf));
+      const sin = simular(bono([]), { escenarios: 3 });
+      si(sin.hitos.ypf.m50 == null || sin.hitos.ypf.m50 > 4, 'sin vencimiento tarda más');
+      si(sin.modelo.pagos.length === 0, 'sin calendario no se inventa');
+    }],
+    ['Clima: las condiciones financieras (NFCI) se muestran con su lectura', async () => {
+      const c = climaMercado(mundo().e), n = c.indicadores.find(i => i.id === 'condiciones');
+      si(n.valor === -0.4 && n.lectura === 'tranquilo' && n.historia.fechas.length > 10, JSON.stringify(n.lectura));
+      si(/condiciones financieras tranquilo \(−0,40\)/.test(textoClima(c)), textoClima(c));
+    }],
+    ['Umbrales: la propuesta sale de percentiles de la historia, del lado malo de cada uno', async () => {
+      cerca(percentil([1, 2, 3, 4, 5], 0.75), 4, 1e-9, 'percentil');
+      const x = mundo({ ajustar: y => {
+        const fs = Array.from({ length: 200 }, (_, i) => new Date(Date.UTC(2026, 0, 1) + i * 86400000).toISOString().slice(0, 10));
+        y.ext.argentina.riesgo_pais = { fechas: fs, valores: fs.map((_, i) => 500 + i * 5), ultimo: { fecha: fs.at(-1), valor: 1495 } };
+        y.ext.clima.series.T10Y3M = { fechas: fs, valores: fs.map((_, i) => 2 - i * 0.01), ultimo: { fecha: fs.at(-1), valor: 0 } };
+        y.ext.clima.series.VIXCLS = { fechas: fs, valores: fs.map(() => 20), ultimo: { fecha: fs.at(-1), valor: 20 } };
+      } });
+      const p = Object.fromEntries(proponerUmbrales(x.e).map(r => [`${r.grupo}.${r.clave}`, r]));
+      igual(p['semaforo.riesgo_pais'].propuesto, [1250, 1400], 'hacia arriba: percentiles 75 y 90');
+      igual(p['clima.curva'].propuesto, [0.5, 0.2], 'hacia abajo: percentiles 25 y 10');
+      igual(p['clima.vix'].propuesto, [20, 20.5], 'el segundo nivel queda más lejos aunque empaten');
+      si(p['semaforo.brecha'].propuesto === null && /sin historia/.test(p['semaforo.brecha'].motivo), 'sin historia no propone');
+      si(p['clima.condiciones'].propuesto === null && /poca historia/.test(p['clima.condiciones'].motivo), 'poca historia');
+      si(p['semaforo.canje'].propuesto && p['semaforo.adr'].propuesto[1] < p['semaforo.adr'].propuesto[0], 'canje y acciones salen del histórico diario');
+      si(p['clima.spy_promedio'].propuesto === null && p['clima.spy_promedio'].datos > 0, 'con poco más de un año no alcanza para SPY contra su promedio');
+      si(proponerUmbrales(x.e, { atencion: 0.5, alarma: 0.99 })[0].propuesto[0] < 1250, 'los percentiles se cambian');
+      igual(p['semaforo.riesgo_pais'].actual, [800, 1500], 'muestra lo de hoy: no cambia nada solo');
+    }],
+    ['Allaria: se pega el historial como JSON, se valida y se mide contra SPY y el núcleo', async () => {
+      const ej = leerHistorialAllaria(FORMATO_ALLARIA.replace('"..."', '"Allaria"'), '2026-11-30');
+      igual(ej.rotaciones[0], { id: 'P1', fecha: '2026-01-02', entran: ['TSLA'], salen: [], rendimiento: -0.0871 }, 'el formato de ejemplo entra');
+      for (const [malo, motivo] of [['x', /JSON/], ['{"rotaciones":[]}', /fuente/], ['{"fuente":"a","rotaciones":[]}', /al menos una/],
+        ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2026-13-01"}]}', /fecha/], ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2027-01-02"}]}', /futura/],
+        ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2026-01-02","rendimiento":-8.71}]}', /fracción/], ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2026-01-02","entran":["<b>"]}]}', /ticker/],
+        ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2026-01-02"},{"id":"P1","fecha":"2026-02-02"}]}', /mismo/], ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2026-01-02"},{"id":"P2","fecha":"2026-01-02"}]}', /misma fecha/]]) {
+        let error = '';
+        try { leerHistorialAllaria(malo, '2026-11-30'); } catch (err) { error = err.message; }
+        si(motivo.test(error), `${malo} → ${error}`);
+      }
+      const h = leerHistorialAllaria(JSON.stringify({ fuente: 'Informe', rotaciones: [{ id: 'P2', fecha: '2026-06-01', rendimiento: 0.05 }, { id: 'P1', fecha: '2026-03-02', rendimiento: 0.02 }, { id: 'P0', fecha: '2024-01-02', rendimiento: 0.1 }, { id: 'P3', fecha: '2026-09-01' }] }), '2026-11-30');
+      const x = mundo();
+      const e = valuar(aplicarEventos(x.datos, [evento(1, { tipo: 'historial_allaria', fecha: '2026-11-30', ...h })]), x.ext, '2026-11-30');
+      const m = medirHistorialAllaria(e);
+      igual(m.filas.map(f => [f.id, f.desde, f.hasta, f.abierto]), [['P0', '2024-01-02', '2026-03-02', false], ['P1', '2026-03-02', '2026-06-01', false], ['P2', '2026-06-01', '2026-09-01', false], ['P3', '2026-09-01', '2026-11-30', true]], 'períodos');
+      cerca(m.filas[1].spy, rendimientoHist(e.historico, 'SPY', '2026-03-02', '2026-06-01'), 1e-12, 'SPY en las mismas fechas');
+      si(m.filas[1].nucleo != null && m.filas[0].spy === null && m.sin_historia.join() === 'P0', 'antes de la historia no se inventa');
+      cerca(m.acumulado.rendimiento, 1.02 * 1.05 - 1, 1e-12, 'acumulado de los períodos completos');
+      si(m.acumulado.periodos === 2 && medirHistorialAllaria(x.e) === null, 'dos completos; sin historial, nada');
+      si(e.datos.cartera_modelo_allaria.activos.length === x.datos.cartera_modelo_allaria.activos.length, 'la cartera modelo vigente no cambia');
+    }],
+    ['Referencias: se cambian desde la app, vuelven a la predeterminada y se piden al histórico', async () => {
+      const x = mundo();
+      const con = evs => valuar(aplicarEventos(x.datos, evs), x.ext, '2026-11-30');
+      const e = con([evento(1, { tipo: 'referencias', cambios: { NVDA: 'ARGT', PAMP: 'SOXX' } })]);
+      const f = Object.fromEntries(contraReferencia(e).filas.map(r => [r.ticker, r]));
+      si(f.NVDA.referencia === 'ARGT' && f.PAMP.referencia === 'SOXX' && contraReferencia(e).faltan.includes('SOXX'), JSON.stringify(f.NVDA));
+      igual(seguimiento(e).series, ['ARGT', 'SOXX'], 'se publican para que el Action baje su historia');
+      const vuelta = con([evento(1, { tipo: 'referencias', cambios: { NVDA: 'ARGT' } }), evento(2, { tipo: 'referencias', cambios: { NVDA: '' } })]);
+      si(contraReferencia(vuelta).filas.find(r => r.ticker === 'NVDA').referencia === 'SMH', 'predeterminada');
+      igual(seguimiento(x.e).series, [], 'sin cambios');
+    }],
+    ['Ratios: aceptar el de BYMA vuelve a poner precio justo y saca el aviso', async () => {
+      const x = mundo({ ajustar: y => { y.ext.mercado.ratios_byma = { lista_fecha: '2026-11-26', cambios: { SPY: [60, 30] } }; y.ext.mercado.cedears.precios.SPY = [y.ext.mercado.cedears.precios.SPY[0] * 2, 0]; } });
+      const aviso = planificador(x.e, x.e.hoy).pasos.find(p => p.accion?.tipo === 'ratio');
+      si(aviso && aviso.informativo && aviso.accion.ratio === 30 && aviso.accion.anterior === 60, 'aviso con botón');
+      si(precioJusto(x.e, 'SPY').revisar, 'sin aceptar, no pone límite');
+      const ev = evento(1, { tipo: 'ratio_aceptado', ticker: 'SPY', ratio: 30, anterior: 60, fecha: '2026-11-30' });
+      const e = valuar(aplicarEventos(x.datos, [ev]), x.ext, '2026-11-30');
+      si(e.ratios.SPY.ratio === 30 && !precioJusto(e, 'SPY').revisar && !planificador(e, e.hoy).pasos.some(p => p.accion?.tipo === 'ratio'), 'aceptado');
+      si(x.ext.ratios.ratios.SPY.ratio === 60 && x.ext.mercado.ratios_byma.cambios.SPY, 'no toca los archivos');
+      // Si después cambia el archivo del tablero, manda el archivo.
+      const nuevo = valuar(aplicarEventos(x.datos, [ev]), { ...x.ext, ratios: { fecha: 'x', ratios: { SPY: { ratio: 15 } } } }, '2026-11-30');
+      si(nuevo.ratios.SPY.ratio === 15, 'manda el archivo nuevo');
+    }],
+  ];
+}
+
 export function pruebasRonda3() {
-  return [...etapa1(), ...etapa2(), ...etapa4(), ...etapa5(), ...etapa6()];
+  return [...etapa1(), ...etapa2(), ...etapa4(), ...etapa5(), ...etapa6(), ...etapa7()];
 }

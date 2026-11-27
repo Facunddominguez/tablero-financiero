@@ -42,4 +42,13 @@ export function tickersASeguir(e) {
     .sort((a, b) => a.t < b.t ? -1 : a.t > b.t ? 1 : 0);
 }
 
-export const seguimiento = e => ({ nota: NOTA_SEGUIMIENTO, tickers: tickersASeguir(e) });
+// Series que hace falta tener en el histórico aunque no se sigan: las referencias que elegiste para tus satélites.
+export function seriesDeReferencia(e, tickers = tickersASeguir(e)) {
+  const seguidas = new Set(tickers.map(x => x.usa));
+  return [...new Set(Object.values(e.datos.referencias || {}).map(limpio))].filter(t => /^[A-Z0-9.]{1,12}$/.test(t) && !seguidas.has(t)).sort();
+}
+
+export function seguimiento(e) {
+  const tickers = tickersASeguir(e);
+  return { nota: NOTA_SEGUIMIENTO, tickers, series: seriesDeReferencia(e, tickers) };
+}

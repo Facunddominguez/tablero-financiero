@@ -3,8 +3,8 @@ import { h, fmt, fechas, suma, poner } from '../util.js';
 import { costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, historiaCartera, resumenPeriodo, benchmarks } from '../finanzas.js';
 import { NOMBRE_GRUPO } from '../estado.js';
 import { riesgo } from '../riesgo.js';
-import { puntajePredicciones, compararFantasmas, contraReferencia, HORIZONTES } from '../diario.js';
-import { nuevaPrediccion, nuevaRotacion, borrarPrediccion, editarFantasma, borrarFantasma } from './diario.js';
+import { puntajePredicciones, compararFantasmas, contraReferencia, medirHistorialAllaria, HORIZONTES } from '../diario.js';
+import { nuevaPrediccion, nuevaRotacion, borrarPrediccion, editarFantasma, borrarFantasma, importarHistorial, editarReferencias } from './diario.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase, parteRiesgo } from './comun.js';
 import { informeProyeccion } from './proyeccion.js';
 import { seccionesArgentina } from './argentina.js';
@@ -71,8 +71,8 @@ const contra = (x, nombre) => x == null ? '—' : [color(x.rend, fmt.pctSigno(x.
 const pedirSeries = faltan => faltan.length ? aviso(`Sin historia de precios: ${faltan.join(', ')}. Para compararlos, sumalos a historico_extra en tools/mercado_config.json.`, 'alerta') : null;
 
 // Cada satélite contra su referencia (Trimestral).
-function seccionReferencias(e) {
-  const { filas, faltan } = contraReferencia(e);
+function seccionReferencias(ctx) {
+  const e = ctx.estado, { filas, faltan } = contraReferencia(e);
   if (!filas.length) return null;
   return sec('Satélites contra su referencia',
     tabla([
@@ -82,7 +82,8 @@ function seccionReferencias(e) {
       { titulo: 'Desde tu compra', num: 1, celda: f => [contra(f.compra, f.referencia), f.desde ? h('span.desglose', fmt.fecha(f.desde)) : null] },
     ], filas),
     pedirSeries(faltan),
-    h('p.nota', { style: 'margin-top:.6rem' }, 'Precios en dólares de EE.UU. con dividendos, sin el canje (afecta igual a los dos). Las referencias se cambian en los datos.'));
+    h('p.nota', { style: 'margin-top:.6rem' }, 'Precios en dólares de EE.UU. con dividendos, sin el canje (afecta igual a los dos).'),
+    h('div.acciones.izq.no-imprimir', { style: 'margin-top:.6rem' }, boton('Cambiar las referencias', () => editarReferencias(ctx), 'chico')));
 }
 
 const ORIGEN = { allaria: 'Allaria', radar: 'Radar', watchlist: 'Watchlist' };
@@ -322,7 +323,7 @@ function trimestral(ctx) {
     seccionesArgentina(e),
     seccionClima(ctx),
     seccionRiesgo(e),
-    seccionReferencias(e),
+    seccionReferencias(ctx),
     sec('Satélites contra su banda', tabla([
       { titulo: 'Activo', celda: p => h('strong.num', p.ticker) }, { titulo: '% LP', num: 1, celda: p => fmt.pct(p.pct_lp) },
       { titulo: 'Banda', num: 1, celda: p => { const b = d.objetivos_por_activo[p.ticker]?.banda; return b ? `${fmt.pct(b[0], 0)}–${fmt.pct(b[1], 1)}` : '—'; } },
@@ -379,9 +380,28 @@ function anual(ctx) {
 }
 
 // ---------- Contraste con Allaria ----------
+// Con el historial cargado: cada período de la cartera modelo contra SPY y el núcleo en las mismas fechas.
+function medidaAllaria(e) {
+  const m = medirHistorialAllaria(e);
+  if (!m) return null;
+  const pc = x => x == null ? '—' : color(x, fmt.pctSigno(x, 1));
+  const nucleo = `Núcleo ${Object.values(e.datos.nucleo.pesos_internos).map(w => Math.round(w * 100)).join('/')}`;
+  const a = m.acumulado;
+  return sec('La cartera modelo contra SPY y tu núcleo',
+    tabla([
+      { titulo: 'Período', celda: f => [h('strong.num', f.id), h('small.desglose', `${fmt.fecha(f.desde)} a ${f.abierto ? 'hoy' : fmt.fecha(f.hasta)}`),
+        f.entran?.length || f.salen?.length ? h('small.desglose', [f.entran.length ? `entra ${f.entran.join(', ')}` : '', f.salen.length ? `sale ${f.salen.join(', ')}` : ''].filter(Boolean).join(' · ')) : null] },
+      { titulo: 'Allaria', num: 1, celda: f => pc(f.rendimiento) },
+      { titulo: 'SPY', num: 1, celda: f => pc(f.spy) },
+      { titulo: nucleo, num: 1, celda: f => pc(f.nucleo) },
+    ], m.filas, { pie: a ? [`Acumulado de ${a.periodos} ${a.periodos === 1 ? 'período' : 'períodos'}`, pc(a.rendimiento), pc(a.spy), pc(a.nucleo)] : null }),
+    h('p.nota', { style: 'margin-top:.6rem' }, `Rendimientos de Allaria según ${m.fuente}. SPY y el núcleo: en dólares de EE.UU. con dividendos, entre las mismas fechas; confirmá en qué moneda publica Allaria los suyos.${m.sin_historia.length ? ` Sin historia de precios para ${m.sin_historia.join(', ')} (empieza el ${fmt.fecha(m.desde_historia)}).` : ''}${m.filas.at(-1)?.abierto && m.filas.at(-1).rendimiento != null ? ' El último período se mide hasta hoy: puede no cerrar en la misma fecha que su cifra.' : ''}`));
+}
+
 function allaria(ctx) {
   const e = ctx.estado, d = e.datos, a = d.cartera_modelo_allaria;
-  if (!a) return hoja('Contraste con Allaria', '', h('p.nota', 'No hay cartera modelo cargada.'));
+  const pegar = () => boton('Pegar el historial de rotaciones', () => importarHistorial(ctx), 'chico');
+  if (!a?.activos?.length) return hoja('Contraste con Allaria', '', h('p.nota', 'No hay cartera modelo cargada.'), medidaAllaria(e), h('div.acciones.izq.no-imprimir', pegar()));
   const mios = new Map(e.posiciones.map(p => [p.subyacente || p.ticker, p])), watch = new Set((d.watchlist || []).map(w => w.ticker));
   const comunes = a.activos.filter(x => mios.has(x.ticker)), enWatch = a.activos.filter(x => watch.has(x.ticker));
   const per = Object.entries(a.rendimiento_por_periodo || {});
@@ -394,8 +414,8 @@ function allaria(ctx) {
       h('ul.allaria-lista', a.activos.map(x => h('li' + (mios.has(x.ticker) ? '.tengo' : ''), x.ticker, mios.has(x.ticker) ? h('small', 'en cartera') : watch.has(x.ticker) ? h('small', 'watchlist') : null))),
       h('p', `De los ${a.activos.length} nombres de Allaria tenés ${comunes.length}${comunes.length ? ` (${comunes.map(x => `${x.ticker}, ${fmt.pct(mios.get(x.ticker).pct_lp)} de LP`).join('; ')})` : ''} y ${enWatch.length} ${enWatch.length === 1 ? 'está' : 'están'} en tu watchlist${enWatch.length ? ` (${enWatch.map(x => x.ticker).join(', ')})` : ''}.`),
       h('p.nota', `Allaria no publica ponderaciones. Datos cargados a mano el ${fmt.fecha(a.fecha)}.`),
-      h('div.acciones.izq.no-imprimir', { style: 'margin-top:.75rem' }, boton('Cargar una rotación nueva', () => nuevaRotacion(ctx), 'chico'), h('a.boton.chico.fantasma', { href: '#informes/diario' }, 'Ver cómo le va contra SPY'))),
-    sec('Cómo rindieron sus rotaciones', per.length ? [tabla([
+      h('div.acciones.izq.no-imprimir', { style: 'margin-top:.75rem' }, boton('Cargar una rotación nueva', () => nuevaRotacion(ctx), 'chico'), pegar(), h('a.boton.chico.fantasma', { href: '#informes/diario' }, 'Ver cómo le va contra SPY'))),
+    a.historial ? medidaAllaria(e) : sec('Cómo rindieron sus rotaciones', per.length ? [tabla([
       { titulo: 'Período', celda: ([k]) => h('strong.num', k) }, { titulo: 'Rendimiento', num: 1, celda: ([, r]) => color(r, fmt.pctSigno(r, 2)) },
     ], per, { pie: ['Acumulado', color(acum, fmt.pctSigno(acum, 2))] }),
     h('p.nota', { style: 'margin-top:.6rem' }, `${per.filter(([, r]) => r > 0).length} de ${per.length} períodos positivos. ${nucleo == null ? '' : `Como referencia, tu núcleo ${Object.values(d.nucleo.pesos_internos).map(w => Math.round(w * 100)).join('/')} rindió ${fmt.pctSigno(nucleo, 1)} en USD desde el ${fmt.fecha(desde)} (la posición más antigua de su cartera actual). `}${a.rotaciones?.length ? `Fechas cargadas: ${a.rotaciones.map(r => `${r.rotacion} el ${fmt.fecha(r.fecha)}`).join(', ')}. Las anteriores no están, así que para esos períodos la comparación no es exacta.` : 'Las fechas de cada rotación no están cargadas, así que la comparación período por período no es exacta.'}`)] : h('p.nota', 'Sin rendimientos cargados.')),

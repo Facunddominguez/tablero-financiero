@@ -92,7 +92,7 @@ export async function publicarSeguimiento({ repo, token, rama = 'main' }, lista,
       sha = j.sha;
       let actual = null;
       try { actual = JSON.parse(deB64(j.content)); } catch { /* archivo ilegible: se pisa */ }
-      if (actual && JSON.stringify(actual.tickers) === JSON.stringify(lista.tickers) && actual.nota === lista.nota) return 'igual';
+      if (actual && ['nota', 'tickers', 'series'].every(k => JSON.stringify(actual[k]) === JSON.stringify(lista[k]))) return 'igual';
     } else if (r.status !== 404) throw new ErrorSync('otro', `GitHub respondió ${r.status} al leer la lista de seguimiento.`);
     const p = await pedir(fetchFn, url, {
       method: 'PUT', headers: cabeceras(token),

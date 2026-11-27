@@ -1,4 +1,4 @@
-// Clima de mercado en pantalla: la línea de "Para saber" y, en el Trimestral, los cuatro indicadores con su historia.
+// Clima de mercado en pantalla: la línea de "Para saber" y, en el Trimestral, cada indicador con su historia.
 import { h, fmt } from '../util.js';
 import { climaMercado, textoClima, aporteExtra, caidaNucleo, ajustesAporteExtra } from '../clima.js';
 import { linea } from './argentina.js';

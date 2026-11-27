@@ -153,6 +153,20 @@ export function aplicarEventos(base, eventosLocales = []) {
         d.fantasmas = [...resto.slice(0, i), ...nuevos, ...resto.slice(i)];
         break;
       }
+      case 'historial_allaria': { // el historial completo, pegado como JSON (reemplaza al anterior)
+        const a = d.cartera_modelo_allaria = d.cartera_modelo_allaria || { activos: [] };
+        a.historial = { fuente: e.fuente, rotaciones: e.rotaciones, cargado: e.fecha };
+        break;
+      }
+      case 'referencias': { // con qué se compara cada satélite; vacío vuelve a la predeterminada
+        const r = { ...d.referencias };
+        for (const [t, x] of Object.entries(e.cambios || {})) { if (x) r[t] = x; else delete r[t]; }
+        d.referencias = r;
+        break;
+      }
+      case 'ratio_aceptado': // aceptaste el ratio nuevo que publicó BYMA
+        d.ratios_aceptados = { ...d.ratios_aceptados, [e.ticker]: { ratio: e.ratio, anterior: e.anterior, fecha: e.fecha } };
+        break;
       case 'rotacion_allaria': {
         const a = d.cartera_modelo_allaria = d.cartera_modelo_allaria || { activos: [] };
         const activos = (a.activos || []).filter(x => !e.sale.includes(x.ticker));
@@ -213,9 +227,22 @@ function precioDeMercado(p, m) {
   return v ? { precio: v[0], variacion: v[1] || 0, viejo: !!tabla.stale } : null;
 }
 
+// Los ratios del archivo con los cambios de BYMA que aceptaste. Si el archivo ya cambió, manda el archivo.
+function conRatiosAceptados(datos, ratios, mercado) {
+  const aceptados = Object.entries(datos.ratios_aceptados || {});
+  if (!ratios || !aceptados.length) return { ratios, mercado };
+  const out = { ...ratios };
+  for (const [t, a] of aceptados) if (out[t] && (Math.abs(out[t].ratio / a.anterior - 1) < 1e-4 || Math.abs(out[t].ratio / a.ratio - 1) < 1e-4)) out[t] = { ...out[t], ratio: a.ratio };
+  // lo ya aceptado deja de avisarse y vuelve a tener precio justo
+  const cambios = mercado?.ratios_byma?.cambios;
+  if (!cambios) return { ratios: out, mercado };
+  const pendientes = Object.fromEntries(Object.entries(cambios).filter(([t, [, nuevo]]) => !(out[t] && Math.abs(out[t].ratio / nuevo - 1) < 1e-4)));
+  return { ratios: out, mercado: { ...mercado, ratios_byma: { ...mercado.ratios_byma, cambios: pendientes } } };
+}
+
 // Valúa todo en USD MEP. ext = { mercado, calendario, insiders, historico, ratios, feriados, agenda, … } (cualquiera puede faltar).
 export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
-  const m = ext.mercado || null;
+  const { ratios, mercado: m } = conRatiosAceptados(datos, ext.ratios?.ratios || null, ext.mercado || null);
   const mep = m?.fx?.mep || datos.meta.tc_snapshot.mep;
   const ccl = m?.fx?.ccl || datos.meta.tc_snapshot.cable_usd;
   const cambioMep = m?.fx?.mep_prev ? m.fx.mep / m.fx.mep_prev - 1 : 0;
@@ -276,7 +303,7 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     precios: { origen: m ? 'mercado' : 'archivo', generado: m?.generado || null, fecha_archivo: datos.meta.fecha_snapshot, viejos, fecha_fci: m?.fci?.fecha || null },
     fecha_resumen: datos.meta.fecha_resumen || datos.meta.fecha_snapshot,
     mercado: m, calendario: ext.calendario || { flujos: [] }, insiders: ext.insiders || { filas: [] }, historico: ext.historico || null,
-    ratios: ext.ratios?.ratios || null, ratios_fecha: ext.ratios?.fecha || null,
+    ratios, ratios_fecha: ext.ratios?.fecha || null,
     argentina: ext.argentina || null, clima: ext.clima || null, largo_plazo: ext.largoPlazo || null, supuestos: ext.supuestos || null,
     // balances y dividendos de lo que seguís, y eventos con fecha fija
     agenda: ext.agenda || null, eventos_fijos: ext.eventosFijos || null,

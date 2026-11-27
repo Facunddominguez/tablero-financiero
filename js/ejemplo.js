@@ -102,7 +102,7 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
     otros: { fuente: 'Ejemplo', fecha: '2026-09-30', on: 0.05, fci_usd: 0.04, caja_usd: 0, pesos: 0 },
     semaforo: { fuente: 'Ejemplo', fecha: '2026-11-26', riesgo_pais: { amarillo: 800, rojo: 1500 }, canje: { amarillo: 0.05, rojo: 0.1 }, brecha: { amarillo: 0.1, rojo: 0.3 }, adr: { amarillo: -0.07, rojo: -0.15 } },
     elecciones: { fuente: 'Ejemplo', fecha: '2026-11-26', diferencia: 0.1 },
-    clima: { fuente: 'Ejemplo', fecha: '2026-11-26', alto_rendimiento: { atento: 4, tenso: 6 }, curva: { atento: 0.25, tenso: 0 }, vix: { atento: 20, tenso: 30 }, spy_promedio: { atento: 0, tenso: -0.05 } },
+    clima: { fuente: 'Ejemplo', fecha: '2026-11-26', alto_rendimiento: { atento: 4, tenso: 6 }, curva: { atento: 0.25, tenso: 0 }, vix: { atento: 20, tenso: 30 }, spy_promedio: { atento: 0, tenso: -0.05 }, condiciones: { atento: -0.25, tenso: 0 } },
   };
   const semanas = fechasHist.filter((_, i) => i % 5 === 4);
   const fred = (base, amplitud) => sec({ fechas: semanas, valores: semanas.map((_, i) => Math.round((base + amplitud * Math.sin(i * 0.4)) * 100) / 100), ultimo: { fecha: fechasHist.at(-1), valor: base } });

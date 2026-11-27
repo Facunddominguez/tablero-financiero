@@ -30,5 +30,6 @@ export const EDITABLES = [
     ['curva.atento', 'Curva: atento desde (puntos)', 'num'], ['curva.tenso', 'Curva: tenso desde (puntos)', 'num'],
     ['vix.atento', 'VIX: atento desde', 'num'], ['vix.tenso', 'VIX: tenso desde', 'num'],
     ['spy_promedio.atento', 'SPY contra su promedio: atento (%)', 'pct'], ['spy_promedio.tenso', 'SPY contra su promedio: tenso (%)', 'pct'],
+    ['condiciones.atento', 'Condiciones financieras: atento desde', 'num'], ['condiciones.tenso', 'Condiciones financieras: tenso desde', 'num'],
   ]],
 ];

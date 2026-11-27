@@ -1,7 +1,7 @@
 // Formularios del diario: anotar, editar y borrar predicciones y carteras fantasma, y cargar rotaciones.
 import { h, fmt, fechas, aNumero } from '../util.js';
 import { dialogo, campo, entrada, boton } from './comun.js';
-import { eventosRotacion, serieDeTicker, comoPedirlo } from '../diario.js';
+import { eventosRotacion, serieDeTicker, comoPedirlo, contraReferencia, leerHistorialAllaria, REFERENCIAS, FORMATO_ALLARIA } from '../diario.js';
 
 const texto = (placeholder, filas = 2, value = '') => h('textarea', { rows: filas, placeholder, value });
 const acciones = (d, guardar) => h('div.acciones', boton('Cancelar', () => d().close(), 'fantasma'), h('button.boton.primario', { type: 'submit' }, guardar));
@@ -97,6 +97,61 @@ export async function borrarFantasma(ctx, g, ticker = null) {
   const que = ticker ? `${ticker} de la cartera fantasma "${g.nombre}"` : `la cartera fantasma "${g.nombre}"`;
   if (!confirm(`¿Quitar ${que}? Deja de compararse; tus datos reales no cambian.`)) return;
   await ctx.registrar({ tipo: 'fantasma_borrar', clave: g.clave, ...(ticker ? { ticker } : {}) }, { tipo: 'decision', fecha: ctx.estado.hoy, texto: `Quitado ${que}` });
+}
+
+// Pegar el historial completo de rotaciones (JSON). Queda en tus datos cifrados y reemplaza al anterior.
+export function importarHistorial(ctx) {
+  const e = ctx.estado, previo = e.datos.cartera_modelo_allaria?.historial;
+  const fTexto = texto(FORMATO_ALLARIA, 10);
+  const estado = h('p.nota', { role: 'status' }), error = h('p.error', { role: 'alert' });
+  const d = dialogo('Historial de rotaciones de Allaria', h('form.formulario', {
+    onsubmit: async ev => {
+      ev.preventDefault();
+      error.textContent = '';
+      let x;
+      try { x = leerHistorialAllaria(fTexto.value, e.hoy); } catch (err) { error.textContent = err.message; estado.textContent = ''; return; }
+      await ctx.registrar({ tipo: 'historial_allaria', fecha: e.hoy, ...x },
+        { tipo: 'decision', fecha: e.hoy, texto: `Cargado el historial de Allaria: ${x.rotaciones.length} rotaciones (${x.rotaciones[0].id} a ${x.rotaciones.at(-1).id})` });
+      d.close();
+    },
+  },
+    h('p.nota', 'Pegá el JSON. "rendimiento" es lo que rindió el período que empieza en esa fecha, como fracción: −0.0871 es −8,71%. En la última puede faltar.'),
+    h('pre.formato', FORMATO_ALLARIA),
+    campo('JSON', fTexto),
+    previo ? h('p.nota', `Ya hay uno cargado el ${fmt.fecha(previo.cargado)} (${previo.rotaciones.length} rotaciones): el nuevo lo reemplaza.`) : null,
+    estado, error, acciones(() => d, 'Guardar')), { ancho: '36rem' });
+  return d;
+}
+
+// Con qué se compara cada satélite. Vacío vuelve a la predeterminada.
+export function editarReferencias(ctx) {
+  const e = ctx.estado, propias = e.datos.referencias || {};
+  const disponibles = Object.keys(e.historico?.series || {}).filter(t => t !== 'MEP' && t !== 'CCL').sort();
+  const lista = h('datalist', { id: 'series-referencia' }, disponibles.map(t => h('option', { value: t })));
+  const filas = contraReferencia(e).filas.map(f => {
+    const predeterminada = REFERENCIAS[f.ticker] || REFERENCIAS[f.serie] || 'SPY';
+    return { t: f.ticker, input: entrada({ inputmode: 'text', autocapitalize: 'characters', list: 'series-referencia', value: propias[f.ticker] || '', placeholder: predeterminada }), predeterminada };
+  });
+  const error = h('p.error', { role: 'alert' });
+  const d = dialogo('Referencia de cada satélite', h('form.formulario', {
+    onsubmit: async ev => {
+      ev.preventDefault();
+      const cambios = {};
+      for (const f of filas) {
+        const v = f.input.value.trim().toUpperCase();
+        if (v && !/^[A-Z0-9.]{1,12}$/.test(v)) { error.textContent = `"${v}" no parece un ticker de EE.UU.`; return; }
+        const nuevo = v === f.predeterminada ? '' : v;
+        if (nuevo !== (propias[f.t] || '')) cambios[f.t] = nuevo;
+      }
+      if (Object.keys(cambios).length) await ctx.registrar({ tipo: 'referencias', fecha: e.hoy, cambios },
+        { tipo: 'decision', fecha: e.hoy, texto: `Referencias: ${Object.entries(cambios).map(([t, x]) => `${t} contra ${x || 'la predeterminada'}`).join(', ')}` });
+      d.close();
+    },
+  },
+    h('p.nota', 'Escribí el ticker de EE.UU. (un ETF, por ejemplo). Vacío usa la predeterminada. Si todavía no hay historia de ese ticker, se pide en la próxima actualización de precios.'),
+    lista, filas.length ? filas.map(f => campo(f.t, f.input)) : h('p.nota', 'No hay satélites.'),
+    error, acciones(() => d, 'Guardar')), { ancho: '28rem' });
+  return d;
 }
 
 export function nuevaRotacion(ctx) {

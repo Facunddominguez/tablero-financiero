@@ -36,6 +36,12 @@ def leer_seguimiento(m):
     return out
 
 
+def series_extra(m):
+    """Series que hay que tener en el histórico aunque no se sigan (referencias de los satélites)."""
+    valido = re.compile(r"^[A-Z0-9.]{1,12}$")
+    return [t for t in m.leer("seguimiento.json").get("series") or [] if isinstance(t, str) and valido.match(t)][:20]
+
+
 def subyacentes(lista):
     """Tickers de EE.UU. a seguir, sin repetir: primero lo que está en cartera, después la watchlist y los fantasmas."""
     orden = {"cartera": 0, "watchlist": 1, "fantasma": 2}

@@ -553,7 +553,8 @@ def main():
 
     hist = h_prev
     try:
-        usd, hist = usd_e_historico(h_prev, senales.subyacentes(senales.leer_seguimiento(sys.modules[__name__])))
+        propio = sys.modules[__name__]
+        usd, hist = usd_e_historico(h_prev, senales.subyacentes(senales.leer_seguimiento(propio)) + senales.series_extra(propio))
         usd.update(stale=False, actualizado=ahora())
         hist.update(stale=False, actualizado=ahora())
         print("ok   usd + historico")

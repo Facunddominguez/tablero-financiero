@@ -8,6 +8,7 @@ import { esSobreCifrado } from '../cripto.js';
 import { esRespaldoPlano } from '../estado.js';
 import { nuevaPrediccion } from './diario.js';
 import { supuestos, EDITABLES } from '../supuestos.js';
+import { proponerUmbrales, PERCENTILES } from '../calibrar.js';
 import { ajustesAporteExtra } from '../clima.js';
 
 const descargar = (nombre, texto, tipo = 'application/json') => {
@@ -264,6 +265,13 @@ function editarSupuestos(ctx) {
     })),
     s[g].fuente ? h('small', `${s[g].fuente} (${fmt.fecha(s[g].fecha)})`) : null));
   const error = h('p.error', { role: 'alert' });
+  // Completa los campos con la propuesta; no guarda nada hasta que toques "Guardar".
+  const usar = lista => {
+    for (const r of lista) r.niveles.forEach((nivel, i) => {
+      const x = filas.find(x => x.g === r.grupo && x.k === `${r.clave}.${nivel}`);
+      if (x) { x.input.value = mostrar(r.propuesto[i], x.f); x.input.classList.add('propuesto'); }
+    });
+  };
   const d = dialogo('Supuestos', h('form.formulario', {
     onsubmit: async ev => {
       ev.preventDefault();
@@ -285,12 +293,35 @@ function editarSupuestos(ctx) {
     },
   },
     h('p.nota', 'Son supuestos, no pronósticos: cambian las proyecciones y los colores del semáforo y del clima. Las reglas no cambian.'),
+    panelUmbrales(e, usar),
     bloques, error,
     h('div.acciones', e.datos.supuestos && Object.keys(e.datos.supuestos).length ? boton('Volver a los originales', async () => {
       await ctx.registrar({ tipo: 'supuestos', fecha: e.hoy, restaurar: true }, { tipo: 'decision', fecha: e.hoy, texto: 'Supuestos vueltos a los originales' });
       d.close();
     }, 'fantasma') : null, boton('Cancelar', () => d.close(), 'fantasma'), h('button.boton.primario', { type: 'submit' }, 'Guardar'))), { ancho: '36rem' });
   return d;
+}
+
+// Propuesta de umbrales con la historia guardada: dos percentiles editables y qué daría cada uno.
+function panelUmbrales(e, usar) {
+  const fAtencion = entrada({ inputmode: 'numeric', value: fmt.num(PERCENTILES.atencion * 100) }), fAlarma = entrada({ inputmode: 'numeric', value: fmt.num(PERCENTILES.alarma * 100) });
+  const salida = h('div.propuesta');
+  const calcular = () => {
+    const a = aNumero(fAtencion.value) / 100, b = aNumero(fAlarma.value) / 100;
+    if (!(a >= 0.5 && a < b && b < 1)) { poner(salida, h('p.error', 'El primer percentil va de 50 a 98 y el segundo tiene que ser mayor.')); return; }
+    const lista = proponerUmbrales(e, { atencion: a, alarma: b }), con = lista.filter(r => r.propuesto);
+    const par = (r, v) => v.map((x, i) => `${r.niveles[i]} ${x == null ? '—' : r.formato(x)}`).join(' · ');
+    poner(salida,
+      h('div.tabla-caja', h('table.tabla.compacta',
+        h('thead', h('tr', h('th', 'Indicador'), h('th', 'Hoy'), h('th', 'Propuesta'))),
+        h('tbody', lista.map(r => h('tr', h('td', h('strong', r.nombre), h('small.desglose', r.datos && r.desde ? `${fmt.num(r.datos)} datos desde el ${fmt.fecha(r.desde)}` : '')),
+          h('td', par(r, r.actual)), h('td', r.propuesto ? par(r, r.propuesto) : r.motivo)))))),
+      con.length ? h('div.acciones.izq', boton('Completar los campos con la propuesta', ev => { usar(con); ev.target.textContent = 'Completados: revisalos y tocá Guardar'; }, 'chico')) : null);
+  };
+  return h('details.otra-forma', h('summary', 'Proponer umbrales del semáforo y del clima con la historia'),
+    h('p.nota', 'El primer nivel queda en el valor que la historia superó (del lado malo) pocas veces; el segundo, en uno todavía más raro. 75 y 90 quiere decir una de cada cuatro y una de cada diez veces.'),
+    h('div.fila-campos', campo('Percentil del primer nivel', fAtencion), campo('Percentil del segundo', fAlarma)),
+    h('div.acciones.izq', boton('Calcular', calcular, 'chico')), salida);
 }
 
 // ---------- Seguridad ----------

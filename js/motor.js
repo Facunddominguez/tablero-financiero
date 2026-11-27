@@ -517,7 +517,8 @@ export function planificador(e, hoy = e.hoy) {
       agregar({
         id: `ratio-${t}-${nuevo}`, tipo: 'aviso', informativo: true, etiqueta: 'Ratio de CEDEAR',
         titulo: `Cambió el ratio de ${t}: BYMA dice ${num(nuevo)} y el tablero usa ${num(viejo)}`,
-        porque: `Según la lista de BYMA del ${fmt.fecha(byma.lista_fecha)}. Mientras no se actualice en el tablero, no pone límite con el precio justo de ${t}. Confirmá en tu broker cuántos CEDEAR tenés.`,
+        porque: `Según la lista de BYMA del ${fmt.fecha(byma.lista_fecha)}. Mientras no lo aceptes, no pone límite con el precio justo de ${t}. Confirmá en tu broker cuántos CEDEAR tenés.`,
+        accion: { tipo: 'ratio', ticker: t, ratio: nuevo, anterior: viejo, lista: byma.lista_fecha },
       });
     }
   }

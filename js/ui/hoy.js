@@ -81,6 +81,14 @@ function descartar(ctx, paso) {
     h('div.acciones', boton('Cancelar', () => d.close(), 'fantasma'), h('button.boton.primario', { type: 'submit' }, 'Descartar'))), { ancho: '26rem' });
 }
 
+// Acepta el ratio que publicó BYMA: desde ahí el precio justo y el límite usan el nuevo.
+async function aceptarRatio(ctx, paso) {
+  const a = paso.accion, num = v => fmt.num(v, Number.isInteger(v) ? 0 : 3);
+  if (!confirm(`¿Usar ${num(a.ratio)} como ratio de ${a.ticker} (antes ${num(a.anterior)})? Cambia el precio justo y el límite. Si BYMA cambió el ratio, revisá en tu broker cuántos CEDEAR tenés ahora.`)) return;
+  await ctx.registrar({ tipo: 'ratio_aceptado', ticker: a.ticker, ratio: a.ratio, anterior: a.anterior, fecha: ctx.estado.hoy },
+    { tipo: 'decision', fecha: ctx.estado.hoy, texto: `Ratio de ${a.ticker}: acepté el de BYMA del ${fmt.fecha(a.lista)}, ${num(a.ratio)} (antes ${num(a.anterior)})` });
+}
+
 function tarjetaPaso(ctx, paso, n) {
   const visto = () => ctx.registrar({ tipo: 'paso', paso_id: paso.id, estado: 'descartado', titulo: paso.titulo, fecha: ctx.estado.hoy, nota: 'visto' });
   return h('li.paso' + (paso.informativo ? '.informativo' : ''),
@@ -92,7 +100,7 @@ function tarjetaPaso(ctx, paso, n) {
       paso.como.length ? h('ol.paso-como', paso.como.map(c => h('li', c))) : null,
       paso.usaPrecios ? notaPrecios(ctx) : null,
       h('div.paso-botones',
-        paso.informativo ? boton('Visto', visto, 'chico')
+        paso.informativo ? [paso.accion?.tipo === 'ratio' ? boton('Usar el ratio nuevo', () => aceptarRatio(ctx, paso), 'chico') : null, boton('Visto', visto, 'chico')]
           : [boton('Hecho', () => hecho(ctx, paso), 'primario.chico'),
             paso.accion?.tipo === 'ir' ? h('a.boton.chico', { href: paso.accion.destino }, paso.accion.etiqueta) : null,
             paso.accion?.extra ? h('a.boton.chico', { href: paso.accion.extra.destino }, paso.accion.extra.etiqueta) : null,
