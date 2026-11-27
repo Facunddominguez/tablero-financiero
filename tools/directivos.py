@@ -90,18 +90,21 @@ def leer_formulario(xml):
 
 def rol(dueno):
     """(clave del peso, nombre del cargo) de quien opera."""
-    cargo = (dueno.get("cargo") or "").lower()
+    titulo = (dueno.get("cargo") or "").strip()
+    if re.fullmatch(r"(?i)see\s+remarks?\.?", titulo):  # el cargo está en una nota del formulario
+        titulo = ""
+    cargo = titulo.lower()
     if dueno.get("oficial"):
         if re.search(r"\b(ceo|cfo|chief executive|chief financial|principal (executive|financial))", cargo):
             return "ceo_cfo", "CFO" if re.search(r"cfo|financial", cargo) else "CEO"
         if re.search(r"\b(president|coo|chief operating|chair)", cargo) and "vice president" not in cargo:
-            return "presidente", dueno["cargo"]
-        return "directivo", dueno.get("cargo") or "Directivo"
+            return "presidente", titulo
+        return "directivo", titulo or "Directivo"
     if dueno.get("director"):
         if "chair" in cargo:
             return "presidente", "Presidente del directorio"
         return "director", "Director"
-    return ("dueno", "Accionista de más del 10%") if dueno.get("dueno10") else ("otro", dueno.get("cargo") or "Otro")
+    return ("dueno", "Accionista de más del 10%") if dueno.get("dueno10") else ("otro", titulo or "Otro")
 
 
 def url_formulario(cik_emisor, acceso, documento):
