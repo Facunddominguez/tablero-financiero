@@ -1,17 +1,17 @@
 // Pantalla Informes: cinco informes de una página, imprimibles (window.print + CSS de impresión).
 import { h, fmt, fechas, suma, poner } from '../util.js';
-import { costosAnuales, brechaAportes, rendimientoHist, rendimientoPorBloque, historiaCartera, resumenPeriodo, benchmarks } from '../finanzas.js';
+import { costosAnuales, brechaAportes, rendimientoPorBloque, historiaCartera, resumenPeriodo, benchmarks } from '../finanzas.js';
 import { NOMBRE_GRUPO } from '../estado.js';
 import { riesgo } from '../riesgo.js';
-import { puntajePredicciones, compararFantasmas, contraReferencia, medirHistorialAllaria, HORIZONTES } from '../diario.js';
-import { nuevaPrediccion, nuevaRotacion, borrarPrediccion, editarFantasma, borrarFantasma, importarHistorial, editarReferencias } from './diario.js';
+import { puntajePredicciones, compararFantasmas, contraReferencia, HORIZONTES } from '../diario.js';
+import { nuevaPrediccion, borrarPrediccion, editarFantasma, borrarFantasma, editarReferencias } from './diario.js';
 import { tabla, chip, aviso, boton, NIVEL, cargarScript, CDN, coloresSeries, signoClase, parteRiesgo } from './comun.js';
 import { informeProyeccion } from './proyeccion.js';
 import { seccionesArgentina } from './argentina.js';
 import { seccionClima } from './clima.js';
 import { informeCalendario } from './calendario.js';
 
-const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['proyeccion', 'Proyección'], ['trimestral', 'Trimestral'], ['calendario', 'Calendario'],['diario', 'Predicciones y fantasmas'], ['anual', 'Anual para el contador'], ['allaria', 'Contraste con Allaria']];
+const INFORMES = [['mensual', 'Mensual'], ['rendimiento', 'Rendimiento'], ['proyeccion', 'Proyección'], ['trimestral', 'Trimestral'], ['calendario', 'Calendario'],['diario', 'Predicciones y fantasmas'], ['anual', 'Anual para el contador']];
 const dato = (etq, valor, sub) => h('div', h('p.dato-etq', etq), h('p.dato-valor', valor), sub ? h('p.dato-sub', sub) : null);
 const color = (n, txt) => h('span.' + (signoClase(n) || 'plano'), txt);
 const hoja = (titulo, sub, ...secciones) => h('article.informe', h('header.informe-cab', h('h1', titulo), h('p', sub)), secciones);
@@ -86,7 +86,7 @@ function seccionReferencias(ctx) {
     h('div.acciones.izq.no-imprimir', { style: 'margin-top:.6rem' }, boton('Cambiar las referencias', () => editarReferencias(ctx), 'chico')));
 }
 
-const ORIGEN = { allaria: 'Allaria', radar: 'Radar', watchlist: 'Watchlist' };
+const ORIGEN = { radar: 'Radar', watchlist: 'Watchlist' };
 function diario(ctx) {
   const e = ctx.estado, d = e.datos, p = puntajePredicciones(d.predicciones);
   const orden = (a, b) => a.vence < b.vence ? -1 : a.vence > b.vence ? 1 : 0;
@@ -118,7 +118,7 @@ function diario(ctx) {
     abiertas.length ? sec('Abiertas', tabla(columnas, abiertas)) : null,
     cerradas.length ? sec('Resueltas', tabla([...columnas, { titulo: 'Resultado', celda: x => chip(x.cumplio ? 'Se cumplió' : 'No se cumplió', x.cumplio ? 'ok' : 'mal') }], cerradas)) : null,
     sec('Carteras fantasma',
-      h('p.nota', 'Lo que anotaste sin comprar, contra SPY desde esa fecha. Se anota desde Radar o al cargar una rotación de Allaria.'),
+      h('p.nota', 'Lo que anotaste sin comprar, contra SPY desde esa fecha. Se anota desde Radar.'),
       pedirSeries(fantasmas.faltan),
       fantasmas.grupos.map(g => h('div.fantasma-grupo',
         h('h3', `${g.nombre} · ${ORIGEN[g.origen] || g.origen} · desde el ${fmt.fecha(g.fecha)}`),
@@ -129,12 +129,6 @@ function diario(ctx) {
           { titulo: 'Hasta hoy', num: 1, celda: f => contra(f.hoy, 'SPY') },
         ], g.promedio ? [...g.filas, { ticker: 'Promedio', ...g.promedio }] : g.filas))),
       fantasmas.grupos.length ? null : h('p.nota', 'Todavía no hay ninguna.')));
-}
-
-// Rendimiento de la canasta núcleo (pesos fijos) entre dos fechas.
-function rendNucleo(e, desde, hasta) {
-  const partes = Object.entries(e.datos.nucleo.pesos_internos).map(([t, w]) => [w, rendimientoHist(e.historico, t, desde, hasta)]);
-  return partes.some(([, r]) => r == null) ? null : suma(partes, ([w, r]) => w * r);
 }
 
 // ---------- Mensual ----------
@@ -379,54 +373,7 @@ function anual(ctx) {
     h('p.descargo', 'Los valores en pesos usan el dólar MEP indicado arriba; para Bienes Personales corresponde la valuación oficial al 31/12.'));
 }
 
-// ---------- Contraste con Allaria ----------
-// Con el historial cargado: cada período de la cartera modelo contra SPY y el núcleo en las mismas fechas.
-function medidaAllaria(e) {
-  const m = medirHistorialAllaria(e);
-  if (!m) return null;
-  const pc = x => x == null ? '—' : color(x, fmt.pctSigno(x, 1));
-  const pesos = Object.values(e.datos.nucleo.pesos_internos).map(w => Math.round(w * 100)).join('/');
-  const a = m.acumulado;
-  return sec('La cartera modelo contra SPY y tu núcleo',
-    tabla([
-      { titulo: 'Período', celda: f => [h('strong.num', f.id), h('small.desglose', `${fmt.fecha(f.desde)} a ${f.abierto ? 'hoy' : fmt.fecha(f.hasta)}`),
-        f.entran?.length || f.salen?.length ? h('small.desglose', [f.entran.length ? `entra ${f.entran.join(', ')}` : '', f.salen.length ? `sale ${f.salen.join(', ')}` : ''].filter(Boolean).join(' · ')) : null] },
-      { titulo: 'Allaria', num: 1, celda: f => pc(f.rendimiento) },
-      { titulo: 'SPY', num: 1, celda: f => pc(f.spy) },
-      { titulo: 'Núcleo', num: 1, celda: f => pc(f.nucleo) },
-    ], m.filas, { clase: 'compacta', pie: a ? [`Acumulado de ${a.periodos} ${a.periodos === 1 ? 'período' : 'períodos'}`, pc(a.rendimiento), pc(a.spy), pc(a.nucleo)] : null }),
-    h('p.nota', { style: 'margin-top:.6rem' }, `Rendimientos de Allaria según ${m.fuente}. SPY y el núcleo (${pesos}): en dólares de EE.UU. con dividendos, entre las mismas fechas; confirmá en qué moneda publica Allaria los suyos.${m.sin_historia.length ? ` Sin historia de precios para ${m.sin_historia.join(', ')} (empieza el ${fmt.fecha(m.desde_historia)}).` : ''}${m.filas.at(-1)?.abierto && m.filas.at(-1).rendimiento != null ? ' El último período se mide hasta hoy: puede no cerrar en la misma fecha que su cifra.' : ''}`));
-}
-
-function allaria(ctx) {
-  const e = ctx.estado, d = e.datos, a = d.cartera_modelo_allaria;
-  const pegar = () => boton('Pegar el historial de rotaciones', () => importarHistorial(ctx), 'chico');
-  if (!a?.activos?.length) return hoja('Contraste con Allaria', '', h('p.nota', 'No hay cartera modelo cargada.'), medidaAllaria(e), h('div.acciones.izq.no-imprimir', pegar()));
-  const mios = new Map(e.posiciones.map(p => [p.subyacente || p.ticker, p])), watch = new Set((d.watchlist || []).map(w => w.ticker));
-  const comunes = a.activos.filter(x => mios.has(x.ticker)), enWatch = a.activos.filter(x => watch.has(x.ticker));
-  const per = Object.entries(a.rendimiento_por_periodo || {});
-  const acum = per.reduce((ac, [, r]) => ac * (1 + r), 1) - 1;
-  const desde = a.activos.map(x => x.desde).sort()[0];
-  const nucleo = rendNucleo(e, desde, e.hoy);
-  const lista = v => [v].flat().join(', ');
-  return hoja('Contraste con Allaria', `cartera modelo de CEDEARs · rotación ${a.rotacion} del ${fmt.fecha(a.fecha)}`,
-    sec('Qué se solapa con lo tuyo',
-      h('ul.allaria-lista', a.activos.map(x => h('li' + (mios.has(x.ticker) ? '.tengo' : ''), x.ticker, mios.has(x.ticker) ? h('small', 'en cartera') : watch.has(x.ticker) ? h('small', 'watchlist') : null))),
-      h('p', `De los ${a.activos.length} nombres de Allaria tenés ${comunes.length}${comunes.length ? ` (${comunes.map(x => `${x.ticker}, ${fmt.pct(mios.get(x.ticker).pct_lp)} de LP`).join('; ')})` : ''} y ${enWatch.length} ${enWatch.length === 1 ? 'está' : 'están'} en tu watchlist${enWatch.length ? ` (${enWatch.map(x => x.ticker).join(', ')})` : ''}.`),
-      h('p.nota', `Allaria no publica ponderaciones. Datos cargados a mano el ${fmt.fecha(a.fecha)}.`),
-      h('div.acciones.izq.no-imprimir', { style: 'margin-top:.75rem' }, boton('Cargar una rotación nueva', () => nuevaRotacion(ctx), 'chico'), pegar(), h('a.boton.chico.fantasma', { href: '#informes/diario' }, 'Ver cómo le va contra SPY'))),
-    a.historial ? medidaAllaria(e) : sec('Cómo rindieron sus rotaciones', per.length ? [tabla([
-      { titulo: 'Período', celda: ([k]) => h('strong.num', k) }, { titulo: 'Rendimiento', num: 1, celda: ([, r]) => color(r, fmt.pctSigno(r, 2)) },
-    ], per, { pie: ['Acumulado', color(acum, fmt.pctSigno(acum, 2))] }),
-    h('p.nota', { style: 'margin-top:.6rem' }, `${per.filter(([, r]) => r > 0).length} de ${per.length} períodos positivos. ${nucleo == null ? '' : `Como referencia, tu núcleo ${Object.values(d.nucleo.pesos_internos).map(w => Math.round(w * 100)).join('/')} rindió ${fmt.pctSigno(nucleo, 1)} en USD desde el ${fmt.fecha(desde)} (la posición más antigua de su cartera actual). `}${a.rotaciones?.length ? `Fechas cargadas: ${a.rotaciones.map(r => `${r.rotacion} el ${fmt.fecha(r.fecha)}`).join(', ')}. Las anteriores no están, así que para esos períodos la comparación no es exacta.` : 'Las fechas de cada rotación no están cargadas, así que la comparación período por período no es exacta.'}`)] : h('p.nota', 'Sin rendimientos cargados.')),
-    sec('Qué cambió', (a.ultimos_cambios || []).length ? h('ul.lista-simple', a.ultimos_cambios.map(c => h('li', `${fmt.fecha(c.fecha)} · entra ${lista(c.entra)}; sale ${lista(c.sale)}`))) : h('p.nota', 'Sin cambios cargados.')),
-    sec('Cartera modelo vigente', tabla([
-      { titulo: 'Ticker', celda: x => h('strong.num', x.ticker) }, { titulo: 'Desde', celda: x => fmt.fecha(x.desde) },
-      { titulo: 'En tu cartera', celda: x => mios.has(x.ticker) ? `${fmt.usd(mios.get(x.ticker).valor_usd)} · ${fmt.pct(mios.get(x.ticker).pct_lp)} de LP` : watch.has(x.ticker) ? 'En watchlist' : '—' },
-    ], a.activos)));
-}
-
-const FN = { mensual, rendimiento: rendimientoInforme, proyeccion: informeProyeccion, trimestral, calendario: ctx => informeCalendario(ctx, { hoja, sec }), diario, anual, allaria };
+const FN = { mensual, rendimiento: rendimientoInforme, proyeccion: informeProyeccion, trimestral, calendario: ctx => informeCalendario(ctx, { hoja, sec }), diario, anual };
 
 export function vistaInformes(ctx, sub) {
   const id = FN[sub] ? sub : 'mensual';

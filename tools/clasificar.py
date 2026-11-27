@@ -73,7 +73,7 @@ ITEMS_8K = {  # ítem → (materialidad, categoría)
     "5.01": (3, "fusión o venta"), "5.02": (2, "cambio de directivos"), "5.03": (1, "otro"), "5.07": (1, "otro"), "7.01": (1, "guía"),
     "8.01": (1, "otro"), "9.01": (0, "otro"),
 }
-_BANCOS = r"analyst|analista|price target|precio objetivo|rating|upgrade|downgrade|overweight|underweight|outperform|underperform|initiates coverage|recomendaci[oó]n|morgan stanley|goldman|jpmorgan|jefferies|barclays|citi\b|bofa|ubs\b|wedbush|bernstein|ita[uú]|balanz|allaria"
+_BANCOS = r"analyst|analista|price target|precio objetivo|rating|upgrade|downgrade|overweight|underweight|outperform|underperform|initiates coverage|recomendaci[oó]n|morgan stanley|goldman|jpmorgan|jefferies|barclays|citi\b|bofa|ubs\b|wedbush|bernstein|ita[uú]|balanz"
 REGLAS = (  # (categoría, materialidad, patrón): gana la primera que coincide
     ("calificación", 2, r"moody'?s|fitch|s&p global ratings|standard & poor'?s|calificaci[oó]n (de riesgo|crediticia)|credit rating|calificadora"),
     ("recomendación explícita de analista", 2, r"\b(upgrade[sd]?|downgrade[sd]?)\b|\b(raise[sd]?|cut[s]?|lower(s|ed)?|hike[sd]?)\b.{0,40}\b(price target|rating)\b|initiates? coverage|\b(buy|sell|outperform|underperform|overweight|underweight) rating\b|precio objetivo|recomienda (comprar|vender)|(mejor[oó]|baj[oó]|recort[oó]) la recomendaci[oó]n"),

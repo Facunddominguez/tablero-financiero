@@ -142,15 +142,15 @@ function etapa1() {
 
     ['Carteras fantasma: se editan, se les quita un ticker y se borran', async () => {
       const { datos, ext } = ejemplo();
-      const alta = ['AAPL', 'KO', 'SPY'].map((ticker, i) => evento(10 + i, { tipo: 'fantasma', origen: 'allaria', ticker, fecha: '2026-06-01', grupo: 'Allaria P4' }));
+      const alta = ['AAPL', 'KO', 'SPY'].map((ticker, i) => evento(10 + i, { tipo: 'fantasma', origen: 'watchlist', ticker, fecha: '2026-06-01', grupo: 'Grupo P4' }));
       alta.push(evento(13, { tipo: 'fantasma', origen: 'radar', ticker: 'NVDA', fecha: '2026-07-01' }));
       const grupos = extra => compararFantasmas(valuar(aplicarEventos(datos, [...alta, ...extra]), ext, '2026-11-30')).grupos;
-      const clave = grupos([]).find(g => g.origen === 'allaria').clave;
-      const sinKo = grupos([evento(20, { tipo: 'fantasma_borrar', clave, ticker: 'KO' })]).find(g => g.origen === 'allaria');
+      const clave = grupos([]).find(g => g.origen === 'watchlist').clave;
+      const sinKo = grupos([evento(20, { tipo: 'fantasma_borrar', clave, ticker: 'KO' })]).find(g => g.origen === 'watchlist');
       igual(sinKo.filas.map(f => f.ticker), ['AAPL', 'SPY'], 'quitar un ticker');
-      const editada = grupos([evento(20, { tipo: 'fantasma_editar', clave, grupo: 'Allaria P4 bis', fecha: '2026-08-03', tickers: ['KO', 'NVDA', 'KO'] })]);
-      const g = editada.find(x => x.origen === 'allaria');
-      igual([g.nombre, g.fecha, g.filas.map(f => f.ticker)], ['Allaria P4 bis', '2026-08-03', ['KO', 'NVDA']], 'editada');
+      const editada = grupos([evento(20, { tipo: 'fantasma_editar', clave, grupo: 'Grupo P4 bis', fecha: '2026-08-03', tickers: ['KO', 'NVDA', 'KO'] })]);
+      const g = editada.find(x => x.origen === 'watchlist');
+      igual([g.nombre, g.fecha, g.filas.map(f => f.ticker)], ['Grupo P4 bis', '2026-08-03', ['KO', 'NVDA']], 'editada');
       si(editada.length === 2 && g.filas[0].hoy, 'se vuelve a medir desde la fecha nueva');
       igual(grupos([evento(20, { tipo: 'fantasma_borrar', clave })]).map(x => x.origen), ['radar'], 'borrada entera');
       const simple = grupos([]).find(x => x.origen === 'radar');

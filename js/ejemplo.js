@@ -38,7 +38,6 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
     objetivos_por_activo: { NVDA: { objetivo: 0.05, banda: [0.03, 0.07] }, PAMP: { objetivo: 0.03 } }, objetivos_externos: [],
     cashflows_externos_usd: [{ fecha: '2026-03-02', usd: 7000 }, { fecha: '2026-04-06', usd: 600 }, { fecha: '2026-05-04', usd: 300 }, { fecha: '2026-06-01', usd: 1000 }],
     watchlist: [{ ticker: 'AAPL', tema: 'Ejemplo', prioridad: 'media', max_inicial: 0.03 }, { ticker: 'KO', tema: 'Ejemplo', prioridad: 'baja', max_inicial: 0.02 }],
-    cartera_modelo_allaria: { rotacion: 'P3', fecha: '2026-11-03', activos: [{ ticker: 'AAPL', desde: '2026-06-01' }, { ticker: 'KO', desde: '2026-09-01' }, { ticker: 'SPY', desde: '2026-06-01' }], ultimos_cambios: [{ fecha: '2026-11-03', entra: 'KO', sale: 'PEP' }], rendimiento_por_periodo: { P1: 0.021, P2: -0.008 } },
     config_ejemplo: true,
   };
 

@@ -1,8 +1,20 @@
 # Plan de trabajo por etapas
 
+## Sin Allaria (rama `sin-allaria`, 27/11/2026)
+
+Pedido del dueño: sacar Allaria por completo. Se quitaron la cartera modelo de Radar, el informe de contraste, la carga e importación de rotaciones, la marca en las posiciones y el origen de carteras fantasma, con sus pruebas. Las secciones de abajo que la mencionan quedan como historia: nada de eso sigue en la app.
+
+- **Datos viejos**: se abren igual. La cartera modelo, las rotaciones y sus fantasmas se ignoran al leer y se descartan la próxima vez que la app guarde (sincronizar o bajar un respaldo). Las versiones cifradas anteriores siguen en el historial de git.
+- **Se conserva** el registro de decisiones, aunque alguna anotación vieja la nombre: es tu historial.
+- En el código solo queda lo necesario para reconocer esos datos y descartarlos (`js/estado.js`) y su prueba.
+
+**Para probar con los datos reales**: abrir el tablero con permiso, hacer cualquier cambio (o "Sincronizar ahora") y comprobar que Radar, Informes y Fantasmas ya no muestren nada de eso.
+
+---
+
 ## Ronda 3 · Calendario, noticias y señales que se miden solas (rama `ronda-3`, 27/11/2026)
 
-Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inventados (`js/ejemplo.js`), respuestas grabadas (también de las APIs de Claude y Gemini) y, en el navegador, con una cartera inventada. **No se probó con la cartera real, ni con claves, ni contra la SEC** (no responde sin un contacto declarado).
+Mergeada el 27/11/2026 (PR 19, con ajustes en el PR 20). Antes del merge se probó con datos inventados (`js/ejemplo.js`), respuestas grabadas y, en el navegador, con una cartera inventada. Después corrió en GitHub con la lista real: SEC, calendario, noticias, formularios 4 y Gemini funcionaron. Falta ver el resumen del sábado en vivo.
 
 | Etapa | Estado | Qué hace |
 |---|---|---|
@@ -12,7 +24,7 @@ Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inven
 | 4 · Clasificación con IA | Hecha | Haiku, Gemini en cadena o reglas; JSON validado; topes, uso anotado y aviso si no hubo IA. |
 | 5 · Directivos 2.0 | Hecha | Formularios 4 con puntaje de 0 a 100; accionables aparte; fantasmas "radar" automáticas. |
 | 6 · Resumen del sábado | Hecha | Workflow nuevo, Haiku con control de números o plantillas, ntfy y "Desde la última vez". |
-| 7 · Pendientes de la ronda 2 | Hecha | Cupones en la simulación, NFCI, umbrales por percentiles, historial de Allaria, referencias y ratios desde la app. |
+| 7 · Pendientes de la ronda 2 | Hecha | Cupones en la simulación, NFCI, umbrales por percentiles, referencias y ratios desde la app (el historial de Allaria se sacó después). |
 | 8 · Cierre | Hecha | Estas notas y el PR. |
 
 ### Decisiones tomadas (para confirmar)
@@ -38,10 +50,9 @@ Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inven
 6. Radar de directivos: abrir dos formularios y comparar monto, cargo y puntaje; ver que las señales aparezcan como fantasmas "radar".
 7. "Resumen del sábado" → *Run workflow*: que llegue el aviso, que los números coincidan con el tablero y que "Marcar como leído" lo saque de Hoy en todos los dispositivos.
 8. En cron-job.org, sumar la tarea del sábado (guía en ⋯ → Fuentes y fechas).
-9. Pegar el historial real de Allaria y confirmar en qué moneda publica sus rendimientos.
-10. ⋯ → Supuestos → proponer umbrales con la historia real y decidir si se adoptan.
-11. Proyección: ver que la ON desaparezca en su vencimiento y que el rango de YPF cambie.
-12. `tests.html` con la clave (o `node tools/pruebas_node.mjs`).
+9. ⋯ → Supuestos → proponer umbrales con la historia real y decidir si se adoptan.
+10. Proyección: ver que la ON desaparezca en su vencimiento y que el rango de YPF cambie.
+11. `tests.html` con la clave (o `node tools/pruebas_node.mjs`).
 
 ### Pendiente
 

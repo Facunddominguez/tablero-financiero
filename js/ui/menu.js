@@ -422,7 +422,6 @@ function fuentes(ctx) {
     ['Cupones y amortización de la ON', 'Suplemento de prospecto del emisor', null, false, 'fijo'],
     ['Cantidades, lotes y caja', `Resumen de ${d.meta.broker || 'tu broker'}`, e.fecha_resumen],
     ['Aportes', 'Cargados a mano', ultimoAporte?.fecha],
-    ['Cartera modelo de referencia', 'Allaria (cargada a mano)', d.cartera_modelo_allaria?.fecha],
   ];
   const dlg = dialogo('De dónde sale cada dato', h('div.formulario',
     !e.mercado ? aviso('No se pudieron cargar los precios en vivo: se están usando los del último resumen.', 'alerta') : null,

@@ -150,7 +150,6 @@ h2.sub { margin-top: 2rem; }
 .resumen-contexto { margin-top: .9rem; font-size: .93rem; }
 .formulario input.propuesto { border-color: var(--acento); }
 .propuesta { margin-top: .75rem; }
-pre.formato { font: .75rem/1.5 var(--f-num); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--superficie); border: 1px solid var(--linea); border-radius: 6px; padding: .6rem .75rem; margin: 0; }
 .proximos details { min-width: 0; }
 .proximos summary { cursor: pointer; }
 .agenda { list-style: none; margin: .6rem 0 .4rem; padding: 0; }
@@ -358,10 +357,6 @@ input[type="file"] { width: 100%; font-size: .9rem; }
 .radar .marcas { display: flex; flex-wrap: wrap; gap: .25rem; }
 .radar .marcas:not(:empty) { margin-top: .35rem; }
 .radar .empresa { display: block; font-size: .78rem; color: var(--tinta-3); max-width: 16rem; }
-.allaria-lista { display: flex; flex-wrap: wrap; gap: .4rem; margin: .6rem 0 1rem; }
-.allaria-lista li { border: 1px solid var(--linea-fuerte); border-radius: 8px; padding: .3rem .6rem; font: 600 .86rem var(--f-num); display: flex; gap: .4rem; align-items: center; }
-.allaria-lista li.tengo { border-color: var(--acento); color: var(--acento); }
-.allaria-lista small { font: .7rem var(--f-texto); color: var(--tinta-3); }
 
 /* ---------- pruebas ---------- */
 .pruebas li { display: grid; grid-template-columns: 1.6rem 1fr; gap: .4rem; padding: .5rem 0; border-bottom: 1px solid var(--linea); font-size: .93rem; }
