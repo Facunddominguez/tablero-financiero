@@ -13,6 +13,7 @@ import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, histor
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
 import { pruebasRonda2 } from './pruebas_ronda2.js';
+import { pruebasRonda3 } from './pruebas_ronda3.js';
 
 const cerca = (a, b, tol, que) => { if (!(Math.abs(a - b) <= tol)) throw new Error(`${que}: dio ${a}, esperado ≈ ${b}`); };
 
@@ -238,7 +239,7 @@ export function pruebasPublicas() {
       const s = riesgo(valuar(aplicarEventos(otro.datos), otro.ext, '2026-11-30'));
       cerca(s.posiciones.ON1.vol_anual, 0.2, 1e-9, 'vol editada');
       if (s.posiciones.PAMP.serie !== 'YPF' || s.posiciones.NVDA.supuesto !== 'sin_serie' || s.sin_serie.join() !== 'NVDA') throw new Error(JSON.stringify(s.sin_serie));
-      if (!s.supuestos.some(x => /NVDA/.test(x) && /historico_extra/.test(x))) throw new Error('falta avisar qué sumar');
+      if (!s.supuestos.some(x => /NVDA/.test(x) && /se baja sola/.test(x))) throw new Error('falta avisar qué historia falta');
       if (riesgo(valuar(aplicarEventos(datos), { ...ext, historico: null }, '2026-11-30')) !== null) throw new Error('sin histórico no hay riesgo');
     }],
 
@@ -659,5 +660,6 @@ export function pruebasPublicas() {
       if (abrio) throw new Error('abrió con otra clave');
     }],
     ...pruebasRonda2(),
+    ...pruebasRonda3(),
   ];
 }

@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       origen:
-        description: "Quién la pide: app o manual (corre siempre) / cron (se saltea si hay datos de hace menos de 40 min)"
+        description: "Quién la pide: app (solo precios) o manual (corre todo) / cron (se saltea si hay datos de hace menos de 40 min)"
         required: false
         default: manual
         type: string
@@ -17,16 +17,19 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: mercado
-  cancel-in-progress: false
-
 jobs:
   actualizar:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: mercado
+      cancel-in-progress: false
+    outputs:
+      correr: ${{ steps.chequeo.outputs.correr }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}  # lo último de la rama, no el commit con el que se encoló la corrida
       # Si llegan la programada de GitHub y la del cron externo, la segunda no repite el trabajo.
       - name: ¿Hace falta?
         id: chequeo
@@ -65,19 +68,69 @@ jobs:
         env:
           ALERTAS_CONFIG: ${{ secrets.ALERTAS_CONFIG }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      - uses: actions/setup-node@v4
+        if: steps.chequeo.outputs.correr == 'true'
+        with:
+          node-version: "22"
+      # Color del semáforo y lectura del clima del día, para el resumen del sábado. Si falla, no frena el resto.
+      - name: Estado del día
+        if: steps.chequeo.outputs.correr == 'true'
+        continue-on-error: true
+        run: node tools/estado_dia.mjs
       - name: Guardar si cambió algo
         if: steps.chequeo.outputs.correr == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # solo lo que escribe este Action (nunca el archivo cifrado); lo que todavía no existe se saltea
-          for f in market insiders historico alertas_estado feriados_ar argentina clima largo_plazo; do
+          # solo lo que escribe este Action (nunca el archivo cifrado ni la lista de la app); lo que no existe se saltea
+          for f in market insiders historico alertas_estado alertas_semana feriados_ar argentina clima largo_plazo semaforo; do
             if [ -f "data/$f.json" ]; then git add "data/$f.json"; fi
           done
           if git diff --cached --quiet; then
             echo "Sin cambios"
           else
             git commit -m "datos: mercado $(date -u +%Y-%m-%dT%H:%MZ)"
+            git pull --rebase --autostash
+            git push
+          fi
+
+  # Calendario, noticias, clasificación y directivos. Va aparte para que un "Actualizar ahora" desde la app (que no
+  # corre esto) no quede esperando detrás de una corrida larga.
+  senales:
+    needs: actualizar
+    if: needs.actualizar.outputs.correr == 'true' && (github.event_name == 'schedule' || inputs.origen != 'app')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: senales
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependencias
+        run: pip install --quiet -r tools/requirements.txt
+      - name: Noticias, calendario y directivos
+        run: python tools/senales.py
+        env:
+          # Si falta alguno de estos, esa parte se saltea con un aviso.
+          SEC_CONTACTO: ${{ secrets.SEC_CONTACTO }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - name: Guardar si cambió algo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for f in sec_cik agenda noticias ia_uso directivos; do
+            if [ -f "data/$f.json" ]; then git add "data/$f.json"; fi
+          done
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+          else
+            git commit -m "datos: noticias y señales $(date -u +%Y-%m-%dT%H:%MZ)"
             git pull --rebase --autostash
             git push
           fi

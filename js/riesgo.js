@@ -188,7 +188,7 @@ export function riesgo(e) {
     items.some(x => x.fija === 'on') ? `Las obligaciones negociables, con una fija de ${pct(par.vol_fija.on)} por año.` : null,
     items.some(x => x.serie?.startsWith('FCI:')) ? 'Los fondos en pesos se miden con su cuotaparte pasada a dólares MEP, así que incluyen el interés.' : null,
     items.some(x => x.serie === 'MEP') ? 'La caja en pesos (y lo que no tiene cuotaparte) se mueve con el dólar MEP, sin interés.' : null,
-    sinSerie.length ? `Sin historia de precios: ${sinSerie.join(', ')}. Se les supone ${pct(par.vol_fija.sin_serie)} por año; para medirlos, sumalos a historico_extra en tools/mercado_config.json.` : null,
+    sinSerie.length ? `Sin historia de precios: ${sinSerie.join(', ')}. Se les supone ${pct(par.vol_fija.sin_serie)} por año. Si cotizan en EE.UU., su historia se baja sola en la próxima actualización después de sincronizar.` : null,
     'Lo que tiene volatilidad fija se supone sin relación con el resto.',
   ].filter(Boolean);
 

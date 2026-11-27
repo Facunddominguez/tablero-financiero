@@ -102,7 +102,7 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
     otros: { fuente: 'Ejemplo', fecha: '2026-09-30', on: 0.05, fci_usd: 0.04, caja_usd: 0, pesos: 0 },
     semaforo: { fuente: 'Ejemplo', fecha: '2026-11-26', riesgo_pais: { amarillo: 800, rojo: 1500 }, canje: { amarillo: 0.05, rojo: 0.1 }, brecha: { amarillo: 0.1, rojo: 0.3 }, adr: { amarillo: -0.07, rojo: -0.15 } },
     elecciones: { fuente: 'Ejemplo', fecha: '2026-11-26', diferencia: 0.1 },
-    clima: { fuente: 'Ejemplo', fecha: '2026-11-26', alto_rendimiento: { atento: 4, tenso: 6 }, curva: { atento: 0.25, tenso: 0 }, vix: { atento: 20, tenso: 30 }, spy_promedio: { atento: 0, tenso: -0.05 } },
+    clima: { fuente: 'Ejemplo', fecha: '2026-11-26', alto_rendimiento: { atento: 4, tenso: 6 }, curva: { atento: 0.25, tenso: 0 }, vix: { atento: 20, tenso: 30 }, spy_promedio: { atento: 0, tenso: -0.05 }, condiciones: { atento: -0.25, tenso: 0 } },
   };
   const semanas = fechasHist.filter((_, i) => i % 5 === 4);
   const fred = (base, amplitud) => sec({ fechas: semanas, valores: semanas.map((_, i) => Math.round((base + amplitud * Math.sin(i * 0.4)) * 100) / 100), ultimo: { fecha: fechasHist.at(-1), valor: base } });
@@ -127,8 +127,54 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
       polymarket: sec({ nombre: 'Polymarket', url: 'https://polymarket.com/', volumen_unidad: 'USD operados', candidatos: [{ nombre: 'Candidata Uno', prob: 0.38, volumen: 9000 }, { nombre: 'Candidato "Apodo" Dos', prob: 0.35, volumen: 1000 }] }),
     },
   };
+  // Balances y dividendos inventados de lo que se sigue (como los deja el Action) y eventos fijos de ejemplo.
+  const dia = n => new Date(Date.parse(hoy) + n * 86400000).toISOString().slice(0, 10);
+  const empresa = (extra = {}) => ({ consultado: hoy, balance: null, ex_dividendo: null, opciones: null, stale: false, ...extra });
+  const agenda = sec({
+    generado: `${hoy}T15:00:00Z`, fuente: 'Yahoo Finance (vía yfinance)',
+    empresas: {
+      NVDA: empresa({ balance: dia(9), opciones: { balance: dia(9), vencimiento: dia(11), strike: 150, precio: 150, straddle: 11.25, movimiento: 0.075, tomado: `${hoy}T15:00:00Z` } }),
+      SPY: empresa({ ex_dividendo: dia(3) }),
+      PAM: empresa({ balance: dia(40) }),
+      ZZZ: empresa({ balance: dia(2) }),
+    },
+  });
+  const eventosFijos = {
+    consultado: hoy,
+    grupos: [
+      { id: 'fed', titulo: 'Reunión de la Fed (ejemplo)', fuente: 'Ejemplo', url: 'https://example.com/fed', eventos: [{ fecha: '2026-12-09', detalle: 'Ejemplo' }, { fecha: '2027-01-27' }] },
+      { id: 'msci', titulo: 'Revisión de MSCI (ejemplo)', fuente: 'Ejemplo', eventos: [{ mes: '2027-06', detalle: 'Sin día confirmado' }] },
+      { id: 'elecciones', titulo: 'Elecciones (ejemplo)', fuente: 'Ejemplo', eventos: [{ fecha: '2027-10-24' }] },
+    ],
+  };
+  // Noticias inventadas, ya clasificadas, y el registro de uso de la IA.
+  const nota = (id, t, dias, materialidad, categoria, linea, extra = {}) => ({ id, t, fecha: `${dia(-dias)}T14:00:00Z`, fuente: 'Google News', medio: 'Medio de ejemplo', idioma: 'es', titulo: linea, linea, url: 'https://example.com/' + id, materialidad, categoria, recomendacion: 'ninguna', por: { proveedor: 'anthropic', modelo: 'claude-haiku-5-5' }, ...extra });
+  const noticias = {
+    generado: `${hoy}T15:00:00Z`, fuentes: { sec: sec({ pedidos: 4, fallas: 0 }), google: sec({ pedidos: 8, fallas: 0 }), byma: { disponible: false, nota: 'Ejemplo' } },
+    items: [
+      nota('e1', 'NVDA', 1, 3, 'cambio de directivos', 'NVDA anunció un cambio de director ejecutivo.', { fuente: 'SEC', medio: 'SEC EDGAR', forma: '8-K', items: ['5.02'] }),
+      nota('e2', 'NVDA', 2, 2, 'recomendación explícita de analista', 'Un banco de ejemplo subió la recomendación de NVDA a compra.', { recomendacion: 'compra' }),
+      nota('e3', 'PAM', 3, 2, 'resultados', 'Pampa de ejemplo presentó resultados.', { por: { proveedor: 'reglas' } }),
+      nota('e4', 'AAPL', 4, 2, 'regulación o juicio', 'Un tribunal de ejemplo falló sobre AAPL.'),
+      nota('e5', 'NVDA', 5, 1, 'otro', 'Nota menor de ejemplo.'),
+      nota('e6', 'ZZZ', 1, 3, 'otro', 'De algo que no seguís.'),
+      nota('e7', 'KO', 45, 3, 'resultados', 'Noticia vieja de ejemplo.'),
+    ],
+  };
+  const iaUso = { corridas: [{ fecha: `${hoy}T15:00:00Z`, proveedor: 'haiku', modelos: { 'claude-haiku-5-5': { pedidos: 1, ok: 1, errores: {}, tokens_entrada: 900, tokens_salida: 200, costo_usd: 0.00019 } }, avisos: [], con_ia: 6, por_reglas: 1, pendientes: 0, sin_ia: false, costo_usd: 0.00019 }] };
+  // Compras y ventas de directivos inventadas, ya puntuadas (como las deja el Action).
+  const compra = (t, dueno, puntaje, extra = {}) => ({ id: `${t}:${dueno}`, t, empresa: `${t} de ejemplo`, dueno_cik: dueno, dueno: `Persona ${dueno}`, rol: 'ceo_cfo', cargo: 'CEO', acciones: 1000, monto: 150000, precio: 150, desde: dia(-6), fecha: dia(-5), presentado: dia(-4), aumento: 0.2, plan: false, url: 'https://example.com/f4', rutina: 'oportunista', puntaje, partes: { oportunista: 1, cargo: 1, tenencia: 0.4, tamano: null, caida: 0.5, cantidad: 0 }, faltan: ['tamano'], compradores: 1, cartera: t === 'NVDA', accionable: t !== 'SINCEDEAR', ...extra });
+  const directivos = sec({
+    generado: `${hoy}T15:00:00Z`, umbral: 60, pendientes: 0,
+    compras: [compra('SINCEDEAR', 1, 88), compra('NVDA', 2, 74), compra('NVDA', 3, 66, { cargo: 'Director', rol: 'director' }), compra('KO', 4, 61), compra('AAPL', 5, 35, { rutina: 'rutinaria' }), compra('MELI', 6, 90, { fecha: dia(-40) })],
+    ventas: [
+      { t: 'NVDA', empresa: 'NVDA de ejemplo', vendedores: 3, monto: 900000, desde: dia(-12), hasta: dia(-3), destacar: true, url: 'https://example.com/v', quienes: [] },
+      { t: 'KO', empresa: 'KO de ejemplo', vendedores: 1, monto: 5000, desde: dia(-2), hasta: dia(-2), destacar: false, url: 'https://example.com/v2', quienes: [] },
+    ],
+  });
+  supuestos.radar_directivos = { fuente: 'Ejemplo', fecha: '2026-11-27', pesos: { oportunista: 30, cargo: 20, tenencia: 15, tamano: 15, caida: 10, cantidad: 10 }, umbral: 60 };
   const ext = {
-    mercado, historico, largoPlazo, supuestos, argentina, clima,
+    mercado, historico, largoPlazo, supuestos, argentina, clima, agenda, eventosFijos, noticias, iaUso, directivos,
     ratios: { fecha: '2026-11-19', ratios: Object.fromEntries(Object.entries(ratios).map(([t, r]) => [t, { ratio: r }])) },
     feriados: {
       anios: [2026, 2027], feriados: { '2026-11-26': 'Acción de Gracias', '2026-12-25': 'Navidad' }, medias_ruedas: { '2026-11-27': 'día después de Acción de Gracias', '2026-12-24': 'Nochebuena' },

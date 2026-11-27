@@ -1,7 +1,7 @@
 // Estado = datos base (descifrados) + registro de eventos locales + precios. Todo puro: no toca red ni DOM.
 import { clon, suma, fechas } from './util.js';
 import { costoLoteUSD, expuestoAlCanje, ADR_DE_LOCAL } from './finanzas.js';
-import { claveFantasma } from './diario.js';
+import { claveFantasma, DIAS_ENTRE_SENALES } from './diario.js';
 import { fundir } from './supuestos.js';
 export { ADR_DE_LOCAL };
 
@@ -45,6 +45,7 @@ export function aplicarEventos(base, eventosLocales = []) {
   d.pasos = d.pasos || {}; d.meses = d.meses || {}; d.decisiones = d.decisiones || [];
   d.cobros = d.cobros || []; d.realizados = d.realizados || []; d.snapshots = d.snapshots || {};
   d.predicciones = d.predicciones || []; d.fantasmas = d.fantasmas || [];
+  d.senales_radar = d.senales_radar || {}; // empresa → cuándo se anotó sola su última señal
   const vistos = new Set();
   const todos = [...(base.eventos || []), ...eventosLocales]
     .filter(e => !vistos.has(e.id) && vistos.add(e.id))
@@ -133,6 +134,11 @@ export function aplicarEventos(base, eventosLocales = []) {
         delete d.pasos[`prediccion-${e.ref}`];
         break;
       case 'fantasma': // algo que no compraste, para ver después cómo le fue contra SPY
+        if (e.senal) { // anotada sola por el radar: si otro dispositivo ya la anotó, no se repite; borrarla no la trae de vuelta
+          const previa = d.senales_radar[e.ticker];
+          if (previa && Math.abs(fechas.dias(previa, e.fecha)) < DIAS_ENTRE_SENALES) break;
+          d.senales_radar[e.ticker] = e.fecha;
+        }
         if (!d.fantasmas.some(f => f.origen === e.origen && f.ticker === e.ticker && f.fecha === e.fecha && f.grupo === e.grupo)) d.fantasmas.push({ origen: e.origen, ticker: e.ticker, fecha: e.fecha, grupo: e.grupo });
         break;
       case 'fantasma_borrar': // toda la cartera (por su clave) o un solo ticker
@@ -147,6 +153,20 @@ export function aplicarEventos(base, eventosLocales = []) {
         d.fantasmas = [...resto.slice(0, i), ...nuevos, ...resto.slice(i)];
         break;
       }
+      case 'historial_allaria': { // el historial completo, pegado como JSON (reemplaza al anterior)
+        const a = d.cartera_modelo_allaria = d.cartera_modelo_allaria || { activos: [] };
+        a.historial = { fuente: e.fuente, rotaciones: e.rotaciones, cargado: e.fecha };
+        break;
+      }
+      case 'referencias': { // con qué se compara cada satélite; vacío vuelve a la predeterminada
+        const r = { ...d.referencias };
+        for (const [t, x] of Object.entries(e.cambios || {})) { if (x) r[t] = x; else delete r[t]; }
+        d.referencias = r;
+        break;
+      }
+      case 'ratio_aceptado': // aceptaste el ratio nuevo que publicó BYMA
+        d.ratios_aceptados = { ...d.ratios_aceptados, [e.ticker]: { ratio: e.ratio, anterior: e.anterior, fecha: e.fecha } };
+        break;
       case 'rotacion_allaria': {
         const a = d.cartera_modelo_allaria = d.cartera_modelo_allaria || { activos: [] };
         const activos = (a.activos || []).filter(x => !e.sale.includes(x.ticker));
@@ -166,6 +186,9 @@ export function aplicarEventos(base, eventosLocales = []) {
         break;
       }
       case 'objetivo_borrar': d.objetivos = (d.objetivos || []).filter(x => x.id !== e.ref); break;
+      case 'resumen_leido': // el último resumen del sábado que marcaste leído
+        if (!d.resumen_leido || e.resumen > d.resumen_leido) d.resumen_leido = e.resumen;
+        break;
       case 'aporte_extra': d.aporte_extra = { ...d.aporte_extra, ...e.cambios }; break;
       case 'config': Object.assign(d.config, e.cambios); break;
       case 'perfil': Object.assign(d.perfil, e.cambios); break;
@@ -204,9 +227,22 @@ function precioDeMercado(p, m) {
   return v ? { precio: v[0], variacion: v[1] || 0, viejo: !!tabla.stale } : null;
 }
 
-// Valúa todo en USD MEP. ext = { mercado, calendario, insiders, historico, ratios, feriados } (cualquiera puede faltar).
+// Los ratios del archivo con los cambios de BYMA que aceptaste. Si el archivo ya cambió, manda el archivo.
+function conRatiosAceptados(datos, ratios, mercado) {
+  const aceptados = Object.entries(datos.ratios_aceptados || {});
+  if (!ratios || !aceptados.length) return { ratios, mercado };
+  const out = { ...ratios };
+  for (const [t, a] of aceptados) if (out[t] && (Math.abs(out[t].ratio / a.anterior - 1) < 1e-4 || Math.abs(out[t].ratio / a.ratio - 1) < 1e-4)) out[t] = { ...out[t], ratio: a.ratio };
+  // lo ya aceptado deja de avisarse y vuelve a tener precio justo
+  const cambios = mercado?.ratios_byma?.cambios;
+  if (!cambios) return { ratios: out, mercado };
+  const pendientes = Object.fromEntries(Object.entries(cambios).filter(([t, [, nuevo]]) => !(out[t] && Math.abs(out[t].ratio / nuevo - 1) < 1e-4)));
+  return { ratios: out, mercado: { ...mercado, ratios_byma: { ...mercado.ratios_byma, cambios: pendientes } } };
+}
+
+// Valúa todo en USD MEP. ext = { mercado, calendario, insiders, historico, ratios, feriados, agenda, … } (cualquiera puede faltar).
 export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
-  const m = ext.mercado || null;
+  const { ratios, mercado: m } = conRatiosAceptados(datos, ext.ratios?.ratios || null, ext.mercado || null);
   const mep = m?.fx?.mep || datos.meta.tc_snapshot.mep;
   const ccl = m?.fx?.ccl || datos.meta.tc_snapshot.cable_usd;
   const cambioMep = m?.fx?.mep_prev ? m.fx.mep / m.fx.mep_prev - 1 : 0;
@@ -267,8 +303,12 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     precios: { origen: m ? 'mercado' : 'archivo', generado: m?.generado || null, fecha_archivo: datos.meta.fecha_snapshot, viejos, fecha_fci: m?.fci?.fecha || null },
     fecha_resumen: datos.meta.fecha_resumen || datos.meta.fecha_snapshot,
     mercado: m, calendario: ext.calendario || { flujos: [] }, insiders: ext.insiders || { filas: [] }, historico: ext.historico || null,
-    ratios: ext.ratios?.ratios || null, ratios_fecha: ext.ratios?.fecha || null,
+    ratios, ratios_fecha: ext.ratios?.fecha || null,
     argentina: ext.argentina || null, clima: ext.clima || null, largo_plazo: ext.largoPlazo || null, supuestos: ext.supuestos || null,
+    // balances y dividendos de lo que seguís, y eventos con fecha fija
+    agenda: ext.agenda || null, eventos_fijos: ext.eventosFijos || null,
+    // noticias de lo que seguís (SEC y Google News), con su clasificación
+    noticias: ext.noticias || null, ia_uso: ext.iaUso || null, directivos: ext.directivos || null, resumen: ext.resumen || null,
     // calendario de mercado: EE.UU. y BYMA, más los feriados argentinos que guarda el Action
     feriados: ext.feriados || ext.feriadosAr ? { ...ext.feriados, argentina: ext.feriadosAr || null } : null,
   };

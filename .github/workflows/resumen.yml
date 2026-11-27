@@ -1,0 +1,95 @@
+name: Resumen del sábado
+
+on:
+  schedule:
+    # Sábados 12:00 de Argentina (UTC-3). GitHub atrasa o saltea a veces: cron-job.org puede llamar a
+    # workflow_dispatch con origen "cron"; si llegan las dos, la segunda no repite el aviso.
+    - cron: "0 15 * * 6"
+  workflow_dispatch:
+    inputs:
+      origen:
+        description: "Quién lo pide: manual (siempre arma y avisa) / cron (no repite el de hoy)"
+        required: false
+        default: manual
+        type: string
+
+permissions:
+  contents: write
+
+# el mismo grupo que las señales de "Datos de mercado": no escriben las noticias los dos a la vez
+concurrency:
+  group: senales
+  cancel-in-progress: false
+
+jobs:
+  resumen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ORIGEN: ${{ github.event_name == 'schedule' && 'schedule' || inputs.origen || 'manual' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: ¿Ya salió hoy?
+        id: chequeo
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timedelta, timezone
+          hoy = (datetime.now(timezone.utc) - timedelta(hours=3)).strftime("%Y-%m-%d")
+          try:
+              r = json.load(open("data/resumen.json"))
+          except Exception:
+              r = {}
+          salio = os.environ["ORIGEN"] in ("schedule", "cron") and r.get("id") == hoy and r.get("enviado")
+          print("el de hoy ya salió" if salio else "corre")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"correr={'false' if salio else 'true'}\n")
+          PY
+      - uses: actions/setup-python@v5
+        if: steps.chequeo.outputs.correr == 'true'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        if: steps.chequeo.outputs.correr == 'true'
+        with:
+          node-version: "22"
+      - name: Dependencias
+        if: steps.chequeo.outputs.correr == 'true'
+        run: |
+          pip install --quiet -r tools/requirements.txt
+          npm install --no-save --no-package-lock "@anthropic-ai/sdk@^1"
+      # Noticias, calendario y directivos al día (incluye lo del viernes a la noche). Si falla, el resumen sale igual.
+      - name: Noticias y señales
+        if: steps.chequeo.outputs.correr == 'true'
+        continue-on-error: true
+        run: python tools/senales.py
+        env:
+          SEC_CONTACTO: ${{ secrets.SEC_CONTACTO }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - name: Estado del día
+        if: steps.chequeo.outputs.correr == 'true'
+        continue-on-error: true
+        run: node tools/estado_dia.mjs
+      - name: Resumen
+        if: steps.chequeo.outputs.correr == 'true'
+        run: node tools/resumen.mjs
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      - name: Guardar
+        if: steps.chequeo.outputs.correr == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for f in sec_cik agenda noticias ia_uso directivos semaforo resumen; do
+            if [ -f "data/$f.json" ]; then git add "data/$f.json"; fi
+          done
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+          else
+            git commit -m "datos: resumen $(date -u +%Y-%m-%dT%H:%MZ)"
+            git pull --rebase --autostash
+            git push
+          fi

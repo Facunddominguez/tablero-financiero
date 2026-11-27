@@ -1,13 +1,14 @@
 // Menú "⋯": sincronizar, importar el Excel de Balanz, movimientos, decisiones, fuentes, configuración, seguridad y respaldo.
 import { h, poner, fmt, aNumero } from '../util.js';
 import { fortaleza, generarFrase, bloqueo } from '../seguridad.js';
-import { enlacePermiso, enlacePermisoCron, LISTA_PERMISOS, urlDisparo, cuerpoDisparo } from '../sync.js';
+import { enlacePermiso, enlacePermisoCron, LISTA_PERMISOS, urlDisparo, cuerpoDisparo, WORKFLOW_RESUMEN } from '../sync.js';
 import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN, botonPrecios, notaPrecios } from './comun.js';
 import { paraVender, textoPrima, textoVentana, avisoPrecioJusto } from '../precios.js';
 import { esSobreCifrado } from '../cripto.js';
 import { esRespaldoPlano } from '../estado.js';
 import { nuevaPrediccion } from './diario.js';
 import { supuestos, EDITABLES } from '../supuestos.js';
+import { proponerUmbrales, PERCENTILES } from '../calibrar.js';
 import { ajustesAporteExtra } from '../clima.js';
 
 const descargar = (nombre, texto, tipo = 'application/json') => {
@@ -264,6 +265,13 @@ function editarSupuestos(ctx) {
     })),
     s[g].fuente ? h('small', `${s[g].fuente} (${fmt.fecha(s[g].fecha)})`) : null));
   const error = h('p.error', { role: 'alert' });
+  // Completa los campos con la propuesta; no guarda nada hasta que toques "Guardar".
+  const usar = lista => {
+    for (const r of lista) r.niveles.forEach((nivel, i) => {
+      const x = filas.find(x => x.g === r.grupo && x.k === `${r.clave}.${nivel}`);
+      if (x) { x.input.value = mostrar(r.propuesto[i], x.f); x.input.classList.add('propuesto'); }
+    });
+  };
   const d = dialogo('Supuestos', h('form.formulario', {
     onsubmit: async ev => {
       ev.preventDefault();
@@ -285,12 +293,35 @@ function editarSupuestos(ctx) {
     },
   },
     h('p.nota', 'Son supuestos, no pronósticos: cambian las proyecciones y los colores del semáforo y del clima. Las reglas no cambian.'),
+    panelUmbrales(e, usar),
     bloques, error,
     h('div.acciones', e.datos.supuestos && Object.keys(e.datos.supuestos).length ? boton('Volver a los originales', async () => {
       await ctx.registrar({ tipo: 'supuestos', fecha: e.hoy, restaurar: true }, { tipo: 'decision', fecha: e.hoy, texto: 'Supuestos vueltos a los originales' });
       d.close();
     }, 'fantasma') : null, boton('Cancelar', () => d.close(), 'fantasma'), h('button.boton.primario', { type: 'submit' }, 'Guardar'))), { ancho: '36rem' });
   return d;
+}
+
+// Propuesta de umbrales con la historia guardada: dos percentiles editables y qué daría cada uno.
+function panelUmbrales(e, usar) {
+  const fAtencion = entrada({ inputmode: 'numeric', value: fmt.num(PERCENTILES.atencion * 100) }), fAlarma = entrada({ inputmode: 'numeric', value: fmt.num(PERCENTILES.alarma * 100) });
+  const salida = h('div.propuesta');
+  const calcular = () => {
+    const a = aNumero(fAtencion.value) / 100, b = aNumero(fAlarma.value) / 100;
+    if (!(a >= 0.5 && a < b && b < 1)) { poner(salida, h('p.error', 'El primer percentil va de 50 a 98 y el segundo tiene que ser mayor.')); return; }
+    const lista = proponerUmbrales(e, { atencion: a, alarma: b }), con = lista.filter(r => r.propuesto);
+    const par = (r, v) => v.map((x, i) => `${r.niveles[i]} ${x == null ? '—' : r.formato(x)}`).join(' · ');
+    poner(salida,
+      h('div.tabla-caja', h('table.tabla.compacta',
+        h('thead', h('tr', h('th', 'Indicador'), h('th', 'Hoy'), h('th', 'Propuesta'))),
+        h('tbody', lista.map(r => h('tr', h('td', h('strong', r.nombre), h('small.desglose', r.datos && r.desde ? `${fmt.num(r.datos)} datos desde el ${fmt.fecha(r.desde)}` : '')),
+          h('td', par(r, r.actual)), h('td', r.propuesto ? par(r, r.propuesto) : r.motivo)))))),
+      con.length ? h('div.acciones.izq', boton('Completar los campos con la propuesta', ev => { usar(con); ev.target.textContent = 'Completados: revisalos y tocá Guardar'; }, 'chico')) : null);
+  };
+  return h('details.otra-forma', h('summary', 'Proponer umbrales del semáforo y del clima con la historia'),
+    h('p.nota', 'El primer nivel queda en el valor que la historia superó (del lado malo) pocas veces; el segundo, en uno todavía más raro. 75 y 90 quiere decir una de cada cuatro y una de cada diez veces.'),
+    h('div.fila-campos', campo('Percentil del primer nivel', fAtencion), campo('Percentil del segundo', fAlarma)),
+    h('div.acciones.izq', boton('Calcular', calcular, 'chico')), salida);
 }
 
 // ---------- Seguridad ----------
@@ -344,6 +375,25 @@ function filasContexto(e) {
     ['Elección 2027: Polymarket', poly?.desactivado ? 'Apagado: está bloqueado en Argentina por orden judicial' : 'API gamma de Polymarket (solo lectura, desde GitHub)', poly?.actualizado, poly?.stale, poly?.desactivado ? '—' : null],
   ];
 }
+// Con qué se clasificó en la última corrida.
+function quienClasifica(e) {
+  const c = e.ia_uso?.corridas?.at(-1);
+  const modelos = Object.entries(c?.modelos || {}).filter(([, m]) => m.ok).map(([n]) => n);
+  return modelos.length ? modelos.join(', ') : 'Filtro por reglas (ítems del 8-K y palabras clave)';
+}
+// Noticias de lo que seguís: SEC, Google News y por qué no hay hechos relevantes de BYMA.
+function filasSenales(e) {
+  const f = e.noticias?.fuentes || {};
+  return [
+    ['Presentaciones a la SEC de lo que seguís', f.sec?.aviso || 'SEC EDGAR (data.sec.gov)', f.sec?.actualizado, f.sec?.stale],
+    ['Noticias de lo que seguís', 'Google News (RSS), en español e inglés', f.google?.actualizado, f.google?.stale],
+    ['Clasificación de las noticias', quienClasifica(e), e.ia_uso?.corridas?.at(-1)?.fecha, !!e.ia_uso?.corridas?.at(-1)?.sin_ia],
+    ['Formularios 4 de directivos', e.directivos?.aviso || 'SEC EDGAR; precio y tamaño de Yahoo Finance', e.directivos?.actualizado, e.directivos?.stale],
+    ['Resumen del sábado', e.resumen ? `Redactado por ${e.resumen.por}` : 'Corre los sábados a las 12:00', e.resumen?.generado, false],
+    ['Hechos relevantes de BYMA y CNV', f.byma?.nota || 'Sin acceso público estable: se usan los 6-K de la SEC', null, false, 'sin fuente'],
+  ];
+}
+
 function fuentes(ctx) {
   const e = ctx.estado, m = e.mercado || {}, d = e.datos;
   const cuando = iso => !iso ? '—' : iso.length > 10 ? `${fmt.fecha(iso.slice(0, 10))} · ${fmt.hace(iso)}` : fmt.fecha(iso);
@@ -365,7 +415,10 @@ function fuentes(ctx) {
     ['Dólar MEP promedio por mes', 'argentinadatos.com', m.mep_mensual?.actualizado, m.mep_mensual?.stale],
     ['Inflación de EE.UU. (IPC mensual)', 'FRED, Reserva Federal de St. Louis (serie CPIAUCSL)', m.cpi_usa?.actualizado, m.cpi_usa?.stale],
     ['Compras de directivos', 'OpenInsider (formularios 4 de la SEC)', e.insiders?.actualizado, e.insiders?.stale],
+    ['Balances, dividendos y opciones de lo que seguís', 'Yahoo Finance (vía yfinance)', e.agenda?.actualizado, e.agenda?.stale],
+    ['Fed, inflación, MSCI y elecciones', 'data/eventos.json, con la fuente de cada uno', e.eventos_fijos?.consultado],
     ...filasContexto(e),
+    ...filasSenales(e),
     ['Cupones y amortización de la ON', 'Suplemento de prospecto del emisor', null, false, 'fijo'],
     ['Cantidades, lotes y caja', `Resumen de ${d.meta.broker || 'tu broker'}`, e.fecha_resumen],
     ['Aportes', 'Cargados a mano', ultimoAporte?.fecha],
@@ -373,6 +426,7 @@ function fuentes(ctx) {
   ];
   const dlg = dialogo('De dónde sale cada dato', h('div.formulario',
     !e.mercado ? aviso('No se pudieron cargar los precios en vivo: se están usando los del último resumen.', 'alerta') : null,
+    ctx.errorSeguimiento ? aviso(`No se pudo publicar la lista de qué seguir: ${ctx.errorSeguimiento}`, 'alerta') : null,
     h('div.tabla-caja', h('table.tabla.compacta', h('thead', h('tr', h('th', 'Dato'), h('th', 'Fuente'), h('th', 'Fecha del dato'))),
       h('tbody', filas.map(([dato, fuente, fecha, viejo, fijo]) => h('tr', h('td', dato), h('td', fuente), h('td', fijo || cuando(fecha), viejo ? chip('sin actualizar', 'alerta') : null)))))),
     h('p.nota', 'Los precios se actualizan solos tres veces por día hábil (alrededor de las 11:40, 14:40 y 17:40 de Argentina). Si una fuente falla, se conserva el último dato y se marca "sin actualizar".'),
@@ -401,7 +455,9 @@ function guiaCron(ctx) {
         copiable('Accept: application/vnd.github+json'), copiable('X-GitHub-Api-Version: 2022-11-28'), copiable('Content-Type: application/json'), h('p', h('code', 'Authorization: Bearer github_pat_…'))),
       h('li', h('p', 'Cuerpo (Request body):'), copiable(cuerpoDisparo('cron'))),
       h('li', h('p', 'Guardá y tocá "Test run": tiene que responder ', h('code', '204'), '. En un minuto esta tabla muestra la hora nueva.'))),
-    h('p.nota', 'El permiso queda guardado en cron-job.org. Si alguien lo obtuviera, lo único que podría hacer es lanzar esta misma actualización. Vence al año: cuando falle, generá otro y reemplazalo ahí.'));
+    h('p.nota', 'Para el resumen del sábado, creá una segunda tarea igual (mismo permiso y encabezados), los sábados a las 12:00, con esta URL y el mismo cuerpo:'),
+    copiable(urlDisparo(repo, WORKFLOW_RESUMEN)),
+    h('p.nota', 'El permiso queda guardado en cron-job.org. Si alguien lo obtuviera, lo único que podría hacer es lanzar estas tareas del tablero. Vence al año: cuando falle, generá otro y reemplazalo ahí.'));
 }
 
 // ---------- Respaldo (cifrado por defecto; en claro solo a pedido) ----------

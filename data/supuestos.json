@@ -23,6 +23,15 @@
     "brecha": { "amarillo": 0.1, "rojo": 0.3 },
     "adr": { "amarillo": -0.07, "rojo": -0.15 }
   },
+  "radar_directivos": {
+    "fuente": "Criterio propio, a calibrar. Puntaje de 0 a 100 de cada compra de un directivo: oportunista o rutinaria según Cohen, Malloy y Pomorski (2012), cargo, cuánto sube su tenencia, monto contra el tamaño de la empresa, caída del precio en los 6 meses previos y cantidad de directivos. Topes: con +50% de tenencia, 0,1% del valor de la empresa, 30% de caída o 4 directivos, esa parte vale el máximo.",
+    "fecha": "2026-11-27",
+    "pesos": { "oportunista": 30, "cargo": 20, "tenencia": 15, "tamano": 15, "caida": 10, "cantidad": 10 },
+    "umbral": 60,
+    "topes": { "tenencia": 0.5, "tamano": 0.001, "caida": 0.3, "cantidad": 4 },
+    "cargo": { "ceo_cfo": 1, "presidente": 0.7, "directivo": 0.5, "director": 0.4, "dueno": 0.3, "otro": 0.2 },
+    "rutina": { "oportunista": 1, "sin_historia": 0.5, "rutinaria": 0 }
+  },
   "elecciones": {
     "fuente": "Criterio propio: se avisa si dos mercados difieren más de 10 puntos en un mismo candidato.",
     "fecha": "2026-11-26",
@@ -34,7 +43,8 @@
     "alto_rendimiento": { "atento": 4, "tenso": 6 },
     "curva": { "atento": 0.25, "tenso": 0 },
     "vix": { "atento": 20, "tenso": 30 },
-    "spy_promedio": { "atento": 0, "tenso": -0.05 }
+    "spy_promedio": { "atento": 0, "tenso": -0.05 },
+    "condiciones": { "atento": -0.25, "tenso": 0 }
   },
   "otros": {
     "fuente": "Criterio propio de la herramienta: obligaciones negociables, el bono del Tesoro a 10 años al 30/09/2026 (FRED, DGS10); fondos en dólares, la letra a 3 meses al 30/09/2026 (FRED, DGS3MO); dólares sin invertir, nada; pesos, nada en dólares (se supone que el interés apenas compensa la suba del dólar).",

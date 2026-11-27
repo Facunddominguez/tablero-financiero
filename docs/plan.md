@@ -1,5 +1,60 @@
 # Plan de trabajo por etapas
 
+## Ronda 3 · Calendario, noticias y señales que se miden solas (rama `ronda-3`, 27/11/2026)
+
+Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inventados (`js/ejemplo.js`), respuestas grabadas (también de las APIs de Claude y Gemini) y, en el navegador, con una cartera inventada. **No se probó con la cartera real, ni con claves, ni contra la SEC** (no responde sin un contacto declarado).
+
+| Etapa | Estado | Qué hace |
+|---|---|---|
+| 1 · Qué seguir | Hecha | `data/seguimiento.json` al sincronizar (sin cantidades ni montos); mapa ticker → CIK; sus subyacentes entran al histórico. |
+| 2 · Calendario | Hecha | Balances, ex dividendo y movimiento de las opciones; eventos fijos con fuente; 14 días en Hoy y 90 en Informes. |
+| 3 · Noticias | Hecha | SEC EDGAR y Google News, sin duplicados, 30 días. BYMA/CNV sin acceso público estable: 6-K. |
+| 4 · Clasificación con IA | Hecha | Haiku, Gemini en cadena o reglas; JSON validado; topes, uso anotado y aviso si no hubo IA. |
+| 5 · Directivos 2.0 | Hecha | Formularios 4 con puntaje de 0 a 100; accionables aparte; fantasmas "radar" automáticas. |
+| 6 · Resumen del sábado | Hecha | Workflow nuevo, Haiku con control de números o plantillas, ntfy y "Desde la última vez". |
+| 7 · Pendientes de la ronda 2 | Hecha | Cupones en la simulación, NFCI, umbrales por percentiles, historial de Allaria, referencias y ratios desde la app. |
+| 8 · Cierre | Hecha | Estas notas y el PR. |
+
+### Decisiones tomadas (para confirmar)
+
+- **Noticias**: los ETF de referencia y de comparación no se buscan en Google News (puro ruido). Los formularios 4 no pasan por la IA. Hasta 40 por empresa.
+- **Proveedor**: Gemini (pedido del dueño, 27/11/2026). También redacta el resumen, con los mismos controles; Claude queda de reserva si hay clave. Usa la forma documentada para pedir JSON (`responseFormat`) y, si un modelo la rechaza, la anterior.
+- **IA**: "falla" es cada intento, así que un modelo que agota sus reintentos queda descartado en esa corrida. Una noticia clasificada por reglas se vuelve a intentar con IA (hasta 3 corridas si el modelo la devuelve mal); lo que clasificó un modelo no se repite.
+- **"Sin IA"**: se avisa si se quiso usar un modelo y ninguno respondió o no hay clave; con `ninguno` no se avisa.
+- **Puntaje de directivos**: calculado solo en el Action, con los pesos del archivo (no se editan desde la app); desde la app se cambia el umbral. Lo que falta suma cero. "Rutinaria" mira las presentaciones del directivo en los tres años.
+- **Señales fantasma**: una por empresa cada 90 días, con la fecha en que la app la ve.
+- **Calendario**: la revisión de MSCI figura como "junio 2027, día a confirmar" (no está publicado).
+- **Resumen**: semáforo y puntaje con los umbrales del archivo público. La alerta de "tope duro" no se guarda en `alertas_semana.json` porque revela cuánto pesa una posición.
+- **Umbrales por percentiles**: 75 y 90 por defecto; es una propuesta, no cambia nada sola.
+- **Workflows**: noticias y señales van en un trabajo aparte para no demorar "Actualizar ahora".
+
+### Para probar con los datos reales (después de mergear)
+
+1. Cargar los secretos `SEC_CONTACTO` (hecho el 27/11) y `GEMINI_API_KEY`. Revisar `ALERTAS_CONFIG`: al 27/11/2026 no estaba cargado, así que no corren las alertas de precio.
+2. Abrir el tablero en el dispositivo con permiso: tiene que aparecer el commit "datos: qué seguir". Revisar que `data/seguimiento.json` tenga tus tickers con el subyacente correcto y nada más.
+3. Correr "Datos de mercado" a mano y mirar los dos trabajos. En ⋯ → Fuentes y fechas, que SEC, noticias, calendario y formularios 4 no digan "sin actualizar". Es la primera vez que se pide `company_tickers.json`, un 6-K y un formulario 4 reales.
+4. Con la clave de Gemini: ver en `data/ia_uso.json` qué modelo respondió ("ok") y sus errores (primera prueba real de la API). Leer 20 noticias en Radar y ver si la materialidad tiene sentido.
+5. Calendario: comparar dos fechas de balance y un movimiento de opciones con el broker.
+6. Radar de directivos: abrir dos formularios y comparar monto, cargo y puntaje; ver que las señales aparezcan como fantasmas "radar".
+7. "Resumen del sábado" → *Run workflow*: que llegue el aviso, que los números coincidan con el tablero y que "Marcar como leído" lo saque de Hoy en todos los dispositivos.
+8. En cron-job.org, sumar la tarea del sábado (guía en ⋯ → Fuentes y fechas).
+9. Pegar el historial real de Allaria y confirmar en qué moneda publica sus rendimientos.
+10. ⋯ → Supuestos → proponer umbrales con la historia real y decidir si se adoptan.
+11. Proyección: ver que la ON desaparezca en su vencimiento y que el rango de YPF cambie.
+12. `tests.html` con la clave (o `node tools/pruebas_node.mjs`).
+
+### Pendiente
+
+- Calibrar los pesos del radar de directivos cuando haya señales fantasma con historia.
+- Serie propia para la ON e historia diaria de cuotapartes hacia atrás.
+- Parte del ahorro que va a la reserva dentro de la simulación.
+- Actualizar solos los retornos esperados y la prima.
+- Hechos relevantes de BYMA/CNV, si aparece un acceso público estable.
+- Eventos fijos: INDEC del 2.º semestre de 2027, día de MSCI y fechas de 2028.
+- Marzo de 2027: horario de BYMA y excepciones de su calendario 2027.
+
+---
+
 ## Ronda 2 · Mirar adelante con rangos (rama `ronda-2`, 26/11/2026)
 
 Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inventados (`js/ejemplo.js`), respuestas grabadas y, en el navegador, con los archivos públicos reales; **no con la cartera real** (no hay clave en el entorno de trabajo).

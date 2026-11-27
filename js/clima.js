@@ -32,6 +32,7 @@ const DEFINICIONES = [
   { id: 'curva', serie: 'T10Y3M', nombre: 'Curva: 10 años contra 3 meses', corto: 'curva de tasas', detalle: 'tasas del Tesoro de EE.UU., en puntos; negativa es "invertida"', texto: v => fmt.num(v, 2), haciaAbajo: true },
   { id: 'vix', serie: 'VIXCLS', nombre: 'VIX', corto: 'VIX', detalle: 'cuánto se espera que se mueva Wall Street en 30 días', texto: v => fmt.num(v, 1) },
   { id: 'spy_promedio', serie: null, nombre: 'SPY contra su promedio de 200 días', corto: 'SPY', detalle: 'arriba o abajo de su promedio de las últimas 200 ruedas', texto: v => fmt.pctSigno(v, 1), haciaAbajo: true },
+  { id: 'condiciones', serie: 'NFCI', nombre: 'Condiciones financieras (NFCI)', corto: 'condiciones financieras', detalle: 'índice de la Fed de Chicago: por encima de cero, el crédito está más duro que lo normal', texto: v => fmt.num(v, 2) },
 ];
 
 // { lectura (la peor) | null, indicadores: [{ id, nombre, corto, detalle, valor, texto, lectura, fecha, viejo, historia, umbrales }] }

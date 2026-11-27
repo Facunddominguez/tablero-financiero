@@ -3,7 +3,9 @@ import { h, poner, fechas, fmt, uid, clon } from './util.js';
 import { db } from './db.js';
 import { derivarClave, descifrar, cifrar } from './cripto.js';
 import { guardarCifrado, leerCifrado, bloqueo } from './seguridad.js';
-import { sincronizar, leerRemoto, repoDeUbicacion, actualizarMercado, leerArchivosMercado, probarActions } from './sync.js';
+import { sincronizar, leerRemoto, repoDeUbicacion, actualizarMercado, leerArchivosMercado, probarActions, publicarSeguimiento } from './sync.js';
+import { seguimiento } from './seguimiento.js';
+import { eventosSenales } from './directivos.js';
 import { aplicarEventos, valuar, snapshotDe } from './estado.js';
 import { planificador } from './motor.js';
 import { vistaHoy } from './ui/hoy.js';
@@ -28,6 +30,7 @@ const S = {
   localManda: false,   // hay un respaldo importado que todavía no se subió
   sync: { fecha: null, ids: new Set(), error: null, enCurso: false },
   precios: { enCurso: null, etapa: null, error: null }, // pedido de precios nuevos a GitHub
+  seguimiento: { error: null }, // lista pública de tickers a seguir
   aviso: null,
 };
 const raiz = document.getElementById('app');
@@ -84,7 +87,27 @@ async function usarMercado(nuevos, { forzar = false } = {}) {
   if (!forzar && nuevos.mercado.generado <= actual) return false;
   S.ext = { ...S.ext, ...Object.fromEntries(Object.entries(nuevos).filter(([, v]) => v)) };
   recalcular(); await guardarSnapshot(); pintar();
+  await registrarSenales();
   return true;
+}
+
+// Las señales de directivos que se ven por primera vez quedan como carteras fantasma, para medirlas contra SPY.
+let anotando = false; // los precios y los datos remotos llegan a la vez: se anota de a una
+async function registrarSenales() {
+  if (!S.estado || S.localManda || anotando) return;
+  const nuevas = eventosSenales(S.estado);
+  if (!nuevas.length) return;
+  anotando = true;
+  try { await ctx.registrar(...nuevas); } finally { anotando = false; }
+}
+
+// Publica la lista de tickers a seguir (data/seguimiento.json). Si falla, no frena nada: se reintenta en la próxima.
+async function publicarLista() {
+  const gh = S.gh;
+  // sin los ratios cargados la lista saldría mal (no se sabría el subyacente de cada CEDEAR): mejor la próxima
+  if (!gh || !S.estado?.ratios || S.localManda) return;
+  try { await publicarSeguimiento(gh, seguimiento(S.estado)); S.seguimiento = { error: null }; }
+  catch (err) { S.seguimiento = { error: err.message }; }
 }
 
 // Con permiso, los precios se leen directo de GitHub: la página publicada tarda unos minutos en reflejar cada actualización.
@@ -110,6 +133,7 @@ const ctx = {
   get estado() { return S.estado; },
   get plan() { return S.plan; },
   get permiso() { return S.gh ? { repo: S.gh.repo } : null; },
+  get errorSeguimiento() { return S.seguimiento.error; },
   get repoSugerido() { return S.gh?.repo || repoDeUbicacion(); },
   // Cambios que solo existen en este dispositivo.
   get pendientes() { const enArchivo = new Set((S.base.eventos || []).map(e => e.id)); return S.eventos.filter(e => !enArchivo.has(e.id) && !S.sync.ids.has(e.id)).length; },
@@ -199,6 +223,7 @@ const ctx = {
       await persistir('sync', { fecha: S.sync.fecha, ids: [...S.sync.ids] });
       if (claveNueva) { await persistir('eventos', S.eventos); await persistir('snapshots', S.snaps); await persistir('github', S.gh); }
       if (r.recibidos > 0) { recalcular(); await guardarSnapshot(); pintar(); } else pintarSync();
+      publicarLista();
       return r;
     } catch (err) {
       S.sync.enCurso = false; S.sync.error = err.message || 'Error inesperado.'; pintarSync();
@@ -308,7 +333,7 @@ async function leerLocal(k, frase) {
 
 let vigilando = false;
 async function cargarTodo(frase) {
-  const publicos = { mercado: 'data/market.json', calendario: 'data/calendario.json', insiders: 'data/insiders.json', historico: 'data/historico.json', ratios: 'tools/cedear_ratios.json', feriados: 'data/feriados_eeuu.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', supuestos: 'data/supuestos.json' };
+  const publicos = { mercado: 'data/market.json', calendario: 'data/calendario.json', insiders: 'data/insiders.json', historico: 'data/historico.json', ratios: 'tools/cedear_ratios.json', feriados: 'data/feriados_eeuu.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', supuestos: 'data/supuestos.json', agenda: 'data/agenda.json', eventosFijos: 'data/eventos.json', noticias: 'data/noticias.json', iaUso: 'data/ia_uso.json', directivos: 'data/directivos.json', resumen: 'data/resumen.json' };
   const ext = Object.fromEntries(await Promise.all(Object.entries(publicos).map(async ([k, url]) => [k, await json(url)])));
   const [eventos, snaps, local, gh, sync] = [await leerLocal('eventos', frase), await leerLocal('snapshots', frase), await leerLocal('base_local', frase), await leerLocal('github', frase), await leerLocal('sync', frase)];
   // Un respaldo importado manda hasta que se suba.
@@ -324,7 +349,9 @@ async function cargarTodo(frase) {
   armarMarco();
   pintar();
   if (!vigilando) { vigilando = true; bloqueo.vigilar(() => bloquear('Se bloqueó por inactividad. Escribí la clave para seguir.')); }
-  refrescarRemoto().then(() => { if (ctx.pendientes) programarSync(); });
+  // Sin cambios por subir, la lista de seguimiento se revisa al abrir; con cambios, después de sincronizar.
+  // Las señales del radar se anotan recién con los datos más nuevos, para no repetir lo que ya anotó otro dispositivo.
+  refrescarRemoto().then(registrarSenales).catch(() => {}).then(() => { if (ctx.pendientes) programarSync(); else publicarLista(); });
   refrescarMercado();
 }
 

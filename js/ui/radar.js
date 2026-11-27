@@ -5,6 +5,8 @@ import { botonFantasma, nuevaPrediccion } from './diario.js';
 import { proyeccion } from '../motor.js';
 import { simular, textoHito } from '../simulacion.js';
 import { tickersPropios } from '../estado.js';
+import { seccionNoticias } from './noticias.js';
+import { seccionDirectivos } from './directivos.js';
 
 // Cuándo se podría abrir una tesis nueva, con rango (misma simulación que Informes → Proyección).
 function cuandoTesis(e) {
@@ -30,11 +32,15 @@ export function vistaRadar(ctx) {
   const filas = (ins.filas || []).slice().sort((a, b) => b.monto - a.monto);
 
   return h('div.vista.radar',
-    h('header.vista-cab', h('h1', 'Radar'), h('p.nota', 'Lo que conviene tener a la vista: qué compran los directivos y tu lista de seguimiento.')),
+    h('header.vista-cab', h('h1', 'Radar'), h('p.nota', 'Lo que conviene tener a la vista: noticias de lo que seguís, qué compran los directivos y tu lista de seguimiento.')),
     ctx.plan.solo_observacion ? aviso('Nuevas tesis bloqueadas por regla R7: solo observación.', 'alerta.fijo') : null,
 
+    seccionNoticias(e),
+
+    seccionDirectivos(ctx),
+
     h('section',
-      h('h2', 'Compras de directivos · últimos 7 días'),
+      h('h2', 'Compras en grupo · filtro de la semana'),
       filas.length ? tabla([
         // Las marcas van debajo del nombre: así se ven en el celular sin deslizar la tabla.
         { titulo: 'Ticker', celda: f => [h('strong.num', f.ticker), h('span.empresa', f.empresa), marcas(f.ticker), botonFantasma(ctx, 'radar', f.ticker)] },

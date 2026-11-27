@@ -3,6 +3,7 @@
 //
 // Cada mes cada cosa se mueve según su retorno esperado y su volatilidad, junto con las demás según su
 // correlación; después entra el aporte al núcleo, primero a lo más atrasado. No se vende nada.
+// Los cupones de las ON que tenés salen de su valor y entran al núcleo ese mes; al vencer, devuelven el capital.
 import { fechas, fmt, suma } from './util.js';
 import { proyeccion } from './motor.js';
 import { itemsDeRiesgo, medida, parametros, valores, historiaRiesgo } from './riesgo.js';
@@ -132,11 +133,27 @@ export function modelo(e) {
     else retorno = s.otros.pesos;
     // el piso de −90% anual solo actúa con volatilidades enormes (más de 140%), donde la regla deja de servir
     const compuesto = tipoRetorno === 'promedio' ? Math.max(-0.9, retorno - vol * vol / 2) : retorno;
-    return { ticker: x.ticker, grupo: x.grupo, usd: x.usd, factor: f, retorno, tipoRetorno, vol, deriva: Math.log(1 + compuesto), beta };
+    return { ticker: x.ticker, tipo: x.tipo, grupo: x.grupo, usd: x.usd, factor: f, retorno, tipoRetorno, vol, deriva: Math.log(1 + compuesto), beta };
   });
   const C = factores.map((a, i) => factores.map((b, j) => i === j ? 1
     : a.larga && b.larga ? correlacion(a.larga, b.larga) : a.corta && b.corta ? correlacion(a.corta, b.corta) : 0));
-  return { items, factores, correlaciones: C, A: raizCorrelacion(C), supuestos: s };
+  return { items, factores, correlaciones: C, A: raizCorrelacion(C), supuestos: s, pagos: pagosDeBonos(e, items) };
+}
+
+// Lo que van a pagar las ON que tenés, según el calendario: [{ i, mes, usd, fin }]. mes = meses desde hoy;
+// fin = devolución del capital (después de eso la posición no está más).
+export function pagosDeBonos(e, items) {
+  const out = [];
+  items.forEach((x, i) => {
+    if (x.tipo !== 'on') return;
+    const cantidad = e.posiciones.filter(p => p.ticker === x.ticker).reduce((a, p) => a + p.cantidad, 0);
+    for (const f of e.calendario?.flujos || []) {
+      if (f.ticker !== x.ticker || !(f.fecha > e.hoy) || !(f.por_vn > 0) || !cantidad) continue;
+      out.push({ i, ticker: x.ticker, fecha: f.fecha, mes: Math.max(1, mesesHasta(e.hoy, f.fecha)), usd: f.por_vn * cantidad, fin: f.tipo === 'amortizacion' });
+    }
+  });
+  // en un mismo mes, primero el cupón y después la devolución
+  return out.sort((a, b) => a.mes - b.mes || a.fin - b.fin);
 }
 
 // ---------- objetivos con fecha ----------
@@ -186,6 +203,8 @@ function correr(e, N, semilla, H) {
   const grupo = items.map(x => x.grupo), factor = items.map(x => x.factor);
   const nucleoI = items.map((x, i) => x.grupo === 'nucleo' && pesos[x.ticker] != null ? i : -1).filter(i => i >= 0);
   const reglas = metas(e);
+  const pagos = new Map();
+  for (const p of m.pagos) pagos.set(p.mes, [...(pagos.get(p.mes) || []), p]);
 
   const objetivos = objetivosConFecha(e).map(o => ({ ...o, meses: mesesHasta(e.hoy, o.fecha) }));
   const enCartera = objetivos.filter(o => o.contra === 'patrimonio' && o.meses >= 0 && o.meses <= H);
@@ -218,12 +237,15 @@ function correr(e, N, semilla, H) {
         for (let f = 0; f < nF; f++) z[f] = normal();
         for (let f = 0; f < nF; f++) { let a = 0; const fila = A[f]; for (let j = 0; j < nF; j++) a += fila[j] * z[j]; y[f] = a; }
         for (let i = 0; i < nI; i++) v[i] *= Math.exp(mensual[i] + desvio[i] * y[factor[i]]);
-        // el aporte va al núcleo, primero a lo más lejos de su peso
-        let enNucleo = aporte;
+        let entra = aporte;
+        const cobros = pagos.get(k);
+        if (cobros) for (const p of cobros) { v[p.i] = p.fin ? 0 : Math.max(0, v[p.i] - p.usd); entra += p.usd; }
+        // el aporte (y lo cobrado) va al núcleo, primero a lo más lejos de su peso
+        let enNucleo = entra;
         for (const i of nucleoI) enNucleo += v[i];
         let total = 0;
         for (const i of nucleoI) { deficit[i] = Math.max(0, pesos[items[i].ticker] * enNucleo - v[i]); total += deficit[i]; }
-        for (const i of nucleoI) v[i] += total > 0 ? aporte * deficit[i] / total : aporte * pesos[items[i].ticker];
+        for (const i of nucleoI) v[i] += total > 0 ? entra * deficit[i] / total : entra * pesos[items[i].ticker];
       }
       const t = medir();
       for (let r = 0; r < reglas.length; r++) if (primera[r][c] === Infinity && reglas[r].ok(t.n, t.s, t.ypf, t.lp)) { primera[r][c] = k; faltan--; }

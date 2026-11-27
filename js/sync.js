@@ -17,6 +17,7 @@ export function repoDeUbicacion(loc = globalThis.location) {
 
 const cabeceras = token => ({ Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(token ? { Authorization: `Bearer ${token}` } : {}) });
 const deB64 = s => { const bin = atob(s.replace(/\s/g, '')); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); };
+const aB64 = s => { let bin = ''; for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b); return btoa(bin); };
 
 async function pedir(fetchFn, url, opciones) {
   try { return await fetchFn(url, opciones); }
@@ -76,6 +77,33 @@ export async function sincronizar({ gh, local, localManda, abrir, cerrar }, fetc
   throw ultimo;
 }
 
+// ---------- Qué seguir ----------
+// Publica la lista de tickers (sin cantidades ni montos) para que el Action busque noticias y fechas.
+// Solo escribe si cambió. Devuelve 'igual' o 'subido'.
+export const RUTA_SEGUIMIENTO = 'data/seguimiento.json';
+export async function publicarSeguimiento({ repo, token, rama = 'main' }, lista, fetchFn = fetch) {
+  const url = `${API}/repos/${repo}/contents/${RUTA_SEGUIMIENTO}`;
+  const texto = JSON.stringify(lista) + '\n';
+  for (let intento = 0; intento < 2; intento++) {
+    const r = await pedir(fetchFn, `${url}?ref=${rama}`, { headers: cabeceras(token), cache: 'no-store' });
+    let sha;
+    if (r.ok) {
+      const j = await r.json();
+      sha = j.sha;
+      let actual = null;
+      try { actual = JSON.parse(deB64(j.content)); } catch { /* archivo ilegible: se pisa */ }
+      if (actual && ['nota', 'tickers', 'series'].every(k => JSON.stringify(actual[k]) === JSON.stringify(lista[k]))) return 'igual';
+    } else if (r.status !== 404) throw new ErrorSync('otro', `GitHub respondió ${r.status} al leer la lista de seguimiento.`);
+    const p = await pedir(fetchFn, url, {
+      method: 'PUT', headers: cabeceras(token),
+      body: JSON.stringify({ message: 'datos: qué seguir', content: aB64(texto), branch: rama, ...(sha ? { sha } : {}) }),
+    });
+    if (p.ok) return 'subido';
+    if (p.status !== 409 && p.status !== 422) throw new ErrorSync('otro', `GitHub respondió ${p.status} al guardar la lista de seguimiento.`);
+  }
+  throw new ErrorSync('conflicto', 'No se pudo guardar la lista de seguimiento: otro dispositivo la estaba escribiendo.');
+}
+
 // Enlace a GitHub con el permiso ya precargado (falta elegir el repositorio, que GitHub no deja precargar).
 // "Actions" sirve para pedir precios nuevos desde la app.
 export function enlacePermiso() {
@@ -93,11 +121,12 @@ export const LISTA_PERMISOS = 'https://github.com/settings/personal-access-token
 // ---------- Actualizar precios a pedido ----------
 // GitHub atrasa o saltea las corridas programadas; desde la app se puede lanzar una y esperar el resultado.
 export const WORKFLOW = 'mercado.yml';
-const ARCHIVOS_MERCADO = { mercado: 'data/market.json', insiders: 'data/insiders.json', historico: 'data/historico.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json' };
+export const WORKFLOW_RESUMEN = 'resumen.yml';
+const ARCHIVOS_MERCADO = { mercado: 'data/market.json', insiders: 'data/insiders.json', historico: 'data/historico.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', agenda: 'data/agenda.json', noticias: 'data/noticias.json', iaUso: 'data/ia_uso.json', directivos: 'data/directivos.json', resumen: 'data/resumen.json' };
 const SIN_ACTIONS = 'El permiso guardado en este dispositivo no deja pedir precios. Si generaste un permiso nuevo, hay que pegarlo acá (⋯ → Sincronizar → Cambiar el permiso). Si editaste el que ya tenías, revisá que en "Repository permissions" diga "Actions: Read and write" y que lo hayas guardado con "Update".';
 
 // Dirección y cuerpo de la llamada que lanza la actualización (los usa también la guía del cron externo).
-export const urlDisparo = repo => `${API}/repos/${repo}/actions/workflows/${WORKFLOW}/dispatches`;
+export const urlDisparo = (repo, workflow = WORKFLOW) => `${API}/repos/${repo}/actions/workflows/${workflow}/dispatches`;
 export const cuerpoDisparo = (origen, rama = 'main') => JSON.stringify({ ref: rama, inputs: { origen } });
 
 // Lo que GitHub dice del error, para mostrarlo tal cual (ayuda a saber si es el permiso u otra cosa).

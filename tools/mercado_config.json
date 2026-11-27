@@ -12,5 +12,20 @@
     "polymarket_slug": "argentina-presidential-election-winner",
     "polymarket_activado": true
   },
+  "ia": {
+    "proveedor": "gemini",
+    "modelo_haiku": "claude-haiku-5-5",
+    "modelos_gemini": ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash"],
+    "timeout_s": 30,
+    "tiempo_maximo_s": 150,
+    "reintentos": 2,
+    "lote": 10,
+    "max_noticias": 60,
+    "max_tokens": 60000
+  },
+  "noticias": {
+    "nombres": {"YPF": "YPF", "PAM": "Pampa Energía", "MELI": "Mercado Libre", "GOOGL": "Google Alphabet", "BRK.B": "Berkshire Hathaway", "TGS": "Transportadora de Gas del Sur", "TEO": "Telecom Argentina", "GGAL": "Grupo Galicia"},
+    "sin_google": ["SPY", "EFA", "EEM", "IWM", "SMH", "ARGT"]
+  },
   "insiders_url": "http://openinsider.com/screener?s=&o=&pl=5&ph=&ll=&lh=&fd=7&fdr=&td=0&tdr=&fdlyl=&fdlyh=&daysago=&xp=1&vl=&vh=&ocl=&och=&sic1=-1&sicl=100&sich=9999&isofficer=1&iscob=1&isceo=1&ispres=1&iscoo=1&iscfo=1&isgc=1&isvp=1&isdirector=1&grp=2&nfl=&nfh=&nil=3&nih=&nol=&noh=&v2l=400&v2h=&oc2l=&oc2h=&sortcol=0&cnt=100&page=1"
 }

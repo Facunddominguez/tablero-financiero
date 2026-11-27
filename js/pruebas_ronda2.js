@@ -174,7 +174,8 @@ function etapa3() {
 
     ['Proyección con volatilidad cero: la mediana coincide con la proyección de hoy', async () => {
       for (const ingreso of [700, 1000, 1800]) {
-        const { e } = mundo({ ajustar: x => { x.datos.supuestos = QUIETO; x.datos.perfil.ingreso_mensual_usd = ingreso; } });
+        // la proyección "si los precios no cambian" no cuenta los pagos de la ON: acá se sacan para comparar
+        const { e } = mundo({ ajustar: x => { x.datos.supuestos = QUIETO; x.datos.perfil.ingreso_mensual_usd = ingreso; x.ext.calendario = { flujos: [] }; } });
         const sim = simular(e, { escenarios: 50 }), pr = proyeccion(e);
         for (const id of ['nucleo', 'satelites', 'ypf']) {
           const h = sim.hitos[id];
@@ -186,7 +187,7 @@ function etapa3() {
     }],
 
     ['Proyección sin volatilidad: cada cosa crece a su retorno anual', async () => {
-      const { e } = mundo({ ajustar: x => { x.datos.supuestos = { escala_volatilidad: 0 }; x.datos.perfil.ingreso_mensual_usd = 500; } });
+      const { e } = mundo({ ajustar: x => { x.datos.supuestos = { escala_volatilidad: 0 }; x.datos.perfil.ingreso_mensual_usd = 500; x.ext.calendario = { flujos: [] }; } });
       const sim = simular(e, { escenarios: 5 }), m = sim.modelo;
       si(sim.aporte === 0, 'sin aporte');
       const esperado = anios => m.items.reduce((s, x) => s + x.usd * Math.pow(1 + x.retorno, anios), 0);
@@ -430,10 +431,10 @@ function etapa5() {
     },
   }).e;
   return [
-    ['Clima de mercado: los cuatro indicadores, con su lectura en palabras y su historia', async () => {
+    ['Clima de mercado: los cinco indicadores, con su lectura en palabras y su historia', async () => {
       const { e } = mundo({ ajustar: x => { const s = x.ext.clima.series; s.BAMLH0A0HYM2.ultimo.valor = 4.5; s.T10Y3M.ultimo.valor = -0.1; s.VIXCLS.ultimo.valor = 15; } });
       const c = climaMercado(e), i = Object.fromEntries(c.indicadores.map(x => [x.id, x]));
-      igual(c.indicadores.map(x => x.id), ['alto_rendimiento', 'curva', 'vix', 'spy_promedio'], 'los cuatro');
+      igual(c.indicadores.map(x => x.id), ['alto_rendimiento', 'curva', 'vix', 'spy_promedio', 'condiciones'], 'los cinco');
       igual([i.alto_rendimiento.lectura, i.curva.lectura, i.vix.lectura], ['atento', 'tenso', 'tranquilo'], 'lecturas');
       si(c.lectura === 'tenso' && /bonos de riesgo atento \(4,50\) · curva de tasas tenso \(−0,10\) · VIX tranquilo \(15,0\)/.test(textoClima(c)), textoClima(c));
       si(c.indicadores.every(x => x.historia.fechas.length > 10 && x.historia.fechas.length === x.historia.valores.length), 'historia');

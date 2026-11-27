@@ -1,0 +1,12 @@
+{
+  "id": "msg_01GrabadaClasificacion",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    {"type": "thinking", "thinking": "", "signature": "firma-de-prueba"},
+    {"type": "text", "text": "{\"noticias\":[{\"id\":\"n1\",\"materialidad\":3,\"categoria\":\"fusión o venta\",\"recomendacion\":\"ninguna\",\"linea\":\"YPF informó la venta de un activo no estratégico.\"},{\"id\":\"n2\",\"materialidad\":2,\"categoria\":\"resultados\",\"recomendacion\":\"ninguna\",\"linea\":\"NVDA presentó resultados con ingresos 99% arriba.\"}]}"}
+  ],
+  "stop_reason": "end_turn",
+  "usage": {"input_tokens": 812, "output_tokens": 154}
+}

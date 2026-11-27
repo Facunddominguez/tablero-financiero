@@ -16,6 +16,8 @@ import sys
 import time
 import urllib.request
 
+import senales
+
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 DATA = RAIZ / "data"
 CFG = json.loads((RAIZ / "tools" / "mercado_config.json").read_text(encoding="utf-8"))
@@ -30,11 +32,11 @@ def ahora():
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def bajar_bytes(url, intentos=3, espera=4, timeout=30):
+def bajar_bytes(url, intentos=3, espera=4, timeout=30, cabeceras=None):
     ultimo = None
     for i in range(intentos):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*", **(cabeceras or {})})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
         except Exception as e:  # noqa: BLE001
@@ -176,7 +178,7 @@ def cpi_usa():
 def yahoo(ticker, desde):
     """Cierres diarios (cierre, cierre ajustado) con yfinance."""
     import yfinance as yf  # se importa acá para que el resto funcione aunque no esté instalado
-    h = yf.Ticker(ticker).history(start=desde, interval="1d", auto_adjust=False)
+    h = yf.Ticker(ticker.replace(".", "-")).history(start=desde, interval="1d", auto_adjust=False)
     out = {}
     for fecha, fila in h.iterrows():
         c, a = fila.get("Close"), fila.get("Adj Close")
@@ -188,8 +190,9 @@ def yahoo(ticker, desde):
     return out
 
 
-def usd_e_historico(hist_anterior):
-    """Cierres en USD de los ETF de referencia y, solo para el histórico, de lo que tenés (historico_extra).
+def usd_e_historico(hist_anterior, seguidos=()):
+    """Cierres en USD de los ETF de referencia y, solo para el histórico, de lo que tenés: historico_extra y los
+    subyacentes de data/seguimiento.json (cartera, watchlist y fantasmas).
 
     Devuelve (sección usd de market, historico). Las fechas salen de los ETF de referencia; si un ticker
     extra falla o le falta algún día, queda con lo anterior o con null, sin frenar al resto.
@@ -199,7 +202,8 @@ def usd_e_historico(hist_anterior):
     for t, s in series.items():
         fechas = sorted(s)
         usd[t] = {"c": s[fechas[-1]][0], "prev": s[fechas[-2]][0], "fecha": fechas[-1]}
-    extras = [t for t in CFG.get("historico_extra", []) if t not in CFG["usd_tickers"]]
+    extras = [t for t in dict.fromkeys(list(CFG.get("historico_extra", [])) + list(seguidos))
+              if t not in CFG["usd_tickers"] and t not in ("MEP", "CCL")]
     for t in extras:
         try:
             series[t] = yahoo(t, CFG["historico_desde"])
@@ -549,7 +553,8 @@ def main():
 
     hist = h_prev
     try:
-        usd, hist = usd_e_historico(h_prev)
+        propio = sys.modules[__name__]
+        usd, hist = usd_e_historico(h_prev, senales.subyacentes(senales.leer_seguimiento(propio)) + senales.series_extra(propio))
         usd.update(stale=False, actualizado=ahora())
         hist.update(stale=False, actualizado=ahora())
         print("ok   usd + historico")
