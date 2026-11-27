@@ -17,6 +17,7 @@ export function repoDeUbicacion(loc = globalThis.location) {
 
 const cabeceras = token => ({ Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(token ? { Authorization: `Bearer ${token}` } : {}) });
 const deB64 = s => { const bin = atob(s.replace(/\s/g, '')); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); };
+const aB64 = s => { let bin = ''; for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b); return btoa(bin); };
 
 async function pedir(fetchFn, url, opciones) {
   try { return await fetchFn(url, opciones); }
@@ -74,6 +75,33 @@ export async function sincronizar({ gh, local, localManda, abrir, cerrar }, fetc
     } catch (err) { if (err.codigo !== 'conflicto') throw err; ultimo = err; }
   }
   throw ultimo;
+}
+
+// ---------- Qué seguir ----------
+// Publica la lista de tickers (sin cantidades ni montos) para que el Action busque noticias y fechas.
+// Solo escribe si cambió. Devuelve 'igual' o 'subido'.
+export const RUTA_SEGUIMIENTO = 'data/seguimiento.json';
+export async function publicarSeguimiento({ repo, token, rama = 'main' }, lista, fetchFn = fetch) {
+  const url = `${API}/repos/${repo}/contents/${RUTA_SEGUIMIENTO}`;
+  const texto = JSON.stringify(lista) + '\n';
+  for (let intento = 0; intento < 2; intento++) {
+    const r = await pedir(fetchFn, `${url}?ref=${rama}`, { headers: cabeceras(token), cache: 'no-store' });
+    let sha;
+    if (r.ok) {
+      const j = await r.json();
+      sha = j.sha;
+      let actual = null;
+      try { actual = JSON.parse(deB64(j.content)); } catch { /* archivo ilegible: se pisa */ }
+      if (actual && JSON.stringify(actual.tickers) === JSON.stringify(lista.tickers) && actual.nota === lista.nota) return 'igual';
+    } else if (r.status !== 404) throw new ErrorSync('otro', `GitHub respondió ${r.status} al leer la lista de seguimiento.`);
+    const p = await pedir(fetchFn, url, {
+      method: 'PUT', headers: cabeceras(token),
+      body: JSON.stringify({ message: 'datos: qué seguir', content: aB64(texto), branch: rama, ...(sha ? { sha } : {}) }),
+    });
+    if (p.ok) return 'subido';
+    if (p.status !== 409 && p.status !== 422) throw new ErrorSync('otro', `GitHub respondió ${p.status} al guardar la lista de seguimiento.`);
+  }
+  throw new ErrorSync('conflicto', 'No se pudo guardar la lista de seguimiento: otro dispositivo la estaba escribiendo.');
 }
 
 // Enlace a GitHub con el permiso ya precargado (falta elegir el repositorio, que GitHub no deja precargar).

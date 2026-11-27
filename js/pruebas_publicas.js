@@ -13,6 +13,7 @@ import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, histor
 import { proximosFlujos } from './motor.js';
 import { derivarClave, cifrar, descifrar, esSobreCifrado } from './cripto.js';
 import { pruebasRonda2 } from './pruebas_ronda2.js';
+import { pruebasRonda3 } from './pruebas_ronda3.js';
 
 const cerca = (a, b, tol, que) => { if (!(Math.abs(a - b) <= tol)) throw new Error(`${que}: dio ${a}, esperado ≈ ${b}`); };
 
@@ -659,5 +660,6 @@ export function pruebasPublicas() {
       if (abrio) throw new Error('abrió con otra clave');
     }],
     ...pruebasRonda2(),
+    ...pruebasRonda3(),
   ];
 }

@@ -3,7 +3,8 @@ import { h, poner, fechas, fmt, uid, clon } from './util.js';
 import { db } from './db.js';
 import { derivarClave, descifrar, cifrar } from './cripto.js';
 import { guardarCifrado, leerCifrado, bloqueo } from './seguridad.js';
-import { sincronizar, leerRemoto, repoDeUbicacion, actualizarMercado, leerArchivosMercado, probarActions } from './sync.js';
+import { sincronizar, leerRemoto, repoDeUbicacion, actualizarMercado, leerArchivosMercado, probarActions, publicarSeguimiento } from './sync.js';
+import { seguimiento } from './seguimiento.js';
 import { aplicarEventos, valuar, snapshotDe } from './estado.js';
 import { planificador } from './motor.js';
 import { vistaHoy } from './ui/hoy.js';
@@ -28,6 +29,7 @@ const S = {
   localManda: false,   // hay un respaldo importado que todavía no se subió
   sync: { fecha: null, ids: new Set(), error: null, enCurso: false },
   precios: { enCurso: null, etapa: null, error: null }, // pedido de precios nuevos a GitHub
+  seguimiento: { error: null }, // lista pública de tickers a seguir
   aviso: null,
 };
 const raiz = document.getElementById('app');
@@ -85,6 +87,14 @@ async function usarMercado(nuevos, { forzar = false } = {}) {
   S.ext = { ...S.ext, ...Object.fromEntries(Object.entries(nuevos).filter(([, v]) => v)) };
   recalcular(); await guardarSnapshot(); pintar();
   return true;
+}
+
+// Publica la lista de tickers a seguir (data/seguimiento.json). Si falla, no frena nada: se reintenta en la próxima.
+async function publicarLista() {
+  const gh = S.gh;
+  if (!gh || !S.estado || S.localManda) return;
+  try { await publicarSeguimiento(gh, seguimiento(S.estado)); S.seguimiento = { error: null }; }
+  catch (err) { S.seguimiento = { error: err.message }; }
 }
 
 // Con permiso, los precios se leen directo de GitHub: la página publicada tarda unos minutos en reflejar cada actualización.
@@ -199,6 +209,7 @@ const ctx = {
       await persistir('sync', { fecha: S.sync.fecha, ids: [...S.sync.ids] });
       if (claveNueva) { await persistir('eventos', S.eventos); await persistir('snapshots', S.snaps); await persistir('github', S.gh); }
       if (r.recibidos > 0) { recalcular(); await guardarSnapshot(); pintar(); } else pintarSync();
+      publicarLista();
       return r;
     } catch (err) {
       S.sync.enCurso = false; S.sync.error = err.message || 'Error inesperado.'; pintarSync();
@@ -324,7 +335,8 @@ async function cargarTodo(frase) {
   armarMarco();
   pintar();
   if (!vigilando) { vigilando = true; bloqueo.vigilar(() => bloquear('Se bloqueó por inactividad. Escribí la clave para seguir.')); }
-  refrescarRemoto().then(() => { if (ctx.pendientes) programarSync(); });
+  // Sin cambios por subir, la lista de seguimiento se revisa al abrir; con cambios, después de sincronizar.
+  refrescarRemoto().then(() => { if (ctx.pendientes) programarSync(); else publicarLista(); });
   refrescarMercado();
 }
 

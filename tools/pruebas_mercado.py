@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import contexto  # noqa: E402
 import mercado  # noqa: E402
+import pruebas_senales  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")  # en Windows la consola no siempre es UTF-8
 
@@ -562,6 +563,8 @@ prueba("Histórico: los tickers extra que fallan o tienen huecos no frenan a los
 prueba("IPC de EE.UU.: lee el CSV de FRED, saltea meses sin dato y respeta la fecha de inicio", cpi_csv)
 prueba("IPC de EE.UU.: una respuesta vacía cuenta como falla", cpi_vacio)
 prueba("Si una fuente falla se conserva el dato anterior marcado como viejo", seccion_conserva)
+for nombre, fn in pruebas_senales.PRUEBAS:
+    prueba(nombre, fn)
 
 for nombre, ok, det in res:
     print(("ok    " if ok else "FALLA ") + nombre + (f" — {det}" if det else ""))

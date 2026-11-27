@@ -24,7 +24,7 @@ concurrency:
 jobs:
   actualizar:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       # Si llegan la programada de GitHub y la del cron externo, la segunda no repite el trabajo.
@@ -65,13 +65,17 @@ jobs:
         env:
           ALERTAS_CONFIG: ${{ secrets.ALERTAS_CONFIG }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          # Pedido desde la app: solo precios (las noticias y señales tardan más y no hace falta repetirlas).
+          ORIGEN: ${{ github.event_name == 'schedule' && 'schedule' || inputs.origen || 'manual' }}
+          # Si falta alguno de estos, esa parte se saltea con un aviso.
+          SEC_CONTACTO: ${{ secrets.SEC_CONTACTO }}
       - name: Guardar si cambió algo
         if: steps.chequeo.outputs.correr == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # solo lo que escribe este Action (nunca el archivo cifrado); lo que todavía no existe se saltea
-          for f in market insiders historico alertas_estado feriados_ar argentina clima largo_plazo; do
+          for f in market insiders historico alertas_estado feriados_ar argentina clima largo_plazo sec_cik; do
             if [ -f "data/$f.json" ]; then git add "data/$f.json"; fi
           done
           if git diff --cached --quiet; then
