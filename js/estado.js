@@ -271,6 +271,8 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     argentina: ext.argentina || null, clima: ext.clima || null, largo_plazo: ext.largoPlazo || null, supuestos: ext.supuestos || null,
     // balances y dividendos de lo que seguís, y eventos con fecha fija
     agenda: ext.agenda || null, eventos_fijos: ext.eventosFijos || null,
+    // noticias de lo que seguís (SEC y Google News), con su clasificación
+    noticias: ext.noticias || null,
     // calendario de mercado: EE.UU. y BYMA, más los feriados argentinos que guarda el Action
     feriados: ext.feriados || ext.feriadosAr ? { ...ext.feriados, argentina: ext.feriadosAr || null } : null,
   };

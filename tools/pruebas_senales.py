@@ -11,6 +11,7 @@ import tempfile
 
 import calendario
 import mercado
+import noticias
 import sec
 import senales
 
@@ -229,7 +230,134 @@ def agenda_sin_tiempo():
     assert not pedidos and r["empresas"] == previo["empresas"], r
 
 
+# ---------- etapa 3 · noticias ----------
+ENVIOS = json.loads(grabada("sec_envios_nvda.json"))
+RSS = grabada("google_news_nvda.xml")
+ENVIOS_YPF = {"filings": {"recent": {
+    "accessionNumber": ["0000904851-26-000050", "0000904851-26-000049"], "filingDate": ["2026-11-20", "2026-09-01"], "form": ["6-K", "6-K"],
+    "acceptanceDateTime": ["2026-11-20T21:00:00.000Z", "2026-09-01T21:00:00.000Z"], "reportDate": ["", ""], "items": ["", ""],
+    "primaryDocument": ["ypf6k.htm", "viejo.htm"], "primaryDocDescription": ["6-K", "6-K"]}}}
+CIK = {"mapa": {"NVDA": {"cik": 1045810, "nombre": "NVIDIA CORP"}, "YPF": {"cik": 904851, "nombre": "YPF SOCIEDAD ANONIMA"}}, "sin_cik": []}
+
+
+def red_noticias(cambios=None, pedidos=None):
+    mapa = {"CIK0001045810.json": json.dumps(ENVIOS), "CIK0000904851.json": json.dumps(ENVIOS_YPF),
+            "ypf6k.htm": grabada("sec_6k_formato.htm"), "news.google.com/rss": RSS}
+    mapa.update(cambios or {})
+    return red(mapa, pedidos)
+
+
+def con_noticias(fn, hoy="2026-11-27", **archivos):
+    cfg = dict(mercado.CFG, noticias={"nombres": {"YPF": "YPF"}, "sin_google": ["SPY"]})
+    with datos_temporales(sec_cik=CIK, **archivos), parches(
+            (mercado, "hoy_argentina", lambda: hoy), (mercado, "CFG", cfg), SIN_ESPERA, (noticias, "_dormir", lambda s: None)):
+        return fn()
+
+
+def envios_de_la_sec():
+    l = noticias.desde_envios(ENVIOS, "NVDA", 1045810, "2026-10-28")
+    ocho = [x for x in l if x["forma"] == "8-K"]
+    assert [x["items"] for x in ocho] == [["5.02", "9.01"], ["2.02", "9.01"], ["5.02", "9.01"]], ocho
+    assert ocho[0]["titulo"] == "8-K de NVDA: cambios de directivos o directores", ocho[0]["titulo"]
+    assert ocho[1]["titulo"] == "8-K de NVDA: resultados"
+    assert ocho[0]["url"].startswith("https://www.sec.gov/Archives/edgar/data/1045810/000104581026000090/") and ocho[0]["id"].startswith("sec-")
+    cuatro = [x for x in l if x["forma"] == "4"]
+    assert cuatro and all(x["cantidad"] >= 1 and x["id"].startswith("sec-4-NVDA-") for x in cuatro), cuatro
+    assert not [x for x in l if x["forma"] == "144"], "solo los formularios pedidos"
+    assert noticias.desde_envios(ENVIOS, "NVDA", 1045810, "2027-01-01") == []
+    assert noticias.titulo_sec("10-Q", "NVDA", [], "2026-10-25", "10-Q") == "10-Q de NVDA: informe trimestral al 25/10"
+    try:
+        noticias.desde_envios({"filings": {}}, "X", 1, "2026-01-01")
+    except RuntimeError:
+        return
+    raise AssertionError("una respuesta rota no falló")
+
+
+def extracto_del_6k():
+    t = noticias.extracto_de(grabada("sec_6k_formato.htm"))
+    assert t.startswith("City of Buenos Aires, November 20, 2026. Relevant Fact."), t
+    assert "Commission File" not in t and "venta de un activo" in t and len(t) <= 600, t
+
+
+def rss_de_google():
+    l = noticias.desde_rss(RSS, "NVDA", "en", "2026-11-01")
+    assert len(l) == 6 and l[0]["fecha"] >= l[-1]["fecha"], "las más nuevas primero"
+    x = next(y for y in l if y["medio"] == "CNBC")
+    assert x["titulo"].endswith("2008 financial crisis") and "- CNBC" not in x["titulo"] and x["url"].startswith("https://news.google.com/"), x
+    assert len(noticias.desde_rss(RSS, "NVDA", "en", "2026-11-01", maximo=2)) == 2
+    ruido = RSS.replace("</channel>", "<item><title>Precio de acciones, noticias, cotización e historial de NVDA Nov 2026 150.000 put (NVDA261125P00150000) - Yahoo</title>"
+                        "<link>https://news.google.com/x</link><pubDate>Thu, 26 Nov 2026 10:00:00 GMT</pubDate></item></channel>")
+    assert len(noticias.desde_rss(ruido, "NVDA", "es", "2026-11-01")) == 6, "las páginas de cotización no son noticias"
+    assert noticias.desde_rss(RSS, "NVDA", "en", "2026-11-24") and all(y["fecha"] >= "2026-11-24" for y in noticias.desde_rss(RSS, "NVDA", "en", "2026-11-24"))
+
+
+def sin_duplicados_y_con_tope():
+    def n(i, fecha, titulo, fuente="Google News", t="AAA", **mas):
+        return dict({"id": i, "t": t, "fecha": fecha, "titulo": titulo, "fuente": fuente}, **mas)
+    previas = [n("a", "2026-11-20T10:00:00Z", "Gran noticia: AAA sube", materialidad=3), n("v", "2026-10-01T10:00:00Z", "Vieja"),
+               n("s", "2026-11-19", "Formulario 4: una", "SEC", cantidad=1, materialidad=1)]
+    nuevas = [n("a", "2026-11-20T10:00:00Z", "Gran noticia: AAA sube"), n("b", "2026-11-21T10:00:00Z", "GRAN NOTICIA, AAA SUBE!"),
+              n("c", "2026-11-22T10:00:00Z", "Otra cosa"), n("d", "2026-11-22T10:00:00Z", "Gran noticia: AAA sube", t="BBB"),
+              n("s", "2026-11-19", "Formulario 4: dos", "SEC", cantidad=2)]
+    r = noticias.fusionar(previas, nuevas, "2026-11-27")
+    assert sorted(x["id"] for x in r) == ["a", "c", "d", "s"], r
+    assert next(x for x in r if x["id"] == "a")["materialidad"] == 3, "la clasificación se conserva"
+    s = next(x for x in r if x["id"] == "s")
+    assert s["titulo"] == "Formulario 4: dos" and s["materialidad"] == 1
+    muchas = [n(f"m{i}", f"2026-11-{1 + i % 26:02d}T10:00:00Z", f"Nota {i}") for i in range(90)]
+    r = noticias.fusionar([n("clave", "2026-10-29T10:00:00Z", "Importante", materialidad=3)], muchas, "2026-11-27")
+    assert len(r) == noticias.MAXIMO_POR_TICKER and any(x["id"] == "clave" for x in r), "con el tope quedan las importantes"
+
+
+def noticias_completas():
+    pedidos = []
+
+    def probar():
+        r = noticias.correr(mercado, ["NVDA", "YPF", "SPY"])
+        assert not r["fuentes"]["sec"]["stale"] and not r["fuentes"]["google"]["stale"], r["fuentes"]
+        assert r["fuentes"]["byma"]["disponible"] is False
+        seis = [x for x in r["items"] if x.get("forma") == "6-K"]
+        assert len(seis) == 1 and "venta de un activo" in seis[0]["extracto"], seis
+        google_items = [x for x in r["items"] if x["fuente"] == "Google News"]
+        assert {x["t"] for x in google_items} == {"NVDA", "YPF"} and len(google_items) == 12, "sin repetir entre idiomas; SPY no se busca"
+        assert not [u for u, _ in pedidos if "google" in u and "SPY" in u]
+        assert all("example.com" not in str(c) for u, c in pedidos if "sec.gov" not in u), "el contacto solo va a la SEC"
+        assert all(c.get("User-Agent") == "Prueba prueba@example.com" for u, c in pedidos if "sec.gov" in u)
+        google = [u for u, _ in pedidos if "google" in u]
+        assert any("gl=AR" in u for u in google) and any("gl=US" in u and "stock" in u for u in google), google
+        antes = len([u for u, _ in pedidos if u.endswith("ypf6k.htm")])
+        noticias.correr(mercado, ["NVDA", "YPF", "SPY"])
+        assert len([u for u, _ in pedidos if u.endswith("ypf6k.htm")]) == antes == 1, "el 6-K no se vuelve a abrir"
+        # si se cae todo, se conserva lo anterior marcado como viejo
+        caida = RuntimeError("503")
+        mercado.bajar = red_noticias({"CIK0001045810.json": caida, "CIK0000904851.json": caida, "news.google.com/rss": caida})
+        s = noticias.correr(mercado, ["NVDA", "YPF", "SPY"])
+        assert s["fuentes"]["sec"]["stale"] and s["fuentes"]["google"]["stale"] and len(s["items"]) == len(r["items"]), s["fuentes"]
+        assert s["fuentes"]["google"]["actualizado"]
+    with entorno(SEC_CONTACTO="Prueba prueba@example.com"), parches((mercado, "bajar", red_noticias(pedidos=pedidos))):
+        con_noticias(probar)
+
+
+def noticias_sin_contacto():
+    pedidos = []
+    previa = {"items": [{"id": "sec-x", "t": "NVDA", "fecha": "2026-11-20", "fuente": "SEC", "titulo": "8-K"}]}
+
+    def probar():
+        r = noticias.correr(mercado, ["NVDA"])
+        assert r["fuentes"]["sec"]["stale"] and "SEC_CONTACTO" in r["fuentes"]["sec"]["aviso"], r["fuentes"]
+        assert any(x["id"] == "sec-x" for x in r["items"]) and any(x["fuente"] == "Google News" for x in r["items"])
+        assert not [u for u, _ in pedidos if "sec.gov" in u]
+    with entorno(SEC_CONTACTO=None), parches((mercado, "bajar", red_noticias(pedidos=pedidos))):
+        con_noticias(probar, noticias=previa)
+
+
 PRUEBAS = [
+    ("Noticias SEC: 8-K con sus ítems, formulario 4 agrupado y solo lo pedido", envios_de_la_sec),
+    ("Noticias SEC: del 6-K se saca de qué trata, sin la carátula", extracto_del_6k),
+    ("Noticias Google: titular sin el medio, fecha y tope por búsqueda", rss_de_google),
+    ("Noticias: sin duplicados, 30 días, tope por empresa y clasificación conservada", sin_duplicados_y_con_tope),
+    ("Noticias: SEC y Google en español e inglés; si fallan conservan lo anterior", noticias_completas),
+    ("Noticias: sin SEC_CONTACTO sigue Google y avisa", noticias_sin_contacto),
     ("Calendario: movimiento descontado por las opciones, solo con puntas válidas", straddle),
     ("Calendario: próximas fechas de balance y ex dividendo", fechas_de_yahoo),
     ("Calendario: escribe lo que seguís, no repite pedidos y conserva lo anterior si falla", agenda_completa),

@@ -14,6 +14,7 @@ import re
 import sys
 
 import calendario
+import noticias
 import sec
 
 MAX_SEGUIDOS = 60  # tope de subyacentes que se siguen en una corrida
@@ -77,7 +78,10 @@ def correr(m, origen=None):
         print("señales: falta data/seguimiento.json (lo escribe la app al sincronizar)")
     tickers = subyacentes(lista)
     parte("sec_cik", lambda: sec_cik(m, tickers))
-    parte("calendario", lambda: m.escribir("agenda.json", calendario.agenda(m, tickers, m.leer("agenda.json"))) if tickers else None)
+    if not tickers:  # sin lista no hay nada que buscar (y no se borra lo guardado)
+        return
+    parte("calendario", lambda: m.escribir("agenda.json", calendario.agenda(m, tickers, m.leer("agenda.json"))))
+    parte("noticias", lambda: noticias.correr(m, tickers))
 
 
 def main():

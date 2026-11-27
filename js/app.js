@@ -120,6 +120,7 @@ const ctx = {
   get estado() { return S.estado; },
   get plan() { return S.plan; },
   get permiso() { return S.gh ? { repo: S.gh.repo } : null; },
+  get errorSeguimiento() { return S.seguimiento.error; },
   get repoSugerido() { return S.gh?.repo || repoDeUbicacion(); },
   // Cambios que solo existen en este dispositivo.
   get pendientes() { const enArchivo = new Set((S.base.eventos || []).map(e => e.id)); return S.eventos.filter(e => !enArchivo.has(e.id) && !S.sync.ids.has(e.id)).length; },
@@ -319,7 +320,7 @@ async function leerLocal(k, frase) {
 
 let vigilando = false;
 async function cargarTodo(frase) {
-  const publicos = { mercado: 'data/market.json', calendario: 'data/calendario.json', insiders: 'data/insiders.json', historico: 'data/historico.json', ratios: 'tools/cedear_ratios.json', feriados: 'data/feriados_eeuu.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', supuestos: 'data/supuestos.json', agenda: 'data/agenda.json', eventosFijos: 'data/eventos.json' };
+  const publicos = { mercado: 'data/market.json', calendario: 'data/calendario.json', insiders: 'data/insiders.json', historico: 'data/historico.json', ratios: 'tools/cedear_ratios.json', feriados: 'data/feriados_eeuu.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', supuestos: 'data/supuestos.json', agenda: 'data/agenda.json', eventosFijos: 'data/eventos.json', noticias: 'data/noticias.json' };
   const ext = Object.fromEntries(await Promise.all(Object.entries(publicos).map(async ([k, url]) => [k, await json(url)])));
   const [eventos, snaps, local, gh, sync] = [await leerLocal('eventos', frase), await leerLocal('snapshots', frase), await leerLocal('base_local', frase), await leerLocal('github', frase), await leerLocal('sync', frase)];
   // Un respaldo importado manda hasta que se suba.

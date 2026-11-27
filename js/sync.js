@@ -121,7 +121,7 @@ export const LISTA_PERMISOS = 'https://github.com/settings/personal-access-token
 // ---------- Actualizar precios a pedido ----------
 // GitHub atrasa o saltea las corridas programadas; desde la app se puede lanzar una y esperar el resultado.
 export const WORKFLOW = 'mercado.yml';
-const ARCHIVOS_MERCADO = { mercado: 'data/market.json', insiders: 'data/insiders.json', historico: 'data/historico.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', agenda: 'data/agenda.json' };
+const ARCHIVOS_MERCADO = { mercado: 'data/market.json', insiders: 'data/insiders.json', historico: 'data/historico.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', agenda: 'data/agenda.json', noticias: 'data/noticias.json' };
 const SIN_ACTIONS = 'El permiso guardado en este dispositivo no deja pedir precios. Si generaste un permiso nuevo, hay que pegarlo acá (⋯ → Sincronizar → Cambiar el permiso). Si editaste el que ya tenías, revisá que en "Repository permissions" diga "Actions: Read and write" y que lo hayas guardado con "Update".';
 
 // Dirección y cuerpo de la llamada que lanza la actualización (los usa también la guía del cron externo).

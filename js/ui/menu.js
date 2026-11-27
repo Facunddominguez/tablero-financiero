@@ -344,6 +344,16 @@ function filasContexto(e) {
     ['Elección 2027: Polymarket', poly?.desactivado ? 'Apagado: está bloqueado en Argentina por orden judicial' : 'API gamma de Polymarket (solo lectura, desde GitHub)', poly?.actualizado, poly?.stale, poly?.desactivado ? '—' : null],
   ];
 }
+// Noticias de lo que seguís: SEC, Google News y por qué no hay hechos relevantes de BYMA.
+function filasSenales(e) {
+  const f = e.noticias?.fuentes || {};
+  return [
+    ['Presentaciones a la SEC de lo que seguís', f.sec?.aviso || 'SEC EDGAR (data.sec.gov)', f.sec?.actualizado, f.sec?.stale],
+    ['Noticias de lo que seguís', 'Google News (RSS), en español e inglés', f.google?.actualizado, f.google?.stale],
+    ['Hechos relevantes de BYMA y CNV', f.byma?.nota || 'Sin acceso público estable: se usan los 6-K de la SEC', null, false, 'sin fuente'],
+  ];
+}
+
 function fuentes(ctx) {
   const e = ctx.estado, m = e.mercado || {}, d = e.datos;
   const cuando = iso => !iso ? '—' : iso.length > 10 ? `${fmt.fecha(iso.slice(0, 10))} · ${fmt.hace(iso)}` : fmt.fecha(iso);
@@ -368,6 +378,7 @@ function fuentes(ctx) {
     ['Balances, dividendos y opciones de lo que seguís', 'Yahoo Finance (vía yfinance)', e.agenda?.actualizado, e.agenda?.stale],
     ['Fed, inflación, MSCI y elecciones', 'data/eventos.json, con la fuente de cada uno', e.eventos_fijos?.consultado],
     ...filasContexto(e),
+    ...filasSenales(e),
     ['Cupones y amortización de la ON', 'Suplemento de prospecto del emisor', null, false, 'fijo'],
     ['Cantidades, lotes y caja', `Resumen de ${d.meta.broker || 'tu broker'}`, e.fecha_resumen],
     ['Aportes', 'Cargados a mano', ultimoAporte?.fecha],
@@ -375,6 +386,7 @@ function fuentes(ctx) {
   ];
   const dlg = dialogo('De dónde sale cada dato', h('div.formulario',
     !e.mercado ? aviso('No se pudieron cargar los precios en vivo: se están usando los del último resumen.', 'alerta') : null,
+    ctx.errorSeguimiento ? aviso(`No se pudo publicar la lista de qué seguir: ${ctx.errorSeguimiento}`, 'alerta') : null,
     h('div.tabla-caja', h('table.tabla.compacta', h('thead', h('tr', h('th', 'Dato'), h('th', 'Fuente'), h('th', 'Fecha del dato'))),
       h('tbody', filas.map(([dato, fuente, fecha, viejo, fijo]) => h('tr', h('td', dato), h('td', fuente), h('td', fijo || cuando(fecha), viejo ? chip('sin actualizar', 'alerta') : null)))))),
     h('p.nota', 'Los precios se actualizan solos tres veces por día hábil (alrededor de las 11:40, 14:40 y 17:40 de Argentina). Si una fuente falla, se conserva el último dato y se marca "sin actualizar".'),
