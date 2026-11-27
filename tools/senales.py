@@ -13,6 +13,7 @@ import os
 import re
 import sys
 
+import calendario
 import sec
 
 MAX_SEGUIDOS = 60  # tope de subyacentes que se siguen en una corrida
@@ -56,6 +57,15 @@ def sec_cik(m, tickers):
     return salida
 
 
+def parte(nombre, fn):
+    """Cada parte va por separado: si una se rompe, las demás siguen."""
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001
+        print(f"FALLA {nombre}: {type(e).__name__}: {str(e)[:160]}", file=sys.stderr)
+        return None
+
+
 def correr(m, origen=None):
     """Todo lo de seguimiento. m = módulo mercado (red, archivos y secciones)."""
     origen = origen if origen is not None else os.environ.get("ORIGEN", "")
@@ -66,7 +76,8 @@ def correr(m, origen=None):
     if not lista:
         print("señales: falta data/seguimiento.json (lo escribe la app al sincronizar)")
     tickers = subyacentes(lista)
-    sec_cik(m, tickers)
+    parte("sec_cik", lambda: sec_cik(m, tickers))
+    parte("calendario", lambda: m.escribir("agenda.json", calendario.agenda(m, tickers, m.leer("agenda.json"))) if tickers else None)
 
 
 def main():

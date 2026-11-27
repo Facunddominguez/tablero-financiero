@@ -18,6 +18,19 @@ const pruebasArchivos = [
     const { EDITABLES } = await import('../js/supuestos.js');
     for (const [g, , campos] of EDITABLES) for (const [c] of campos) if (c.split('.').reduce((o, p) => o?.[p], s[g]) == null) throw new Error(`falta ${g}.${c}`);
   }],
+  ['Eventos fijos: cada grupo con fuente y dirección, fechas válidas, en orden y en días hábiles', async () => {
+    const c = leer('../data/eventos.json');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(c.consultado)) throw new Error('sin fecha de consulta');
+    if (c.grupos.map(g => g.id).join() !== 'fed,ipc_usa,ipc_ar,msci,elecciones') throw new Error('grupos: ' + c.grupos.map(g => g.id));
+    for (const g of c.grupos) {
+      if (!g.titulo || !g.fuente || !/^https:/.test(g.url) || !g.eventos.length) throw new Error('incompleto: ' + g.id);
+      const fs = g.eventos.map(x => x.fecha || x.mes + '-01');
+      if (g.eventos.some(x => !(/^\d{4}-\d{2}-\d{2}$/.test(x.fecha || '') || /^\d{4}-\d{2}$/.test(x.mes || '')))) throw new Error('fecha mal escrita en ' + g.id);
+      if (fs.join() !== [...new Set(fs)].sort().join()) throw new Error('desordenado o repetido: ' + g.id);
+      if (g.id !== 'elecciones' && g.eventos.some(x => x.fecha && [0, 6].includes(new Date(x.fecha + 'T12:00:00Z').getUTCDay()))) throw new Error('fin de semana en ' + g.id);
+    }
+    if (c.grupos.at(-1).eventos[0].fecha !== leer('./mercado_config.json').elecciones.fecha) throw new Error('la elección no coincide con la configuración');
+  }],
   ['Feriados de EE.UU.: 2026 y 2027 con fuente, en días de semana y sin superponerse', async () => {
     const c = leer('../data/feriados_eeuu.json');
     if (!c.fuente || !/^https:/.test(c.url) || !c.byma?.url) throw new Error('falta la fuente');

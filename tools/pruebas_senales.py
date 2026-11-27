@@ -9,6 +9,7 @@ import os
 import pathlib
 import tempfile
 
+import calendario
 import mercado
 import sec
 import senales
@@ -161,7 +162,78 @@ def desde_la_app_no_corre():
         assert not (mercado.DATA / "sec_cik.json").exists()
 
 
+# ---------- etapa 2 · calendario ----------
+NVDA = json.loads(grabada("yfinance_nvda.json"))
+
+
+def yahoo_grabado(pedidos=None, calendario_nvda=None, fallan=()):
+    """Reemplaza las cuatro funciones de yfinance por la respuesta grabada de NVDA."""
+    def anotar(que, t):
+        if pedidos is not None:
+            pedidos.append((que, t))
+        if t in fallan:
+            raise RuntimeError("sin red")
+    return parches(
+        (calendario, "yf_calendario", lambda t: anotar("calendario", t) or (calendario_nvda or NVDA["calendario"] if t == "NVDA" else {})),
+        (calendario, "yf_vencimientos", lambda t: anotar("vencimientos", t) or NVDA["vencimientos"]),
+        (calendario, "yf_precio", lambda t: anotar("precio", t) or NVDA["precio"]),
+        (calendario, "yf_cadena", lambda t, v: anotar("cadena " + v, t) or NVDA["cadena"]))
+
+
+def straddle():
+    r = calendario.movimiento_descontado(NVDA["precio"], NVDA["cadena"]["calls"], NVDA["cadena"]["puts"])
+    # base 149: compra (3,9+5,45)/2 = 4,675 y venta (0,8+0,9)/2 = 0,85; 5,525 sobre 149,30 = 3,7%
+    assert r == {"strike": 149.0, "straddle": 5.525, "movimiento": 0.037}, r
+    sin = [dict(f, bid=0) for f in NVDA["cadena"]["calls"]]
+    assert calendario.movimiento_descontado(NVDA["precio"], sin, NVDA["cadena"]["puts"]) is None, "sin puntas no se inventa"
+    abiertas = [dict(f, bid=0.1, ask=9.0) for f in NVDA["cadena"]["calls"]]
+    assert calendario.movimiento_descontado(NVDA["precio"], abiertas, NVDA["cadena"]["puts"]) is None, "puntas muy separadas"
+    lejos = calendario.movimiento_descontado(200, NVDA["cadena"]["calls"], NVDA["cadena"]["puts"])
+    assert lejos is None, "sin una base cerca del precio"
+
+
+def fechas_de_yahoo():
+    assert calendario.proximas_fechas(NVDA["calendario"], "2026-11-10") == ("2026-11-17", "2026-12-01")
+    assert calendario.proximas_fechas(NVDA["calendario"], "2026-11-27") == (None, "2026-12-01"), "un balance pasado no es el próximo"
+    assert calendario.proximas_fechas({}, "2026-11-27") == (None, None)
+
+
+def agenda_completa():
+    pedidos = []
+    with parches((mercado, "hoy_argentina", lambda: "2026-11-10")), yahoo_grabado(pedidos):
+        a = calendario.agenda(mercado, ["NVDA", "SPY"], {})
+        n = a["empresas"]["NVDA"]
+        assert n["balance"] == "2026-11-17" and n["ex_dividendo"] == "2026-12-01" and not a["stale"], n
+        assert n["opciones"]["vencimiento"] == "2026-11-27" and n["opciones"]["movimiento"] == 0.037, "primer vencimiento posterior"
+        assert a["empresas"]["SPY"]["balance"] is None
+        antes = len(pedidos)
+        b = calendario.agenda(mercado, ["NVDA", "SPY"], a)
+        assert len(pedidos) == antes and b["empresas"] == a["empresas"], "el mismo día no vuelve a pedir"
+    # al día siguiente, si falla, conserva lo anterior marcado como viejo
+    with parches((mercado, "hoy_argentina", lambda: "2026-11-11")), yahoo_grabado(fallan=("NVDA", "SPY")):
+        c = calendario.agenda(mercado, ["NVDA", "SPY"], a)
+        assert c["stale"] and c["empresas"]["NVDA"]["stale"] and c["empresas"]["NVDA"]["opciones"], c
+        assert c["actualizado"] == a["actualizado"]
+    # si cambia la fecha del balance, el movimiento viejo no sirve
+    otro = dict(NVDA["calendario"], **{"Earnings Date": ["2027-02-24"]})
+    with parches((mercado, "hoy_argentina", lambda: "2026-11-12")), yahoo_grabado(calendario_nvda=otro):
+        d = calendario.agenda(mercado, ["NVDA"], a)
+        assert d["empresas"]["NVDA"]["balance"] == "2027-02-24" and d["empresas"]["NVDA"]["opciones"] is None
+
+
+def agenda_sin_tiempo():
+    pedidos = []
+    previo = {"empresas": {"SPY": {"consultado": "2026-11-01", "balance": None}}}
+    with parches((mercado, "hoy_argentina", lambda: "2026-11-10"), (calendario, "PRESUPUESTO_SEGUNDOS", -1)), yahoo_grabado(pedidos):
+        r = calendario.agenda(mercado, ["NVDA", "SPY"], previo)
+    assert not pedidos and r["empresas"] == previo["empresas"], r
+
+
 PRUEBAS = [
+    ("Calendario: movimiento descontado por las opciones, solo con puntas válidas", straddle),
+    ("Calendario: próximas fechas de balance y ex dividendo", fechas_de_yahoo),
+    ("Calendario: escribe lo que seguís, no repite pedidos y conserva lo anterior si falla", agenda_completa),
+    ("Calendario: sin tiempo deja lo anterior para la próxima corrida", agenda_sin_tiempo),
     ("Qué seguir: lee la lista de la app y ordena los subyacentes", lista_de_seguimiento),
     ("Histórico: suma los subyacentes de lo que seguís", historico_con_seguidos),
     ("SEC: mapa de empresas (ADR incluidos), identificación y límite de pedidos", mapa_de_la_sec),

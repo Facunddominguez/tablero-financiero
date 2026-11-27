@@ -365,6 +365,8 @@ function fuentes(ctx) {
     ['Dólar MEP promedio por mes', 'argentinadatos.com', m.mep_mensual?.actualizado, m.mep_mensual?.stale],
     ['Inflación de EE.UU. (IPC mensual)', 'FRED, Reserva Federal de St. Louis (serie CPIAUCSL)', m.cpi_usa?.actualizado, m.cpi_usa?.stale],
     ['Compras de directivos', 'OpenInsider (formularios 4 de la SEC)', e.insiders?.actualizado, e.insiders?.stale],
+    ['Balances, dividendos y opciones de lo que seguís', 'Yahoo Finance (vía yfinance)', e.agenda?.actualizado, e.agenda?.stale],
+    ['Fed, inflación, MSCI y elecciones', 'data/eventos.json, con la fuente de cada uno', e.eventos_fijos?.consultado],
     ...filasContexto(e),
     ['Cupones y amortización de la ON', 'Suplemento de prospecto del emisor', null, false, 'fijo'],
     ['Cantidades, lotes y caja', `Resumen de ${d.meta.broker || 'tu broker'}`, e.fecha_resumen],

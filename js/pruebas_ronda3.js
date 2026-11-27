@@ -3,6 +3,8 @@ import { aplicarEventos } from './estado.js';
 import { tickersASeguir, seguimiento, subyacenteUsa } from './seguimiento.js';
 import { publicarSeguimiento } from './sync.js';
 import { cerca, igual, si, mundo } from './pruebas_ronda2.js';
+import { agendaProxima, calendarioPorVencer, comoLoSeguis, fechaCorta } from './calendario.js';
+import { planificador } from './motor.js';
 
 const evento = (id, resto) => ({ id: 'r3-' + id, ts: `2026-11-30T12:00:00.${String(id).padStart(3, '0')}Z`, ...resto });
 
@@ -67,6 +69,47 @@ function etapa1() {
   ];
 }
 
+// ---------- etapa 2 · calendario ----------
+function etapa2() {
+  return [
+    ['Calendario: balances y ex dividendo solo de lo que seguís, con el movimiento de las opciones', async () => {
+      const { e } = mundo();
+      const l = agendaProxima(e, 14);
+      const nvda = l.find(x => x.tipo === 'balance' && x.ticker === 'NVDA');
+      si(nvda && nvda.fecha === '2026-12-09' && /±7,5%/.test(nvda.detalle) && /en cartera/.test(nvda.titulo), JSON.stringify(nvda));
+      si(l.some(x => x.tipo === 'ex_dividendo' && x.ticker === 'SPY' && x.fecha === '2026-12-03'), 'ex dividendo de SPY');
+      si(!l.some(x => x.ticker === 'ZZZ'), 'lo que no seguís no entra');
+      si(!l.some(x => x.ticker === 'PAM'), 'un balance a 40 días no entra en 14');
+      si(agendaProxima(e, 90).some(x => x.ticker === 'PAM' && /PAM · PAMP \(en cartera\)/.test(x.titulo)), 'PAMP se sigue por su ADR');
+    }],
+    ['Calendario: eventos fijos, feriados y cupón, en orden y sin repetir lo pasado', async () => {
+      const { e } = mundo();
+      const l = agendaProxima(e, 90);
+      si(l.some(x => x.grupo === 'fed' && x.fecha === '2026-12-09'), 'Fed');
+      si(l.some(x => x.tipo === 'feriado' && x.fecha === '2026-12-07' && /sin liquidar/.test(x.titulo)), 'puente argentino');
+      si(l.some(x => x.tipo === 'feriado' && x.fecha === '2026-12-08' && x.titulo === 'Sin rueda en BYMA'), 'feriado argentino');
+      si(l.some(x => x.tipo === 'feriado' && x.fecha === '2026-12-25' && x.titulo === 'Feriado en EE.UU.'), 'feriado de EE.UU.');
+      si(l.some(x => x.tipo === 'cupon' && x.fecha === '2027-01-14' && x.ticker === 'ON1'), 'cupón de la ON');
+      si(!l.some(x => x.tipo === 'eleccion' || x.grupo === 'msci'), 'las elecciones y MSCI quedan fuera de los 90 días');
+      si(l.every(x => (x.hasta || x.fecha) >= e.hoy), 'nada pasado');
+      igual(l.map(x => x.orden), [...l.map(x => x.orden)].sort(), 'ordenado');
+    }],
+    ['Calendario: un mes sin día confirmado entra cuando se superpone, y avisa si faltan fechas', async () => {
+      const { e } = mundo({ hoy: '2027-05-25' });
+      const m = agendaProxima(e, 14).find(x => x.grupo === 'msci');
+      si(m && fechaCorta(m) === 'junio de 2027', JSON.stringify(m));
+      si(agendaProxima(mundo({ hoy: '2027-06-20' }).e, 14).some(x => x.grupo === 'msci' && x.orden === '2027-06-20'), 'dentro del mes se ordena como de hoy');
+      igual(calendarioPorVencer(mundo().e).map(x => x.hasta), ['2027-01-27'], 'a la Fed de ejemplo le quedan menos de 90 días');
+    }],
+    ['Calendario: es informativo, no agrega pasos ni toca reglas', async () => {
+      const con = mundo().e, sin = mundo({ ajustar: x => { delete x.ext.agenda; delete x.ext.eventosFijos; } }).e;
+      igual(planificador(con, con.hoy), planificador(sin, sin.hoy), 'mismo plan');
+      si(agendaProxima(sin, 14).every(x => x.tipo === 'feriado' || x.tipo === 'cupon'), 'sin archivos quedan feriados y cupones');
+      si(comoLoSeguis('XYZ') === 'XYZ', 'sin dato');
+    }],
+  ];
+}
+
 export function pruebasRonda3() {
-  return [...etapa1()];
+  return [...etapa1(), ...etapa2()];
 }

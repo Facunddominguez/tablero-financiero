@@ -6,6 +6,7 @@ import { marcarPrediccion } from './diario.js';
 import { simular, textoHito } from '../simulacion.js';
 import { lineaSemaforo } from './argentina.js';
 import { lineaClima, lineaAporteExtra } from './clima.js';
+import { lineaCalendario } from './calendario.js';
 
 function antiguedad(e) {
   if (e.precios.origen === 'archivo') return `precios del resumen del ${fmt.fecha(e.precios.fecha_archivo)}`;
@@ -129,7 +130,7 @@ function vigentes(plan) {
 export function vistaHoy(ctx) {
   const e = ctx.estado, plan = ctx.plan;
   const tareas = plan.pasos.filter(p => !p.informativo), avisos = plan.pasos.filter(p => p.informativo);
-  const lineas = [lineaAporteExtra(e), lineaSemaforo(e), lineaClima(e)].filter(Boolean);
+  const lineas = [lineaAporteExtra(e), lineaSemaforo(e), lineaClima(e), lineaCalendario(e)].filter(Boolean);
   let n = 0;
   return h('div.vista.hoy',
     estadoLinea(ctx),

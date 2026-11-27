@@ -127,8 +127,28 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
       polymarket: sec({ nombre: 'Polymarket', url: 'https://polymarket.com/', volumen_unidad: 'USD operados', candidatos: [{ nombre: 'Candidata Uno', prob: 0.38, volumen: 9000 }, { nombre: 'Candidato "Apodo" Dos', prob: 0.35, volumen: 1000 }] }),
     },
   };
+  // Balances y dividendos inventados de lo que se sigue (como los deja el Action) y eventos fijos de ejemplo.
+  const dia = n => new Date(Date.parse(hoy) + n * 86400000).toISOString().slice(0, 10);
+  const empresa = (extra = {}) => ({ consultado: hoy, balance: null, ex_dividendo: null, opciones: null, stale: false, ...extra });
+  const agenda = sec({
+    generado: `${hoy}T15:00:00Z`, fuente: 'Yahoo Finance (vía yfinance)',
+    empresas: {
+      NVDA: empresa({ balance: dia(9), opciones: { balance: dia(9), vencimiento: dia(11), strike: 150, precio: 150, straddle: 11.25, movimiento: 0.075, tomado: `${hoy}T15:00:00Z` } }),
+      SPY: empresa({ ex_dividendo: dia(3) }),
+      PAM: empresa({ balance: dia(40) }),
+      ZZZ: empresa({ balance: dia(2) }),
+    },
+  });
+  const eventosFijos = {
+    consultado: hoy,
+    grupos: [
+      { id: 'fed', titulo: 'Reunión de la Fed (ejemplo)', fuente: 'Ejemplo', url: 'https://example.com/fed', eventos: [{ fecha: '2026-12-09', detalle: 'Ejemplo' }, { fecha: '2027-01-27' }] },
+      { id: 'msci', titulo: 'Revisión de MSCI (ejemplo)', fuente: 'Ejemplo', eventos: [{ mes: '2027-06', detalle: 'Sin día confirmado' }] },
+      { id: 'elecciones', titulo: 'Elecciones (ejemplo)', fuente: 'Ejemplo', eventos: [{ fecha: '2027-10-24' }] },
+    ],
+  };
   const ext = {
-    mercado, historico, largoPlazo, supuestos, argentina, clima,
+    mercado, historico, largoPlazo, supuestos, argentina, clima, agenda, eventosFijos,
     ratios: { fecha: '2026-11-19', ratios: Object.fromEntries(Object.entries(ratios).map(([t, r]) => [t, { ratio: r }])) },
     feriados: {
       anios: [2026, 2027], feriados: { '2026-11-26': 'Acción de Gracias', '2026-12-25': 'Navidad' }, medias_ruedas: { '2026-11-27': 'día después de Acción de Gracias', '2026-12-24': 'Nochebuena' },

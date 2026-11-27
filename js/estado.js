@@ -204,7 +204,7 @@ function precioDeMercado(p, m) {
   return v ? { precio: v[0], variacion: v[1] || 0, viejo: !!tabla.stale } : null;
 }
 
-// Valúa todo en USD MEP. ext = { mercado, calendario, insiders, historico, ratios, feriados } (cualquiera puede faltar).
+// Valúa todo en USD MEP. ext = { mercado, calendario, insiders, historico, ratios, feriados, agenda, … } (cualquiera puede faltar).
 export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
   const m = ext.mercado || null;
   const mep = m?.fx?.mep || datos.meta.tc_snapshot.mep;
@@ -269,6 +269,8 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     mercado: m, calendario: ext.calendario || { flujos: [] }, insiders: ext.insiders || { filas: [] }, historico: ext.historico || null,
     ratios: ext.ratios?.ratios || null, ratios_fecha: ext.ratios?.fecha || null,
     argentina: ext.argentina || null, clima: ext.clima || null, largo_plazo: ext.largoPlazo || null, supuestos: ext.supuestos || null,
+    // balances y dividendos de lo que seguís, y eventos con fecha fija
+    agenda: ext.agenda || null, eventos_fijos: ext.eventosFijos || null,
     // calendario de mercado: EE.UU. y BYMA, más los feriados argentinos que guarda el Action
     feriados: ext.feriados || ext.feriadosAr ? { ...ext.feriados, argentina: ext.feriadosAr || null } : null,
   };

@@ -1,0 +1,122 @@
+{
+ "nota": "Respuesta real de yfinance (NVDA), recortada a las bases cercanas al precio.",
+ "calendario": {
+  "Dividend Date": "2026-12-22",
+  "Ex-Dividend Date": "2026-12-01",
+  "Earnings Date": [
+   "2026-11-17"
+  ],
+  "Earnings High": 3.11,
+  "Earnings Low": 2.8,
+  "Earnings Average": 2.87956,
+  "Revenue High": 138004000000,
+  "Revenue Low": 128000000000,
+  "Revenue Average": 130826074070
+ },
+ "vencimientos": [
+  "2026-11-27",
+  "2026-11-30",
+  "2026-12-02",
+  "2026-12-04",
+  "2026-12-07",
+  "2026-12-09",
+  "2026-12-11",
+  "2026-12-18",
+  "2026-12-24",
+  "2026-12-31",
+  "2027-01-15",
+  "2027-02-19",
+  "2027-03-19",
+  "2027-04-16",
+  "2027-05-21",
+  "2027-06-17",
+  "2027-09-17",
+  "2027-11-19",
+  "2027-12-17",
+  "2028-01-21",
+  "2028-06-16",
+  "2028-09-15",
+  "2028-12-15",
+  "2029-01-19"
+ ],
+ "vencimiento": "2026-11-27",
+ "precio": 149.3,
+ "cadena": {
+  "calls": [
+   {
+    "strike": 146.0,
+    "bid": 0.0,
+    "ask": 8.0,
+    "lastPrice": 5.2
+   },
+   {
+    "strike": 147.0,
+    "bid": 0.0,
+    "ask": 6.8,
+    "lastPrice": 4.54
+   },
+   {
+    "strike": 148.0,
+    "bid": 5.4,
+    "ask": 6.5,
+    "lastPrice": 3.9
+   },
+   {
+    "strike": 149.0,
+    "bid": 3.9,
+    "ask": 5.45,
+    "lastPrice": 3.45
+   },
+   {
+    "strike": 150.0,
+    "bid": 4.0,
+    "ask": 4.45,
+    "lastPrice": 2.95
+   },
+   {
+    "strike": 152.5,
+    "bid": 2.6,
+    "ask": 2.8,
+    "lastPrice": 1.88
+   }
+  ],
+  "puts": [
+   {
+    "strike": 146.0,
+    "bid": 0.31,
+    "ask": 0.0,
+    "lastPrice": 1.86
+   },
+   {
+    "strike": 147.0,
+    "bid": 0.44,
+    "ask": 0.5,
+    "lastPrice": 2.14
+   },
+   {
+    "strike": 148.0,
+    "bid": 0.55,
+    "ask": 0.7,
+    "lastPrice": 2.55
+   },
+   {
+    "strike": 149.0,
+    "bid": 0.8,
+    "ask": 0.9,
+    "lastPrice": 3.05
+   },
+   {
+    "strike": 150.0,
+    "bid": 1.08,
+    "ask": 1.12,
+    "lastPrice": 3.6
+   },
+   {
+    "strike": 152.5,
+    "bid": 2.05,
+    "ask": 2.14,
+    "lastPrice": 5.1
+   }
+  ]
+ }
+}

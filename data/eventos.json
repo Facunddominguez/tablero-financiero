@@ -1,0 +1,78 @@
+{
+  "nota": "Eventos con fecha fija y su fuente. Se cargan a mano cuando cada organismo publica su calendario. \"mes\" es para lo que todavía no tiene día confirmado.",
+  "consultado": "2026-11-27",
+  "grupos": [
+    {
+      "id": "fed",
+      "titulo": "Reunión de la Fed: decisión de tasa",
+      "fuente": "Reserva Federal, calendario del FOMC (2027 revisado el 12/11/2026)",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261112a.htm",
+      "eventos": [
+        { "fecha": "2026-12-09", "detalle": "Reunión del 8 y 9 de diciembre, con proyecciones" },
+        { "fecha": "2027-01-27", "detalle": "Reunión del 26 y 27 de enero" },
+        { "fecha": "2027-03-17", "detalle": "Reunión del 16 y 17 de marzo" },
+        { "fecha": "2027-04-28", "detalle": "Reunión del 27 y 28 de abril" },
+        { "fecha": "2027-06-09", "detalle": "Reunión del 8 y 9 de junio" },
+        { "fecha": "2027-07-28", "detalle": "Reunión del 27 y 28 de julio" },
+        { "fecha": "2027-09-15", "detalle": "Reunión del 14 y 15 de septiembre" },
+        { "fecha": "2027-10-27", "titulo": "Reunión de la Fed: estrategia, sin decisión de tasa", "detalle": "Reunión del 26 y 27 de octubre" },
+        { "fecha": "2027-11-17", "detalle": "Reunión del 16 y 17 de noviembre" },
+        { "fecha": "2028-01-26", "detalle": "Reunión del 25 y 26 de enero" }
+      ]
+    },
+    {
+      "id": "ipc_usa",
+      "titulo": "Inflación de EE.UU. (IPC)",
+      "fuente": "Bureau of Labor Statistics, calendario de publicaciones",
+      "url": "https://www.bls.gov/schedule/news_release/cpi.htm",
+      "eventos": [
+        { "fecha": "2026-12-10", "detalle": "Dato de noviembre de 2026" },
+        { "fecha": "2027-01-13", "detalle": "Dato de diciembre de 2026" },
+        { "fecha": "2027-02-11", "detalle": "Dato de enero" },
+        { "fecha": "2027-03-10", "detalle": "Dato de febrero" },
+        { "fecha": "2027-04-13", "detalle": "Dato de marzo" },
+        { "fecha": "2027-05-12", "detalle": "Dato de abril" },
+        { "fecha": "2027-06-10", "detalle": "Dato de mayo" },
+        { "fecha": "2027-07-14", "detalle": "Dato de junio" },
+        { "fecha": "2027-08-11", "detalle": "Dato de julio" },
+        { "fecha": "2027-09-14", "detalle": "Dato de agosto" },
+        { "fecha": "2027-10-14", "detalle": "Dato de septiembre" },
+        { "fecha": "2027-11-10", "detalle": "Dato de octubre" },
+        { "fecha": "2027-12-10", "detalle": "Dato de noviembre" }
+      ]
+    },
+    {
+      "id": "ipc_ar",
+      "titulo": "Inflación de Argentina (IPC del INDEC)",
+      "fuente": "INDEC, calendario de difusión (2.º semestre de 2026 y 1.º de 2027, actualizado al 06/11/2026)",
+      "url": "https://www.indec.gob.ar/ftp/cuadros/publicaciones/calendario_1sem2027.pdf",
+      "eventos": [
+        { "fecha": "2026-12-15", "detalle": "Dato de noviembre de 2026" },
+        { "fecha": "2027-01-14", "detalle": "Dato de diciembre de 2026" },
+        { "fecha": "2027-02-12", "detalle": "Dato de enero" },
+        { "fecha": "2027-03-12", "detalle": "Dato de febrero" },
+        { "fecha": "2027-04-15", "detalle": "Dato de marzo" },
+        { "fecha": "2027-05-13", "detalle": "Dato de abril" },
+        { "fecha": "2027-06-11", "detalle": "Dato de mayo" }
+      ]
+    },
+    {
+      "id": "msci",
+      "titulo": "MSCI: revisión anual de la clasificación de países",
+      "fuente": "MSCI (en 2026 publicó los resultados el 23 de junio; la fecha de 2027 todavía no está anunciada)",
+      "url": "https://www.msci.com/market-classification",
+      "eventos": [
+        { "mes": "2027-06", "detalle": "El día exacto todavía no está publicado" }
+      ]
+    },
+    {
+      "id": "elecciones",
+      "titulo": "Elecciones generales en Argentina",
+      "fuente": "Código Electoral Nacional: cuarto domingo de octubre",
+      "url": "https://servicios.infoleg.gob.ar/infolegInternet/anexos/15000-19999/19442/texact.htm",
+      "eventos": [
+        { "fecha": "2027-10-24", "detalle": "Primera vuelta presidencial y legislativas" }
+      ]
+    }
+  ]
+}

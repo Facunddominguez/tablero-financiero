@@ -130,6 +130,11 @@ h2.sub { margin-top: 2rem; }
 .lineas-contexto { border-top: 1px solid var(--linea-fuerte); }
 .linea-contexto { display: grid; grid-template-columns: 1.1rem 1fr; gap: .6rem; padding: .75rem 0; border-bottom: 1px solid var(--linea); font-size: .93rem; }
 .lineas-contexto + .lista-pasos { border-top: 0; }
+.proximos details { min-width: 0; }
+.proximos summary { cursor: pointer; }
+.agenda { list-style: none; margin: .6rem 0 .4rem; padding: 0; }
+.agenda li { display: grid; grid-template-columns: 5.2rem 1fr; gap: .6rem; padding: .2rem 0; }
+.agenda .cuando { color: var(--tinta-2); font-size: .85rem; }
 .punto { width: .7rem; height: .7rem; border-radius: 50%; margin-top: .42rem; background: var(--tinta-3); }
 .punto.ok { background: var(--ok); } .punto.alerta { background: var(--alerta); } .punto.mal { background: var(--mal); }
 .punto.acento { background: var(--acento); }
