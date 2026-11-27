@@ -344,12 +344,19 @@ function filasContexto(e) {
     ['Elección 2027: Polymarket', poly?.desactivado ? 'Apagado: está bloqueado en Argentina por orden judicial' : 'API gamma de Polymarket (solo lectura, desde GitHub)', poly?.actualizado, poly?.stale, poly?.desactivado ? '—' : null],
   ];
 }
+// Con qué se clasificó en la última corrida.
+function quienClasifica(e) {
+  const c = e.ia_uso?.corridas?.at(-1);
+  const modelos = Object.entries(c?.modelos || {}).filter(([, m]) => m.ok).map(([n]) => n);
+  return modelos.length ? modelos.join(', ') : 'Filtro por reglas (ítems del 8-K y palabras clave)';
+}
 // Noticias de lo que seguís: SEC, Google News y por qué no hay hechos relevantes de BYMA.
 function filasSenales(e) {
   const f = e.noticias?.fuentes || {};
   return [
     ['Presentaciones a la SEC de lo que seguís', f.sec?.aviso || 'SEC EDGAR (data.sec.gov)', f.sec?.actualizado, f.sec?.stale],
     ['Noticias de lo que seguís', 'Google News (RSS), en español e inglés', f.google?.actualizado, f.google?.stale],
+    ['Clasificación de las noticias', quienClasifica(e), e.ia_uso?.corridas?.at(-1)?.fecha, !!e.ia_uso?.corridas?.at(-1)?.sin_ia],
     ['Hechos relevantes de BYMA y CNV', f.byma?.nota || 'Sin acceso público estable: se usan los 6-K de la SEC', null, false, 'sin fuente'],
   ];
 }

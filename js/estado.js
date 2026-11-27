@@ -272,7 +272,7 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     // balances y dividendos de lo que seguís, y eventos con fecha fija
     agenda: ext.agenda || null, eventos_fijos: ext.eventosFijos || null,
     // noticias de lo que seguís (SEC y Google News), con su clasificación
-    noticias: ext.noticias || null,
+    noticias: ext.noticias || null, ia_uso: ext.iaUso || null,
     // calendario de mercado: EE.UU. y BYMA, más los feriados argentinos que guarda el Action
     feriados: ext.feriados || ext.feriadosAr ? { ...ext.feriados, argentina: ext.feriadosAr || null } : null,
   };

@@ -5,6 +5,7 @@ import { botonFantasma, nuevaPrediccion } from './diario.js';
 import { proyeccion } from '../motor.js';
 import { simular, textoHito } from '../simulacion.js';
 import { tickersPropios } from '../estado.js';
+import { seccionNoticias } from './noticias.js';
 
 // Cuándo se podría abrir una tesis nueva, con rango (misma simulación que Informes → Proyección).
 function cuandoTesis(e) {
@@ -30,8 +31,10 @@ export function vistaRadar(ctx) {
   const filas = (ins.filas || []).slice().sort((a, b) => b.monto - a.monto);
 
   return h('div.vista.radar',
-    h('header.vista-cab', h('h1', 'Radar'), h('p.nota', 'Lo que conviene tener a la vista: qué compran los directivos y tu lista de seguimiento.')),
+    h('header.vista-cab', h('h1', 'Radar'), h('p.nota', 'Lo que conviene tener a la vista: noticias de lo que seguís, qué compran los directivos y tu lista de seguimiento.')),
     ctx.plan.solo_observacion ? aviso('Nuevas tesis bloqueadas por regla R7: solo observación.', 'alerta.fijo') : null,
+
+    seccionNoticias(e),
 
     h('section',
       h('h2', 'Compras de directivos · últimos 7 días'),

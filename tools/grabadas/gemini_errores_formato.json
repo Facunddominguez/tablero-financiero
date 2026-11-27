@@ -1,0 +1,6 @@
+{
+  "429": {"error": {"code": 429, "message": "Resource has been exhausted (e.g. check quota).", "status": "RESOURCE_EXHAUSTED"}},
+  "500": {"error": {"code": 500, "message": "An internal error has occurred.", "status": "INTERNAL"}},
+  "503": {"error": {"code": 503, "message": "The model is overloaded. Please try again later.", "status": "UNAVAILABLE"}},
+  "404": {"error": {"code": 404, "message": "models/gemini-viejo is not found for API version v1beta, or is not supported for generateContent.", "status": "NOT_FOUND"}}
+}

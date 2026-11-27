@@ -1,0 +1,15 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {"text": "{\"noticias\":[{\"id\":\"n1\",\"materialidad\":3,\"categoria\":\"fusión o venta\",\"recomendacion\":\"ninguna\",\"linea\":\"YPF informó la venta de un activo no estratégico.\"},{\"id\":\"n2\",\"materialidad\":2,\"categoria\":\"recomendación explícita de analista\",\"recomendacion\":\"compra\",\"linea\":\"Un banco subió la recomendación de NVDA a compra.\"}]}"}
+        ]
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {"promptTokenCount": 640, "candidatesTokenCount": 120, "thoughtsTokenCount": 30, "totalTokenCount": 790}
+}

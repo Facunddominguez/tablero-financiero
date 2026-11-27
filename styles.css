@@ -130,6 +130,12 @@ h2.sub { margin-top: 2rem; }
 .lineas-contexto { border-top: 1px solid var(--linea-fuerte); }
 .linea-contexto { display: grid; grid-template-columns: 1.1rem 1fr; gap: .6rem; padding: .75rem 0; border-bottom: 1px solid var(--linea); font-size: .93rem; }
 .lineas-contexto + .lista-pasos { border-top: 0; }
+.noticias-grupo { margin-bottom: 1.25rem; }
+.noticias-grupo h3 { font-size: .95rem; margin-bottom: .35rem; }
+.noticias ul { list-style: none; margin: 0; padding: 0; }
+.noticia { padding: .55rem 0; border-top: 1px solid var(--linea); }
+.noticia-linea { font-size: .93rem; }
+.noticia-meta { font-size: .8rem; color: var(--tinta-3); margin-top: .15rem; overflow-wrap: anywhere; }
 .proximos details { min-width: 0; }
 .proximos summary { cursor: pointer; }
 .agenda { list-style: none; margin: .6rem 0 .4rem; padding: 0; }

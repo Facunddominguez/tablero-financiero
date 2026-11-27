@@ -4,12 +4,18 @@ Las corre tools/pruebas_mercado.py. Las respuestas grabadas están en tools/grab
 armaron a mano con el formato de la fuente (la SEC no responde sin un contacto declarado).
 """
 import contextlib
+import io
 import json
 import os
 import pathlib
+import socket
+import sys
 import tempfile
+import types
+import urllib.error
 
 import calendario
+import clasificar
 import mercado
 import noticias
 import sec
@@ -351,7 +357,283 @@ def noticias_sin_contacto():
         con_noticias(probar, noticias=previa)
 
 
+# ---------- etapa 4 · clasificación ----------
+ERRORES_GEMINI = json.loads(grabada("gemini_errores_formato.json"))
+
+
+def dos_noticias():
+    return [
+        {"id": "sec-1", "t": "YPF", "fuente": "SEC", "forma": "6-K", "items": [], "fecha": "2026-11-25T10:00:00Z", "medio": "SEC EDGAR",
+         "titulo": "6-K de YPF: comunicado del emisor", "extracto": "Relevant Fact. La sociedad aprobó la venta de un activo no estratégico."},
+        {"id": "gn-2", "t": "NVDA", "fuente": "Google News", "fecha": "2026-11-24T10:00:00Z", "medio": "Ejemplo",
+         "titulo": "Nvidia revenue up 99% as bank upgrades the stock to buy"},
+    ]
+
+
+class Respuesta(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def gemini_simulado(guion, pedidos, modelos=None):
+    """clasificar._abrir simulado. guion = {modelo: [respuesta, …]}; la última se repite. Errores: "429", "503", "404", "tiempo", "roto"."""
+    def abrir(req, timeout=None):
+        pedidos.append((req.full_url, dict(req.headers), req.data, timeout))
+        if "/models?" in req.full_url:
+            if isinstance(modelos, Exception):
+                raise modelos
+            return Respuesta((modelos or grabada("gemini_modelos_formato.json")).encode())
+        modelo = req.full_url.split("/models/")[1].split(":")[0]
+        cola = guion[modelo]
+        paso = cola.pop(0) if len(cola) > 1 else cola[0]
+        if paso == "tiempo":
+            raise socket.timeout("timed out")
+        if paso in ERRORES_GEMINI:
+            raise urllib.error.HTTPError(req.full_url, int(paso), "error", {}, io.BytesIO(json.dumps(ERRORES_GEMINI[paso]).encode()))
+        archivo = "gemini_json_roto_formato.json" if paso == "roto" else "gemini_respuesta_formato.json"
+        return Respuesta(grabada(archivo).encode())
+    return abrir
+
+
+def como_objeto(x):
+    if isinstance(x, dict):
+        return types.SimpleNamespace(**{k: como_objeto(v) for k, v in x.items()})
+    return [como_objeto(v) for v in x] if isinstance(x, list) else x
+
+
+@contextlib.contextmanager
+def sdk_falso(guion, pedidos):
+    """Un módulo `anthropic` de mentira con las mismas excepciones del SDK y respuestas grabadas."""
+    mod = types.ModuleType("anthropic")
+
+    class APIError(Exception):
+        pass
+
+    class APIConnectionError(APIError):
+        pass
+
+    class APITimeoutError(APIConnectionError):
+        pass
+
+    class APIStatusError(APIError):
+        def __init__(self, status_code):
+            super().__init__(status_code)
+            self.status_code = status_code
+
+    class RateLimitError(APIStatusError):
+        pass
+
+    class NotFoundError(APIStatusError):
+        pass
+
+    class Anthropic:
+        def __init__(self, **k):
+            self.opciones, self.messages = k, self
+
+        def create(self, **k):
+            pedidos.append((self.opciones, k))
+            paso = guion.pop(0) if len(guion) > 1 else guion[0]
+            errores = {"429": RateLimitError(429), "503": APIStatusError(503), "404": NotFoundError(404), "tiempo": APITimeoutError(), "red": APIConnectionError()}
+            if paso in errores:
+                raise errores[paso]
+            datos = json.loads(grabada("anthropic_clasificacion_formato.json"))
+            if paso == "roto":
+                datos["content"][-1]["text"] = '{"noticias": ['
+            if paso == "rechazo":
+                datos.update(stop_reason="refusal", content=[])
+            return como_objeto(datos)
+
+    for clase in (APIError, APIConnectionError, APITimeoutError, APIStatusError, RateLimitError, NotFoundError, Anthropic):
+        setattr(mod, clase.__name__, clase)
+    previo = sys.modules.get("anthropic")
+    sys.modules["anthropic"] = mod
+    try:
+        yield
+    finally:
+        if previo is None:
+            sys.modules.pop("anthropic", None)
+        else:
+            sys.modules["anthropic"] = previo
+
+
+def config_ia(**cambios):
+    return dict(clasificar.CONFIG, **cambios)
+
+
+CLAVES = {"GEMINI_API_KEY": "clave-gemini-de-prueba", "ANTHROPIC_API_KEY": "clave-claude-de-prueba"}
+
+
+def filtro_por_reglas():
+    def c(titulo, **k):
+        r = clasificar.reglas(dict({"t": "X", "titulo": titulo, "fuente": "Google News"}, **k))
+        return r["materialidad"], r["categoria"], r["recomendacion"]
+    assert c("8-K", fuente="SEC", forma="8-K", items=["2.02", "9.01"]) == (2, "resultados", "ninguna")
+    assert c("8-K", fuente="SEC", forma="8-K", items=["5.02", "2.01"])[:2] == (3, "fusión o venta"), "gana el ítem más importante"
+    assert c("10-Q", fuente="SEC", forma="10-Q")[:2] == (2, "resultados") and c("F4", fuente="SEC", forma="4")[0] == 1
+    assert c("6-K", fuente="SEC", forma="6-K", extracto="aprobó la adquisición de una empresa")[1] == "fusión o venta"
+    assert c("Goldman upgrades Nvidia to buy") == (2, "recomendación explícita de analista", "compra")
+    assert c("Morgan Stanley downgrades Tesla, cuts rating to underweight")[2] == "venta"
+    assert c("Barclays raises Apple price target to 300") == (1, "recomendación explícita de analista", "ninguna"), "un precio objetivo solo no es compra ni venta"
+    assert c("Is Nvidia a Screaming Buy or a Value Trap?")[2] == "ninguna" and c("Is Nvidia a Screaming Buy or a Value Trap?")[1] == "otro"
+    assert c("Moody's upgrades YPF credit rating")[1] == "calificación"
+    assert c("Tribunal falló en el juicio contra YPF")[1] == "regulación o juicio"
+    assert c("Nvidia CEO steps down")[1] == "cambio de directivos"
+    assert c("Pampa Energía anuncia la adquisición de un parque eólico")[1] == "fusión o venta"
+    assert c("MercadoLibre reports third quarter results")[:2] == (2, "resultados")
+    assert c("Gualeguaychú ya tiene su estación premium") == (0, "otro", "ninguna")
+
+
+def lineas_y_json():
+    x = {"t": "NVDA", "titulo": "Nvidia revenue up 99% to $1,234 million", "fecha": "2026-11-24"}
+    assert clasificar.linea_valida("NVDA: ingresos 99% arriba, USD 1.234 millones.", x) == "NVDA: ingresos 99% arriba, USD 1.234 millones."
+    for mala in ("NVDA creció 45%.", "Te conviene comprar NVDA.", "Recomendamos vender.", "", "x" * 300):
+        assert clasificar.linea_valida(mala, x) == x["titulo"], mala
+    ok = '```json\n{"noticias":[{"id":"n1","materialidad":2,"categoria":"otro","recomendacion":"ninguna","linea":"a"},{"id":"n2","materialidad":9}]}\n```'
+    assert list(clasificar.leer_respuesta(ok)) == ["n1"], "la fila mal formada se descarta"
+    for malo in ("", "no es json", '{"noticias": []}', '{"otra": 1}', '{"noticias":[{"id":"n1","materialidad":true,"categoria":"otro","recomendacion":"ninguna","linea":"a"}]}'):
+        try:
+            clasificar.leer_respuesta(malo)
+        except clasificar.ErrorModelo as e:
+            assert e.tipo == "json"
+            continue
+        raise AssertionError("aceptó: " + malo)
+
+
+def cadena_gemini():
+    pedidos, esperas = [], []
+    guion = {"gemini-3.5-flash-lite": ["429"], "gemini-3.1-flash-lite": ["503"], "gemini-3.8-flash": ["tiempo"], "gemini-3.6-flash": ["ok"]}
+    cfg = config_ia(proveedor="gemini", modelos_gemini=["gemini-viejo"] + clasificar.CONFIG["modelos_gemini"])
+    items = dos_noticias()
+    salida = io.StringIO()
+    with parches((clasificar, "_abrir", gemini_simulado(guion, pedidos)), (clasificar, "_dormir", esperas.append)), contextlib.redirect_stdout(salida):
+        r = clasificar.clasificar(items, cfg, CLAVES, "2026-11-27T12:00:00Z")
+    assert r["omitidos"] == ["gemini-viejo"], "saltea lo que ya no existe, sin fallar"
+    m = r["modelos"]
+    assert m["gemini-3.5-flash-lite"]["errores"] == {"429": 3} and m["gemini-3.1-flash-lite"]["errores"] == {"503": 3}
+    assert m["gemini-3.8-flash"]["errores"] == {"tiempo": 3} and m["gemini-3.6-flash"]["ok"] == 1, m
+    assert esperas == [2, 4] * 3, f"espera creciente, hasta 2 reintentos: {esperas}"
+    assert items[0]["por"] == {"proveedor": "gemini", "modelo": "gemini-3.6-flash", "cuando": "2026-11-27T12:00:00Z"}
+    assert items[0]["materialidad"] == 3 and items[1]["recomendacion"] == "compra" and not r["sin_ia"] and r["con_ia"] == 2
+    generar = [p for p in pedidos if ":generateContent" in p[0]]
+    assert all(p[3] == 30 for p in generar), "cada pedido con su tiempo límite"
+    assert all("clave-gemini" not in p[0] and p[1]["X-goog-api-key"] == CLAVES["GEMINI_API_KEY"] for p in pedidos), "la clave va en el encabezado"
+    cuerpo = json.loads(generar[0][2])
+    assert cuerpo["generationConfig"]["responseMimeType"] == "application/json" and "temperature" not in cuerpo["generationConfig"]
+    assert "clave" not in salida.getvalue(), "no se imprime ninguna clave"
+
+
+def modelo_inexistente_y_json_roto():
+    pedidos = []
+    guion = {"gemini-3.5-flash-lite": ["404"], "gemini-3.1-flash-lite": ["roto", "ok"]}
+    cfg = config_ia(proveedor="gemini", modelos_gemini=["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"], lote=1)
+    items = dos_noticias()
+    with parches((clasificar, "_abrir", gemini_simulado(guion, pedidos)), (clasificar, "_dormir", lambda s: None)):
+        r = clasificar.clasificar(items, cfg, CLAVES, "2026-11-27T12:00:00Z")
+    m = r["modelos"]
+    assert m["gemini-3.5-flash-lite"]["pedidos"] == 1 and m["gemini-3.5-flash-lite"]["errores"] == {"inexistente": 1}, "un 404 no se reintenta ni se vuelve a pedir"
+    assert m["gemini-3.1-flash-lite"]["errores"] == {"json": 1} and m["gemini-3.1-flash-lite"]["ok"] == 2, "el JSON roto se reintenta"
+    assert m["gemini-3.1-flash-lite"]["tokens_entrada"] == 640 * 3, "los pedidos fallidos también gastan"
+    # si no se puede consultar la lista, prueba igual con los configurados
+    pedidos.clear()
+    guion = {"gemini-3.5-flash-lite": ["ok"]}
+    with parches((clasificar, "_abrir", gemini_simulado(guion, pedidos, modelos=urllib.error.URLError("sin red")))):
+        r = clasificar.clasificar(dos_noticias(), cfg, CLAVES, "x")
+    assert r["con_ia"] >= 1 and any("lista de modelos" in a for a in r["avisos"]), r
+
+
+def gemini_caido_pasa_a_haiku_o_a_reglas():
+    caido = {x: ["503"] for x in clasificar.CONFIG["modelos_gemini"]}
+    pedidos_g, pedidos_c = [], []
+    items = dos_noticias()
+    with parches((clasificar, "_abrir", gemini_simulado(dict(caido), pedidos_g)), (clasificar, "_dormir", lambda s: None)), sdk_falso(["ok"], pedidos_c):
+        r = clasificar.clasificar(items, config_ia(proveedor="gemini"), CLAVES, "x")
+    assert items[0]["por"]["proveedor"] == "anthropic" and items[0]["por"]["modelo"] == "claude-haiku-5-5" and not r["sin_ia"]
+    items = dos_noticias()
+    with parches((clasificar, "_abrir", gemini_simulado(dict(caido), [])), (clasificar, "_dormir", lambda s: None)):
+        r = clasificar.clasificar(items, config_ia(proveedor="gemini"), {"GEMINI_API_KEY": "k"}, "x")
+    assert r["sin_ia"] and items[0]["por"] == {"proveedor": "reglas"} and r["pendientes"] == 2, r
+    assert all(v["errores"] == {"503": 3} for v in r["modelos"].values()) and len(r["modelos"]) == 4
+
+
+def haiku_con_el_sdk():
+    pedidos, esperas = [], []
+    items = dos_noticias()
+    with sdk_falso(["429", "tiempo", "ok"], pedidos), parches((clasificar, "_dormir", esperas.append)):
+        r = clasificar.clasificar(items, config_ia(), CLAVES, "2026-11-27T12:00:00Z")
+    m = r["modelos"]["claude-haiku-5-5"]
+    assert m["errores"] == {"429": 1, "tiempo": 1} and m["ok"] == 1 and esperas == [2, 4], (m, esperas)
+    assert m["tokens_entrada"] == 812 and abs(m["costo_usd"] - (812 * 0.10 + 154 * 0.50) / 1e6) < 1e-6 and r["costo_usd"] == m["costo_usd"]
+    opciones, cuerpo = pedidos[-1]
+    assert opciones == {"api_key": CLAVES["ANTHROPIC_API_KEY"], "timeout": 30, "max_retries": 0}
+    assert cuerpo["model"] == "claude-haiku-5-5" and not {"temperature", "top_p", "top_k"} & set(cuerpo), "sin parámetros de muestreo"
+    assert cuerpo["output_config"]["format"]["type"] == "json_schema" and cuerpo["output_config"]["effort"] == "low"
+    assert items[1]["linea"] == "NVDA presentó resultados con ingresos 99% arriba.", "los números están en la noticia"
+    for paso, tipo in (("503", "503"), ("roto", "json"), ("red", "red"), ("rechazo", "rechazo"), ("404", "inexistente")):
+        with sdk_falso([paso], []), parches((clasificar, "_dormir", lambda s: None)):
+            r = clasificar.clasificar(dos_noticias(), config_ia(), CLAVES, "x")
+        assert r["sin_ia"] and list(r["modelos"]["claude-haiku-5-5"]["errores"]) == [tipo], (paso, r["modelos"])
+
+
+def sin_clave_o_sin_ia():
+    items = dos_noticias()
+    with parches((clasificar, "_abrir", lambda *a, **k: (_ for _ in ()).throw(AssertionError("pidió algo")))):
+        r = clasificar.clasificar(items, config_ia(), {}, "x")
+        assert r["sin_ia"] and "ANTHROPIC_API_KEY" in r["avisos"][0] and r["por_reglas"] == 2 and all(x["por"]["proveedor"] == "reglas" for x in items)
+        r = clasificar.clasificar(dos_noticias(), config_ia(proveedor="ninguno"), CLAVES, "x")
+        assert not r["sin_ia"] and not r["modelos"]
+
+
+def cache_y_topes():
+    muchas = [{"id": f"gn-{i}", "t": "NVDA", "fuente": "Google News", "fecha": f"2026-11-{1 + i:02d}", "titulo": f"Nvidia reports results {i}"} for i in range(7)]
+    muchas.append({"id": "sec-4", "t": "NVDA", "fuente": "SEC", "forma": "4", "fecha": "2026-11-20", "titulo": "Formulario 4"})
+    pedidos = []
+    with sdk_falso(["ok"], pedidos):
+        r = clasificar.clasificar(muchas, config_ia(lote=2, max_noticias=4), CLAVES, "x")
+    assert len(pedidos) == 2 and r["con_ia"] == 4 and r["pendientes"] == 3, (len(pedidos), r)
+    assert '"Nvidia reports results 6"' in pedidos[0][1]["messages"][0]["content"], "primero lo más nuevo"
+    assert muchas[-1]["por"]["proveedor"] == "reglas" and "Formulario" not in str(pedidos), "el formulario 4 no gasta IA"
+    with sdk_falso(["ok"], pedidos):
+        r = clasificar.clasificar(muchas, config_ia(lote=2), CLAVES, "x")
+    assert r["con_ia"] == 3 and r["pendientes"] == 0, "solo lo que faltaba"
+    ids = str([p[1]["messages"] for p in pedidos[2:]])
+    assert "results 6" not in ids, "lo ya clasificado no se repite"
+    # tope de tokens: después del primer lote no sigue
+    pedidos.clear()
+    with sdk_falso(["ok"], pedidos):
+        r = clasificar.clasificar([dict(x) for x in dos_noticias() * 3], config_ia(lote=2, max_tokens=500), CLAVES, "x")
+    assert len(pedidos) == 1 and r["pendientes"] > 0
+    # tope de tiempo: sin margen ni arranca
+    reloj = iter([0.0] + [1000.0] * 50)
+    pedidos.clear()
+    with sdk_falso(["ok"], pedidos), parches((clasificar, "_reloj", lambda: next(reloj))):
+        r = clasificar.clasificar(dos_noticias(), config_ia(), CLAVES, "x")
+    assert not pedidos and r["pendientes"] == 2 and r["sin_ia"]
+
+
+def corrida_guarda_el_uso():
+    historial = {"corridas": [{"fecha": str(i)} for i in range(clasificar.CORRIDAS_GUARDADAS)]}
+    with datos_temporales(noticias={"items": dos_noticias()}, ia_uso=historial), sdk_falso(["ok"], []):
+        clasificar.correr(mercado, entorno=CLAVES)
+        n, u = mercado.leer("noticias.json"), mercado.leer("ia_uso.json")
+    assert n["items"][0]["por"]["proveedor"] == "anthropic"
+    assert len(u["corridas"]) == clasificar.CORRIDAS_GUARDADAS and u["corridas"][-1]["con_ia"] == 2 and u["corridas"][0]["fecha"] == "1"
+    assert "clave" not in json.dumps(u)
+    assert clasificar.configuracion(mercado)["proveedor"] == "haiku"
+
+
 PRUEBAS = [
+    ("IA: filtro por reglas (ítems del 8-K y palabras clave)", filtro_por_reglas),
+    ("IA: la línea no puede inventar números ni recomendar; el JSON se valida", lineas_y_json),
+    ("IA: cadena de Gemini ante 429, 503 y tiempo agotado, con espera creciente", cadena_gemini),
+    ("IA: modelo inexistente se saltea y el JSON roto se reintenta", modelo_inexistente_y_json_roto),
+    ("IA: si Gemini no responde pasa a Haiku y, sin clave, al filtro por reglas", gemini_caido_pasa_a_haiku_o_a_reglas),
+    ("IA: Haiku con el SDK, reintentos, costo anotado y cada falla", haiku_con_el_sdk),
+    ("IA: sin clave usa las reglas y lo marca; con \"ninguno\" no pide nada", sin_clave_o_sin_ia),
+    ("IA: caché por noticia y topes de cantidad, tokens y tiempo", cache_y_topes),
+    ("IA: la corrida guarda las clasificaciones y el uso", corrida_guarda_el_uso),
     ("Noticias SEC: 8-K con sus ítems, formulario 4 agrupado y solo lo pedido", envios_de_la_sec),
     ("Noticias SEC: del 6-K se saca de qué trata, sin la carátula", extracto_del_6k),
     ("Noticias Google: titular sin el medio, fecha y tope por búsqueda", rss_de_google),

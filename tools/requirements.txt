@@ -3,3 +3,5 @@
 yfinance>=1.6,<2
 # Para leer la lista de CEDEARs de BYMA (PDF) y avisar si cambió un ratio.
 pypdf>=6,<7
+# Clasificación de noticias y resumen con Claude (solo se usa si está el secreto ANTHROPIC_API_KEY).
+anthropic>=2,<3

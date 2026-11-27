@@ -147,8 +147,23 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
       { id: 'elecciones', titulo: 'Elecciones (ejemplo)', fuente: 'Ejemplo', eventos: [{ fecha: '2027-10-24' }] },
     ],
   };
+  // Noticias inventadas, ya clasificadas, y el registro de uso de la IA.
+  const nota = (id, t, dias, materialidad, categoria, linea, extra = {}) => ({ id, t, fecha: `${dia(-dias)}T14:00:00Z`, fuente: 'Google News', medio: 'Medio de ejemplo', idioma: 'es', titulo: linea, linea, url: 'https://example.com/' + id, materialidad, categoria, recomendacion: 'ninguna', por: { proveedor: 'anthropic', modelo: 'claude-haiku-5-5' }, ...extra });
+  const noticias = {
+    generado: `${hoy}T15:00:00Z`, fuentes: { sec: sec({ pedidos: 4, fallas: 0 }), google: sec({ pedidos: 8, fallas: 0 }), byma: { disponible: false, nota: 'Ejemplo' } },
+    items: [
+      nota('e1', 'NVDA', 1, 3, 'cambio de directivos', 'NVDA anunció un cambio de director ejecutivo.', { fuente: 'SEC', medio: 'SEC EDGAR', forma: '8-K', items: ['5.02'] }),
+      nota('e2', 'NVDA', 2, 2, 'recomendación explícita de analista', 'Un banco de ejemplo subió la recomendación de NVDA a compra.', { recomendacion: 'compra' }),
+      nota('e3', 'PAM', 3, 2, 'resultados', 'Pampa de ejemplo presentó resultados.', { por: { proveedor: 'reglas' } }),
+      nota('e4', 'AAPL', 4, 2, 'regulación o juicio', 'Un tribunal de ejemplo falló sobre AAPL.'),
+      nota('e5', 'NVDA', 5, 1, 'otro', 'Nota menor de ejemplo.'),
+      nota('e6', 'ZZZ', 1, 3, 'otro', 'De algo que no seguís.'),
+      nota('e7', 'KO', 45, 3, 'resultados', 'Noticia vieja de ejemplo.'),
+    ],
+  };
+  const iaUso = { corridas: [{ fecha: `${hoy}T15:00:00Z`, proveedor: 'haiku', modelos: { 'claude-haiku-5-5': { pedidos: 1, ok: 1, errores: {}, tokens_entrada: 900, tokens_salida: 200, costo_usd: 0.00019 } }, avisos: [], con_ia: 6, por_reglas: 1, pendientes: 0, sin_ia: false, costo_usd: 0.00019 }] };
   const ext = {
-    mercado, historico, largoPlazo, supuestos, argentina, clima, agenda, eventosFijos,
+    mercado, historico, largoPlazo, supuestos, argentina, clima, agenda, eventosFijos, noticias, iaUso,
     ratios: { fecha: '2026-11-19', ratios: Object.fromEntries(Object.entries(ratios).map(([t, r]) => [t, { ratio: r }])) },
     feriados: {
       anios: [2026, 2027], feriados: { '2026-11-26': 'Acción de Gracias', '2026-12-25': 'Navidad' }, medias_ruedas: { '2026-11-27': 'día después de Acción de Gracias', '2026-12-24': 'Nochebuena' },

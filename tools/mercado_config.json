@@ -12,6 +12,17 @@
     "polymarket_slug": "argentina-presidential-election-winner",
     "polymarket_activado": true
   },
+  "ia": {
+    "proveedor": "haiku",
+    "modelo_haiku": "claude-haiku-5-5",
+    "modelos_gemini": ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash"],
+    "timeout_s": 30,
+    "tiempo_maximo_s": 150,
+    "reintentos": 2,
+    "lote": 10,
+    "max_noticias": 60,
+    "max_tokens": 60000
+  },
   "noticias": {
     "nombres": {"YPF": "YPF", "PAM": "Pampa Energía", "MELI": "Mercado Libre", "GOOGL": "Google Alphabet", "BRK.B": "Berkshire Hathaway", "TGS": "Transportadora de Gas del Sur", "TEO": "Telecom Argentina", "GGAL": "Grupo Galicia"},
     "sin_google": ["SPY", "EFA", "EEM", "IWM", "SMH", "ARGT"]

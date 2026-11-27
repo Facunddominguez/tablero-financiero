@@ -69,13 +69,15 @@ jobs:
           ORIGEN: ${{ github.event_name == 'schedule' && 'schedule' || inputs.origen || 'manual' }}
           # Si falta alguno de estos, esa parte se saltea con un aviso.
           SEC_CONTACTO: ${{ secrets.SEC_CONTACTO }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       - name: Guardar si cambió algo
         if: steps.chequeo.outputs.correr == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # solo lo que escribe este Action (nunca el archivo cifrado); lo que todavía no existe se saltea
-          for f in market insiders historico alertas_estado feriados_ar argentina clima largo_plazo sec_cik agenda noticias; do
+          for f in market insiders historico alertas_estado feriados_ar argentina clima largo_plazo sec_cik agenda noticias ia_uso; do
             if [ -f "data/$f.json" ]; then git add "data/$f.json"; fi
           done
           if git diff --cached --quiet; then

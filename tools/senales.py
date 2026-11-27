@@ -14,6 +14,7 @@ import re
 import sys
 
 import calendario
+import clasificar
 import noticias
 import sec
 
@@ -82,6 +83,7 @@ def correr(m, origen=None):
         return
     parte("calendario", lambda: m.escribir("agenda.json", calendario.agenda(m, tickers, m.leer("agenda.json"))))
     parte("noticias", lambda: noticias.correr(m, tickers))
+    parte("clasificación", lambda: clasificar.correr(m))
 
 
 def main():

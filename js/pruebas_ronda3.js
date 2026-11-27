@@ -5,6 +5,7 @@ import { publicarSeguimiento } from './sync.js';
 import { cerca, igual, si, mundo } from './pruebas_ronda2.js';
 import { agendaProxima, calendarioPorVencer, comoLoSeguis, fechaCorta } from './calendario.js';
 import { planificador } from './motor.js';
+import { noticiasMateriales, avisoIA, usoIA, porReglas } from './noticias.js';
 
 const evento = (id, resto) => ({ id: 'r3-' + id, ts: `2026-11-30T12:00:00.${String(id).padStart(3, '0')}Z`, ...resto });
 
@@ -110,6 +111,34 @@ function etapa2() {
   ];
 }
 
+// ---------- etapa 4 · noticias clasificadas ----------
+function etapa4() {
+  return [
+    ['Noticias: solo las de materialidad 2 o más, recientes y de lo que seguís, por empresa', async () => {
+      const { e } = mundo();
+      const g = noticiasMateriales(e);
+      igual(g.map(x => x.ticker), ['NVDA', 'PAM', 'AAPL'], 'primero la cartera y lo más nuevo; después la watchlist');
+      igual(g[0].items.map(x => x.id), ['e1', 'e2'], 'primero la más importante');
+      si(/NVDA \(en cartera\)/.test(g[0].nombre) && /PAM · PAMP/.test(g[1].nombre), 'con qué lo seguís');
+      si(porReglas(g[1].items[0]) && !porReglas(g[0].items[0]), 'marca las que no leyó una IA');
+      si(noticiasMateriales(e, { minimo: 1 })[0].items.length === 3 && !noticiasMateriales(mundo({ ajustar: x => { delete x.ext.noticias; } }).e).length, 'mínimo y sin archivo');
+    }],
+    ['Noticias: avisa solo si la última corrida terminó sin ningún modelo de IA', async () => {
+      si(avisoIA(mundo().e) === null, 'anduvo');
+      const roto = mundo({ ajustar: x => { x.ext.iaUso.corridas.push({ fecha: '2026-11-30T18:00:00Z', sin_ia: true, avisos: [], modelos: { 'gemini-3.5-flash-lite': { errores: { 429: 3 } }, 'claude-haiku-5-5': { errores: { tiempo: 3 } } } }); } }).e;
+      si(/sin IA.*filtro por reglas.*límite de uso, tiempo agotado/.test(avisoIA(roto).texto), avisoIA(roto).texto);
+      const sinClave = mundo({ ajustar: x => { x.ext.iaUso.corridas = [{ fecha: '2026-11-30T18:00:00Z', sin_ia: true, avisos: ['Falta el secreto ANTHROPIC_API_KEY'], modelos: {} }]; } }).e;
+      si(/ANTHROPIC_API_KEY/.test(avisoIA(sinClave).texto), avisoIA(sinClave).texto);
+      igual(planificador(roto, roto.hoy).pasos, planificador(mundo().e, roto.hoy).pasos, 'no es una tarea');
+    }],
+    ['Noticias: el uso de la API se suma por modelo', async () => {
+      const u = usoIA(mundo().e);
+      igual([u.corridas, u.clasificadas, u.modelos[0].modelo], [1, 6, 'claude-haiku-5-5'], 'resumen');
+      cerca(u.costo_usd, 0.00019, 1e-9, 'costo');
+    }],
+  ];
+}
+
 export function pruebasRonda3() {
-  return [...etapa1(), ...etapa2()];
+  return [...etapa1(), ...etapa2(), ...etapa4()];
 }

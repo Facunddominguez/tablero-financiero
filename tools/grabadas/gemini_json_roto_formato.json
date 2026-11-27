@@ -1,0 +1,6 @@
+{
+  "candidates": [
+    {"content": {"role": "model", "parts": [{"text": "{\"noticias\":[{\"id\":\"n1\",\"materialidad\":3,\"categor"}]}, "finishReason": "MAX_TOKENS"}
+  ],
+  "usageMetadata": {"promptTokenCount": 640, "candidatesTokenCount": 20}
+}
