@@ -1,8 +1,8 @@
-// Resumen del sábado: arma los hechos desde data/, los redacta (Claude Haiku si hay clave; si no, plantillas),
-// guarda data/resumen.json y avisa por ntfy. Lo corre el workflow "Resumen del sábado". Uso: node tools/resumen.mjs
-// Secretos opcionales: ANTHROPIC_API_KEY (redacción) y NTFY_TOPIC (aviso). Nunca se imprimen.
+// Resumen del sábado: arma los hechos desde data/, los redacta (con el proveedor de mercado_config.json; sin clave,
+// plantillas), guarda data/resumen.json y avisa por ntfy. Lo corre el workflow "Resumen del sábado".
+// Uso: node tools/resumen.mjs. Secretos opcionales: GEMINI_API_KEY o ANTHROPIC_API_KEY y NTFY_TOPIC. Nunca se imprimen.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { hechos, redactar, aviso } from '../js/resumen.js';
+import { hechos, redactar, aviso, llamarGemini, encadenar } from '../js/resumen.js';
 
 const raiz = new URL('../', import.meta.url);
 const leer = ruta => { try { return JSON.parse(readFileSync(new URL(ruta, raiz), 'utf8')); } catch { return null; } };
@@ -34,11 +34,17 @@ async function clienteHaiku(clave) {
 }
 
 const h = hechos(publico, hoy);
-let llamar;
-const clave = (process.env.ANTHROPIC_API_KEY || '').trim();
-if (clave && cfg.proveedor !== 'ninguno') {
-  try { llamar = await clienteHaiku(clave); } catch { llamar = () => { throw new Error('falta la biblioteca de Anthropic'); }; }
+const proveedor = cfg.proveedor || 'haiku';
+const clave = (process.env.ANTHROPIC_API_KEY || '').trim(), claveGemini = (process.env.GEMINI_API_KEY || '').trim();
+const errores = {}; // fallas de cada modelo en esta corrida
+const anotar = (m, tipo) => { (errores[m] = errores[m] || {})[tipo] = (errores[m]?.[tipo] || 0) + 1; };
+const gemini = proveedor === 'gemini' && claveGemini
+  ? llamarGemini({ clave: claveGemini, modelos: cfg.modelos_gemini || [], tiempoMs: (cfg.timeout_s || 30) * 1000, reintentos: cfg.reintentos ?? 2, anotar }) : null;
+let haiku = null;
+if (clave && proveedor !== 'ninguno') {
+  try { haiku = await clienteHaiku(clave); } catch { haiku = () => { throw new Error('falta la biblioteca de Anthropic'); }; }
 }
+const llamar = encadenar([gemini, haiku]) || undefined; // con Gemini, Claude queda de reserva si hay clave
 const r = await redactar(h, { llamar, modelo });
 
 const repo = process.env.GITHUB_REPOSITORY || '';
@@ -58,12 +64,17 @@ guardar('data/resumen.json', resumen);
 
 // El uso de la API queda anotado junto al de las noticias.
 if (llamar) {
-  const precio = (cfg.precios || {})[modelo] || (modelo === 'claude-haiku-5-5' ? [0.10, 0.50] : null);
+  const usado = r.por !== 'plantilla';
+  const nombre = usado ? r.por : gemini ? (cfg.modelos_gemini?.[0] || 'gemini') : modelo;
+  const precio = (cfg.precios || {})[nombre] || (nombre === 'claude-haiku-5-5' ? [0.10, 0.50] : null);
   const entrada = r.uso?.input_tokens || 0, salida = r.uso?.output_tokens || 0;
   const costo = precio ? Math.round((entrada * precio[0] + salida * precio[1]) / 1e6 * 1e6) / 1e6 : null;
-  const usado = r.por !== 'plantilla';
-  const corrida = { fecha: ahora(), tarea: 'resumen', proveedor: 'haiku', avisos: r.motivo ? [r.motivo] : [], con_ia: 0, por_reglas: 0, pendientes: 0, sin_ia: !usado, costo_usd: costo || 0,
-    modelos: { [modelo]: { pedidos: 1, ok: usado ? 1 : 0, errores: usado ? {} : { resumen: 1 }, tokens_entrada: entrada, tokens_salida: salida, costo_usd: costo } } };
+  const modelos = Object.fromEntries(Object.entries(errores).map(([m, e]) => [m, { pedidos: Object.values(e).reduce((a, b) => a + b, 0), ok: 0, errores: e, tokens_entrada: 0, tokens_salida: 0, costo_usd: null }]));
+  const x = modelos[nombre] = modelos[nombre] || { pedidos: 0, ok: 0, errores: {}, tokens_entrada: 0, tokens_salida: 0, costo_usd: null };
+  x.pedidos += usado || !Object.keys(x.errores).length ? 1 : 0; x.ok += usado ? 1 : 0;
+  if (!usado && !Object.keys(x.errores).length) x.errores = { resumen: 1 };
+  Object.assign(x, { tokens_entrada: entrada, tokens_salida: salida, costo_usd: costo });
+  const corrida = { fecha: ahora(), tarea: 'resumen', proveedor, avisos: r.motivo ? [r.motivo] : [], con_ia: 0, por_reglas: 0, pendientes: 0, sin_ia: !usado, costo_usd: costo || 0, modelos };
   const uso = leer('data/ia_uso.json') || { corridas: [] };
   guardar('data/ia_uso.json', { corridas: [...(uso.corridas || []).slice(-59), corrida] });
 }

@@ -8,7 +8,7 @@ import { planificador } from './motor.js';
 import { noticiasMateriales, avisoIA, usoIA, porReglas } from './noticias.js';
 import { comprasPuntuadas, ventasDestacadas, senalesRadar, eventosSenales, umbralRadar } from './directivos.js';
 import { compararFantasmas } from './diario.js';
-import { hechos, plantilla, redactar, revisar, numeros, aviso as avisoTelefono, pedidoModelo, sumarDia, lecturaDelDia, LARGO_AVISO } from './resumen.js';
+import { hechos, plantilla, redactar, revisar, numeros, aviso as avisoTelefono, pedidoModelo, sumarDia, lecturaDelDia, llamarGemini, encadenar, LARGO_AVISO } from './resumen.js';
 import { resumenSinLeer } from './ui/resumen.js';
 import { simular } from './simulacion.js';
 import { climaMercado, textoClima } from './clima.js';
@@ -247,6 +247,30 @@ function etapa6() {
       const h = hechos(publicoEjemplo(), '2026-11-30'), p = pedidoModelo(h, 'claude-haiku-5-5');
       si(p.model === 'claude-haiku-5-5' && p.output_config.format.type === 'json_schema' && !('temperature' in p), 'forma del pedido');
       si(!p.messages[0].content.includes('example.com') && p.messages[0].content.includes('150.000'), 'sin direcciones');
+    }],
+    ['Resumen: con Gemini prueba los modelos en orden, controla igual el texto y deja a Claude de reserva', async () => {
+      const h = hechos(publicoEjemplo(), '2026-11-30');
+      const limpio = { cartera: ['NVDA presentó novedades el 29/11.'], senales: ['Sin señales nuevas.'], contexto: 'Argentina en amarillo.' };
+      const bien = cuerpo => ({ ok: true, status: 200, json: async () => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ thought: true, text: 'x' }, { text: JSON.stringify(cuerpo) }] } }], usageMetadata: { promptTokenCount: 900, candidatesTokenCount: 80, thoughtsTokenCount: 20 } }) });
+      const estado = s => ({ ok: false, status: s, json: async () => ({}) });
+      const red = guion => { const pedidos = []; return { pedidos, fetch: async (url, op) => { pedidos.push({ url, op }); const paso = guion.length > 1 ? guion.shift() : guion[0]; if (paso === 'tiempo') throw new Error('timeout'); return paso; } }; };
+      const esperas = [], errores = [];
+      const a = red([estado(429), 'tiempo', estado(503), estado(404), bien(limpio)]);
+      const r = await redactar(h, { llamar: llamarGemini({ clave: 'k-prueba', modelos: ['m1', 'm2', 'm3'], fetchFn: a.fetch, esperar: async ms => esperas.push(ms), anotar: (m, t) => errores.push(`${m}:${t}`) }) });
+      igual(errores, ['m1:429', 'm1:tiempo', 'm1:503', 'm2:404'], 'reintenta lo pasajero; un modelo que no existe se saltea');
+      igual(esperas, [2000, 4000], 'espera creciente');
+      si(r.por === 'm3' && r.uso.input_tokens === 900 && r.uso.output_tokens === 100, JSON.stringify(r));
+      si(a.pedidos.every(p => !p.url.includes('k-prueba') && p.op.headers['x-goog-api-key'] === 'k-prueba'), 'la clave va en el encabezado');
+      const cuerpo = JSON.parse(a.pedidos.at(-1).op.body);
+      si(cuerpo.generationConfig.responseFormat.text.mimeType === 'APPLICATION_JSON' && !cuerpo.contents[0].parts[0].text.includes('example.com'), 'forma documentada, sin direcciones');
+      const b = red([estado(400), bien(limpio)]);
+      si((await redactar(h, { llamar: llamarGemini({ clave: 'k', modelos: ['m1'], fetchFn: b.fetch }) })).por === 'm1' && JSON.parse(b.pedidos[1].op.body).generationConfig.responseMimeType === 'application/json', 'forma anterior si rechaza la nueva');
+      const c = red([bien({ ...limpio, contexto: 'El VIX está en 47.' })]);
+      si(/número que no está/.test((await redactar(h, { llamar: llamarGemini({ clave: 'k', modelos: ['m1'], fetchFn: c.fetch }) })).motivo), 'mismo control de números');
+      const caido = llamarGemini({ clave: 'k', modelos: ['m1'], fetchFn: red([estado(503)]).fetch, esperar: async () => {} });
+      si((await redactar(h, { llamar: encadenar([caido, async () => respuesta({})]) })).por === 'claude-haiku-5-5', 'Claude de reserva');
+      const nada = await redactar(h, { llamar: encadenar([caido]) });
+      si(nada.por === 'plantilla' && nada.motivo === 'la API respondió 503' && encadenar([null, null]) === null, nada.motivo);
     }],
     ['Resumen: el aviso al teléfono es corto, en orden y con el enlace', async () => {
       const h = hechos(publicoEjemplo(), '2026-11-30'), r = await redactar(h);

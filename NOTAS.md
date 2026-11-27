@@ -39,7 +39,7 @@ Una acción local se sigue por su ADR (PAMP → PAM, YPFD → YPF), una ON del b
 - Fuentes: SEC EDGAR (8-K con sus ítems, 10-Q, 10-K, 6-K de los ADR con un extracto, y formulario 4 agrupado por día) y Google News en español e inglés. Sin duplicados, 30 días, hasta 40 por empresa (`data/noticias.json`). De SPY, EFA, EEM, IWM, SMH y ARGT no se buscan noticias en Google (`noticias.sin_google` en `tools/mercado_config.json`).
 - **BYMA y CNV** no tienen un acceso público estable a los hechos relevantes: para las argentinas se usan sus 6-K y Google News.
 - **Clasificación**: materialidad 0 a 3, categoría, si un analista recomienda comprar o vender, y una línea en castellano. La IA solo clasifica lo que se le pasa: si la línea trae un número que no está en la noticia, o una recomendación propia, se muestra el título original. "Por reglas" quiere decir que no la leyó una IA.
-- **Proveedor** (`ia.proveedor` en `tools/mercado_config.json`): `haiku` (por defecto, `claude-haiku-5-5`), `gemini` o `ninguno`. Con Gemini: cadena de modelos (`modelos_gemini`), saltea los que ya no existen, 30 s por pedido, 2 reintentos con espera creciente, descarta un modelo tras 3 fallas seguidas, y pasa a Haiku o al filtro por reglas. Los formularios 4 no gastan IA.
+- **Proveedor** (`ia.proveedor` en `tools/mercado_config.json`): hoy `gemini` (decisión del dueño, 27/11/2026); también `haiku` (`claude-haiku-5-5`) o `ninguno`. Con Gemini: cadena de modelos (`modelos_gemini`), saltea los que ya no existen, 30 s por pedido, 2 reintentos con espera creciente, descarta un modelo tras 3 fallas seguidas, y pasa a Haiku o al filtro por reglas. Los formularios 4 no gastan IA.
 - Cada corrida clasifica solo lo nuevo (hasta 60 noticias, 60.000 tokens, 150 s); lo que falta queda para la próxima. Si una corrida termina sin ningún modelo, aparece en "Para saber" y en el resumen.
 
 ## Compras de directivos
@@ -52,7 +52,7 @@ Una acción local se sigue por su ADR (PAMP → PAM, YPFD → YPF), una ON del b
 
 ## Resumen del sábado
 
-Sábados 12:00 (workflow "Resumen del sábado", también con *Run workflow* o desde cron-job.org: la guía está en ⋯ → Fuentes y fechas). Orden fijo: tu cartera (noticias materiales, eventos de 7 días, alertas y cambios del semáforo), señales explícitas (compras de directivos accionables con buen puntaje y recomendaciones de analistas) y una línea de contexto. Claude Haiku lo redacta a partir de un JSON de hechos; si trae un número o una empresa que no está en los hechos, o una recomendación, se usa la plantilla. Sin clave, siempre plantilla. Llega por ntfy con el link y queda en `data/resumen.json`.
+Sábados 12:00 (workflow "Resumen del sábado", también con *Run workflow* o desde cron-job.org: la guía está en ⋯ → Fuentes y fechas). Orden fijo: tu cartera (noticias materiales, eventos de 7 días, alertas y cambios del semáforo), señales explícitas (compras de directivos accionables con buen puntaje y recomendaciones de analistas) y una línea de contexto. Lo redacta el proveedor de IA (Gemini, con Claude de reserva si hay clave, o Claude Haiku) a partir de un JSON de hechos; si trae un número o una empresa que no está en los hechos, o una recomendación, se usa la plantilla. Sin clave, siempre plantilla. Llega por ntfy con el link y queda en `data/resumen.json`.
 
 Es público: no lleva montos ni cantidades tuyas. Usa los umbrales de `data/supuestos.json`, no los que cambiaste en la app (esos están cifrados).
 
@@ -63,14 +63,14 @@ Es público: no lleva montos ni cantidades tuyas. Usa los umbrales de `data/supu
 | `NTFY_TOPIC` | Canal de ntfy para alertas y resumen | No llegan avisos al teléfono |
 | `ALERTAS_CONFIG` | Alertas de precio (ver más abajo) | No hay alertas de precio ni "alertas de la semana" |
 | `SEC_CONTACTO` | Nombre y mail para identificarse ante la SEC | No hay presentaciones, formularios 4 ni puntajes |
-| `ANTHROPIC_API_KEY` | Clasificar noticias y redactar el resumen | Filtro por reglas y plantillas |
-| `GEMINI_API_KEY` | Solo si el proveedor es `gemini` | Se usa Haiku si hay clave |
+| `GEMINI_API_KEY` | Clasificar noticias y redactar el resumen (proveedor actual). Se crea en [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Claude si hay clave; si no, filtro por reglas y plantillas |
+| `ANTHROPIC_API_KEY` | Opcional: reserva si Gemini falla, o proveedor `haiku` | Filtro por reglas y plantillas |
 
 Se cargan con `gh secret set NOMBRE` (pide el valor) o en GitHub → Settings → Secrets and variables → Actions. Ninguno se imprime ni se guarda en archivos.
 
 ## Costo de la API
 
-Cada corrida anota proveedor, modelo, pedidos, errores, tokens y costo en `data/ia_uso.json` (últimas 60), y Radar muestra el total de 30 días. Estimado **sin medir** (no hubo clave para probar): Claude Haiku 5.5 a USD 0,10 / 0,50 por millón de tokens; una corrida normal, menos de USD 0,005; el tope de 60.000 tokens pone un máximo de unos USD 0,03 por corrida; el resumen, alrededor de USD 0,001. Las primeras corridas se ponen al día de a 60 noticias. El costo de Gemini no se calcula (se puede cargar en `ia.precios`).
+Cada corrida anota proveedor, modelo, pedidos, errores, tokens y costo en `data/ia_uso.json` (últimas 60), y Radar muestra el total de 30 días. Con Gemini (proveedor actual) se anotan los tokens pero **el costo no se calcula**: depende de tu plan en Google; si pasás a uno pago, cargá el precio de cada modelo en `ia.precios`. Con Claude Haiku 5.5 (USD 0,10 / 0,50 por millón), estimado sin medir: una corrida normal, menos de USD 0,005; el tope de 60.000 tokens pone un máximo de unos USD 0,03 por corrida; el resumen, alrededor de USD 0,001. Las primeras corridas se ponen al día de a 60 noticias.
 
 ## Comprar y vender al mejor precio
 
@@ -275,7 +275,7 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | Presentaciones y formularios 4 | SEC EDGAR: `company_tickers.json`, `data.sec.gov/submissions`, `Archives` (menos de 10 pedidos por segundo, identificados con `SEC_CONTACTO`) |
 | Noticias | Google News RSS por empresa, `es-419/AR` y `en-US/US` |
 | Balances, ex dividendo, opciones, tamaño y precio previo | Yahoo Finance (yfinance) |
-| Clasificación y resumen | API de Claude (SDK `anthropic` / `@anthropic-ai/sdk`) o API de Gemini |
+| Clasificación y resumen | API de Gemini (REST) o API de Claude (SDK `anthropic` / `@anthropic-ai/sdk`) |
 | Eventos fijos | Reserva Federal (calendario del FOMC), BLS (IPC), INDEC (calendario de difusión), MSCI, Código Electoral |
 | MEP, CCL, oficial | dolarapi.com `/v1/dolares` (MEP = promedio compra/venta de "bolsa") |
 | CEDEARs, acciones, ON | data912.com `live/arg_cedears`, `arg_stocks`, `arg_corp` (las ON vienen cada 100 VN) |

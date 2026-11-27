@@ -1,4 +1,4 @@
-// Resumen del sábado: junta hechos desde los archivos públicos de data/, los redacta (Claude Haiku o plantillas) y
+// Resumen del sábado: junta hechos desde los archivos públicos de data/, los redacta (Gemini, Claude Haiku o plantillas) y
 // controla que el texto no traiga nada que no esté en los hechos. Puro: lo usa tools/resumen.mjs y las pruebas.
 // Solo datos públicos: nunca cantidades, montos ni valores de la cartera.
 import { fechas, fmt } from './util.js';
@@ -168,6 +168,71 @@ export function textoDeRespuesta(r) {
   return t;
 }
 
+// ---------- Gemini ----------
+const GEMINI = 'https://generativelanguage.googleapis.com/v1beta';
+const REINTENTABLES = new Set([429, 500, 502, 503, 504, 'tiempo', 'json']);
+const fallo = status => Object.assign(new Error(typeof status === 'number' ? `la API respondió ${status}` : status === 'tiempo' ? 'tiempo agotado' : 'respuesta que no se pudo leer'), typeof status === 'number' ? { status } : {}, { tipo: status });
+
+// El mismo pedido, con la forma de Gemini. `anterior`: la forma vieja de pedir JSON.
+export function cuerpoGemini(pedido, anterior = false) {
+  const esquema = pedido.output_config.format.schema;
+  return {
+    systemInstruction: { parts: [{ text: pedido.system }] },
+    contents: pedido.messages.map(m => ({ role: 'user', parts: [{ text: m.content }] })),
+    generationConfig: anterior ? { responseMimeType: 'application/json', responseJsonSchema: esquema } : { responseFormat: { text: { mimeType: 'APPLICATION_JSON', schema: esquema } } },
+  };
+}
+
+// La respuesta de Gemini con la forma que entiende `redactar`. Lanza si no terminó bien o no es JSON.
+export function desdeGemini(d, modelo) {
+  const c = d?.candidates?.[0];
+  const texto = (c?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('').replace(/^\s*```(?:json)?|```\s*$/g, '').trim();
+  if ((c?.finishReason && c.finishReason !== 'STOP') || !texto) throw fallo('json');
+  try { JSON.parse(texto); } catch { throw fallo('json'); }
+  const u = d.usageMetadata || {};
+  return { model: modelo, stop_reason: 'end_turn', content: [{ type: 'text', text: texto }], usage: { input_tokens: u.promptTokenCount || 0, output_tokens: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0) } };
+}
+
+// Prueba los modelos en orden: ante límite de uso, sobrecarga, tiempo agotado o respuesta rota reintenta con espera
+// creciente y pasa al siguiente. La clave va en un encabezado. `anotar(modelo, error)` registra cada falla.
+export function llamarGemini({ clave, modelos, fetchFn = fetch, tiempoMs = 30000, reintentos = 2, esperar = ms => new Promise(ok => setTimeout(ok, ms)), anotar = () => {} }) {
+  const pedir = async (modelo, pedido, anterior) => {
+    let r;
+    try {
+      r = await fetchFn(`${GEMINI}/models/${modelo}:generateContent`, { method: 'POST', headers: { 'x-goog-api-key': clave, 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpoGemini(pedido, anterior)), signal: AbortSignal.timeout(tiempoMs) });
+    } catch { throw fallo('tiempo'); }
+    if (r.status === 400 && !anterior) return pedir(modelo, pedido, true);
+    if (!r.ok) throw fallo(r.status);
+    let d;
+    try { d = await r.json(); } catch { throw fallo('json'); }
+    return desdeGemini(d, modelo);
+  };
+  return async pedido => {
+    let ultimo = new Error('no hay modelos de Gemini configurados');
+    for (const modelo of modelos) {
+      for (let intento = 0; intento <= reintentos; intento++) {
+        try { return await pedir(modelo, pedido, false); } catch (err) {
+          ultimo = err; anotar(modelo, String(err.tipo ?? 'otro'));
+          if (!REINTENTABLES.has(err.tipo) || intento === reintentos) break;
+          await esperar(2000 * 2 ** intento);
+        }
+      }
+    }
+    throw ultimo;
+  };
+}
+
+// Prueba un proveedor y, si falla, el siguiente. null si no hay ninguno.
+export function encadenar(llamadores) {
+  const l = llamadores.filter(Boolean);
+  if (!l.length) return null;
+  return async pedido => {
+    let ultimo;
+    for (const llamar of l) { try { return await llamar(pedido); } catch (err) { ultimo = err; } }
+    throw ultimo;
+  };
+}
+
 // Arma el resumen. `llamar(pedido)` pide a la API y devuelve la respuesta; sin ella, o si algo falla, plantillas.
 export async function redactar(h, { llamar, modelo = 'claude-haiku-5-5' } = {}) {
   const conPlantilla = (motivo, uso = null) => ({ por: 'plantilla', motivo, secciones: plantilla(h), uso });
@@ -178,7 +243,7 @@ export async function redactar(h, { llamar, modelo = 'claude-haiku-5-5' } = {}) 
     uso = r.usage || null;
     const s = JSON.parse(textoDeRespuesta(r));
     const motivo = revisar(s, h);
-    return motivo ? conPlantilla(motivo, uso) : { por: modelo, secciones: { cartera: s.cartera, senales: s.senales, contexto: s.contexto }, uso };
+    return motivo ? conPlantilla(motivo, uso) : { por: r.model || modelo, secciones: { cartera: s.cartera, senales: s.senales, contexto: s.contexto }, uso };
   } catch (err) { return conPlantilla(String(err?.status ? `la API respondió ${err.status}` : err?.message || err).slice(0, 160), uso); }
 }
 

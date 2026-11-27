@@ -242,12 +242,22 @@ def modelos_gemini(clave, timeout):
     return out
 
 
+def formas_json(esquema):
+    """Cómo pedirle JSON a Gemini: la forma documentada para REST y, si la rechaza, la anterior."""
+    return ({"responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": esquema}}},
+            {"responseMimeType": "application/json", "responseJsonSchema": esquema})
+
+
 def llamar_gemini(clave, modelo, sistema, usuario, esquema, timeout):
-    d = _gemini(f"{GEMINI}/models/{modelo}:generateContent", clave, timeout, {
-        "systemInstruction": {"parts": [{"text": sistema}]},
-        "contents": [{"role": "user", "parts": [{"text": usuario}]}],
-        "generationConfig": {"responseMimeType": "application/json", "responseJsonSchema": esquema},
-    })
+    nueva, anterior = formas_json(esquema)
+    cuerpo = {"systemInstruction": {"parts": [{"text": sistema}]}, "contents": [{"role": "user", "parts": [{"text": usuario}]}]}
+    url = f"{GEMINI}/models/{modelo}:generateContent"
+    try:
+        d = _gemini(url, clave, timeout, dict(cuerpo, generationConfig=nueva))
+    except ErrorModelo as e:
+        if e.tipo != "400":
+            raise
+        d = _gemini(url, clave, timeout, dict(cuerpo, generationConfig=anterior))
     u = d.get("usageMetadata") or {}
     uso = (u.get("promptTokenCount") or 0, (u.get("candidatesTokenCount") or 0) + (u.get("thoughtsTokenCount") or 0))
     candidato = (d.get("candidates") or [{}])[0]

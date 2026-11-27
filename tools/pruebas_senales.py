@@ -362,7 +362,7 @@ def noticias_sin_contacto():
 
 
 # ---------- etapa 4 · clasificación ----------
-ERRORES_GEMINI = json.loads(grabada("gemini_errores_formato.json"))
+ERRORES_GEMINI = dict(json.loads(grabada("gemini_errores_formato.json")), **{"400": {"error": {"code": 400, "status": "INVALID_ARGUMENT"}}})
 
 
 def dos_noticias():
@@ -526,7 +526,8 @@ def cadena_gemini():
     assert all(p[3] == 30 for p in generar), "cada pedido con su tiempo límite"
     assert all("clave-gemini" not in p[0] and p[1]["X-goog-api-key"] == CLAVES["GEMINI_API_KEY"] for p in pedidos), "la clave va en el encabezado"
     cuerpo = json.loads(generar[0][2])
-    assert cuerpo["generationConfig"]["responseMimeType"] == "application/json" and "temperature" not in cuerpo["generationConfig"]
+    formato = cuerpo["generationConfig"]["responseFormat"]["text"]
+    assert formato["mimeType"] == "APPLICATION_JSON" and formato["schema"] == clasificar.ESQUEMA and "temperature" not in cuerpo["generationConfig"]
     assert "clave" not in salida.getvalue(), "no se imprime ninguna clave"
 
 
@@ -618,15 +619,32 @@ def cache_y_topes():
     assert not pedidos and r["pendientes"] == 2 and r["sin_ia"]
 
 
+def gemini_con_la_forma_anterior():
+    pedidos = []
+    guion = {"gemini-3.5-flash-lite": ["400", "ok"]}
+    cfg = config_ia(proveedor="gemini", modelos_gemini=["gemini-3.5-flash-lite"])
+    with parches((clasificar, "_abrir", gemini_simulado(guion, pedidos))):
+        r = clasificar.clasificar(dos_noticias(), cfg, {"GEMINI_API_KEY": "k"}, "x")
+    formas = [list(json.loads(p[2])["generationConfig"]) for p in pedidos if ":generateContent" in p[0]]
+    assert formas == [["responseFormat"], ["responseMimeType", "responseJsonSchema"]], formas
+    assert r["con_ia"] == 2 and r["modelos"]["gemini-3.5-flash-lite"]["errores"] == {}, r["modelos"]
+    # si rechaza las dos, cuenta como falla y sigue sin trabarse
+    with parches((clasificar, "_abrir", gemini_simulado({"gemini-3.5-flash-lite": ["400"]}, []))):
+        r = clasificar.clasificar(dos_noticias(), cfg, {"GEMINI_API_KEY": "k"}, "x")
+    assert r["sin_ia"] and r["modelos"]["gemini-3.5-flash-lite"]["errores"] == {"400": 1}, r["modelos"]
+
+
 def corrida_guarda_el_uso():
     historial = {"corridas": [{"fecha": str(i)} for i in range(clasificar.CORRIDAS_GUARDADAS)]}
-    with datos_temporales(noticias={"items": dos_noticias()}, ia_uso=historial), sdk_falso(["ok"], []):
+    con_haiku = dict(mercado.CFG, ia=dict(mercado.CFG.get("ia") or {}, proveedor="haiku"))
+    with datos_temporales(noticias={"items": dos_noticias()}, ia_uso=historial), sdk_falso(["ok"], []), parches((mercado, "CFG", con_haiku)):
         clasificar.correr(mercado, entorno=CLAVES)
         n, u = mercado.leer("noticias.json"), mercado.leer("ia_uso.json")
     assert n["items"][0]["por"]["proveedor"] == "anthropic"
     assert len(u["corridas"]) == clasificar.CORRIDAS_GUARDADAS and u["corridas"][-1]["con_ia"] == 2 and u["corridas"][0]["fecha"] == "1"
     assert "clave" not in json.dumps(u)
-    assert clasificar.configuracion(mercado)["proveedor"] == "haiku"
+    propia = clasificar.configuracion(mercado)
+    assert propia["proveedor"] == mercado.CFG["ia"]["proveedor"] and propia["precios"], "el archivo manda sobre los valores por defecto"
 
 
 # ---------- etapa 5 · directivos ----------
@@ -797,6 +815,7 @@ PRUEBAS = [
     ("IA: sin clave usa las reglas y lo marca; con \"ninguno\" no pide nada", sin_clave_o_sin_ia),
     ("IA: caché por noticia y topes de cantidad, tokens y tiempo", cache_y_topes),
     ("IA: la corrida guarda las clasificaciones y el uso", corrida_guarda_el_uso),
+    ("IA: si Gemini rechaza el formato nuevo, prueba el anterior", gemini_con_la_forma_anterior),
     ("Noticias SEC: 8-K con sus ítems, formulario 4 agrupado y solo lo pedido", envios_de_la_sec),
     ("Noticias SEC: del 6-K se saca de qué trata, sin la carátula", extracto_del_6k),
     ("Noticias Google: titular sin el medio, fecha y tope por búsqueda", rss_de_google),

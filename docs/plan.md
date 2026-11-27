@@ -18,6 +18,7 @@ Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inven
 ### Decisiones tomadas (para confirmar)
 
 - **Noticias**: los ETF de referencia y de comparación no se buscan en Google News (puro ruido). Los formularios 4 no pasan por la IA. Hasta 40 por empresa.
+- **Proveedor**: Gemini (pedido del dueño, 27/11/2026). También redacta el resumen, con los mismos controles; Claude queda de reserva si hay clave. Usa la forma documentada para pedir JSON (`responseFormat`) y, si un modelo la rechaza, la anterior.
 - **IA**: "falla" es cada intento, así que un modelo que agota sus reintentos queda descartado en esa corrida. Una noticia clasificada por reglas se vuelve a intentar con IA (hasta 3 corridas si el modelo la devuelve mal); lo que clasificó un modelo no se repite.
 - **"Sin IA"**: se avisa si se quiso usar un modelo y ninguno respondió o no hay clave; con `ninguno` no se avisa.
 - **Puntaje de directivos**: calculado solo en el Action, con los pesos del archivo (no se editan desde la app); desde la app se cambia el umbral. Lo que falta suma cero. "Rutinaria" mira las presentaciones del directivo en los tres años.
@@ -29,10 +30,10 @@ Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inven
 
 ### Para probar con los datos reales (después de mergear)
 
-1. Cargar los secretos `SEC_CONTACTO` y `ANTHROPIC_API_KEY`. Revisar `ALERTAS_CONFIG`: al 27/11/2026 no estaba cargado, así que no corren las alertas de precio.
+1. Cargar los secretos `SEC_CONTACTO` (hecho el 27/11) y `GEMINI_API_KEY`. Revisar `ALERTAS_CONFIG`: al 27/11/2026 no estaba cargado, así que no corren las alertas de precio.
 2. Abrir el tablero en el dispositivo con permiso: tiene que aparecer el commit "datos: qué seguir". Revisar que `data/seguimiento.json` tenga tus tickers con el subyacente correcto y nada más.
 3. Correr "Datos de mercado" a mano y mirar los dos trabajos. En ⋯ → Fuentes y fechas, que SEC, noticias, calendario y formularios 4 no digan "sin actualizar". Es la primera vez que se pide `company_tickers.json`, un 6-K y un formulario 4 reales.
-4. Con la clave de Claude: ver en `data/ia_uso.json` que haya pedidos "ok", tokens y costo (primera prueba real del SDK). Leer 20 noticias en Radar y ver si la materialidad tiene sentido.
+4. Con la clave de Gemini: ver en `data/ia_uso.json` qué modelo respondió ("ok") y sus errores (primera prueba real de la API). Leer 20 noticias en Radar y ver si la materialidad tiene sentido.
 5. Calendario: comparar dos fechas de balance y un movimiento de opciones con el broker.
 6. Radar de directivos: abrir dos formularios y comparar monto, cargo y puntaje; ver que las señales aparezcan como fantasmas "radar".
 7. "Resumen del sábado" → *Run workflow*: que llegue el aviso, que los números coincidan con el tablero y que "Marcar como leído" lo saque de Hoy en todos los dispositivos.
