@@ -13,16 +13,18 @@ function puntaje(x, umbral) {
     h('ul', Object.entries(x.partes || {}).map(([k, v]) => h('li', `${NOMBRE_PARTE[k] || k}: ${v == null ? 'sin dato' : fmt.pct(v, 0)}`))));
 }
 
+// Tres columnas para que entre en el celular: el puntaje primero, que es lo que ordena.
 function tablaCompras(ctx, filas, umbral) {
   return tabla([
+    { titulo: 'Puntaje', celda: x => puntaje(x, umbral) },
     { titulo: 'Empresa', celda: x => [h('strong.num', x.t), h('span.empresa', x.empresa),
       h('span.marcas', x.propio ? chip(x.propio === x.t ? 'En tu cartera' : `En tu cartera (${x.propio})`, 'acento') : null, x.cedear ? chip('Hay CEDEAR', 'ok') : null, x.puntaje >= umbral && x.accionable ? chip('Señal', 'alerta') : null),
       botonFantasma(ctx, 'radar', x.t)] },
-    { titulo: 'Quién', celda: x => [x.dueno, h('small.desglose', `${x.cargo} · ${NOMBRE_RUTINA[x.rutina] || 'historia sin mirar'}${x.plan ? ' · plan prefijado' : ''}`)] },
-    { titulo: 'USD', num: 1, celda: x => [x.monto == null ? '—' : fmt.num(x.monto), h('small.desglose', x.aumento == null ? '' : `tenencia ${x.aumento >= 1 ? 'nueva o duplicada' : '+' + fmt.pct(x.aumento, 0)}`)] },
-    { titulo: 'Puntaje', num: 1, celda: x => puntaje(x, umbral) },
-    { titulo: 'Fecha', num: 1, celda: x => externo(x.url, fmt.fecha(x.fecha)) },
-  ], filas, { clase: 'compacta' });
+    { titulo: 'Compra', celda: x => [h('span.num', x.monto == null ? 'USD —' : fmt.usd(x.monto)),
+      h('small.desglose', `${x.dueno} · ${x.cargo}`),
+      h('small.desglose', [NOMBRE_RUTINA[x.rutina] || 'historia sin mirar', x.aumento == null ? '' : `tenencia ${x.aumento >= 1 ? 'nueva o duplicada' : '+' + fmt.pct(x.aumento, 0)}`, x.plan ? 'plan prefijado' : ''].filter(Boolean).join(' · ')),
+      h('small.desglose', externo(x.url, `${fmt.fecha(x.fecha)} ↗`))] },
+  ], filas, { clase: 'compacta.directivos-tabla' });
 }
 
 export function seccionDirectivos(ctx) {

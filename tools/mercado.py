@@ -582,11 +582,6 @@ def main():
     except Exception as e:  # noqa: BLE001
         print(f"FALLA alertas: {type(e).__name__}", file=sys.stderr)
 
-    try:  # calendario, noticias y directivos de lo que seguís (después de las alertas, para no demorarlas)
-        senales.correr(sys.modules[__name__])
-    except Exception as e:  # noqa: BLE001
-        print(f"FALLA señales: {type(e).__name__}: {str(e)[:160]}", file=sys.stderr)
-
 
 if __name__ == "__main__":
     main()

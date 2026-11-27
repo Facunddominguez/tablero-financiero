@@ -63,17 +63,17 @@ function fijos(e) {
 }
 
 function feriados(e, desde, hasta) {
-  const cal = e.feriados, out = [];
+  const cal = e.feriados, out = [], frase = t => t.charAt(0).toUpperCase() + t.slice(1);
   if (!cal) return out;
   for (let f = desde; f <= hasta; f = fechas.sumar(f, 1)) {
     const dia = new Date(f + 'T12:00:00Z').getUTCDay();
     if (dia === 0 || dia === 6) continue;
     const base = { fecha: f, tipo: 'feriado' };
-    if (cal.feriados?.[f]) out.push({ ...base, titulo: 'Feriado en EE.UU.', detalle: `${cal.feriados[f]}: no hay mercado allá.`, fuente: 'NYSE' });
-    if (cal.medias_ruedas?.[f]) out.push({ ...base, titulo: 'Media rueda en EE.UU.', detalle: `${cal.medias_ruedas[f]}.`, fuente: 'NYSE' });
+    if (cal.feriados?.[f]) out.push({ ...base, titulo: 'Feriado en EE.UU.', detalle: frase(`${cal.feriados[f]}: no hay mercado allá.`), fuente: 'NYSE' });
+    if (cal.medias_ruedas?.[f]) out.push({ ...base, titulo: 'Media rueda en EE.UU.', detalle: frase(`${cal.medias_ruedas[f]}.`), fuente: 'NYSE' });
     const ar = diaByma(cal, f);
-    if (ar.sinRueda) out.push({ ...base, titulo: 'Sin rueda en BYMA', detalle: `${ar.sinRueda}.`, fuente: 'BYMA y ArgentinaDatos' });
-    else if (ar.sinLiquidacion) out.push({ ...base, titulo: 'BYMA opera sin liquidar', detalle: `${ar.sinLiquidacion}.`, fuente: 'BYMA y ArgentinaDatos' });
+    if (ar.sinRueda) out.push({ ...base, titulo: 'Sin rueda en BYMA', detalle: frase(`${ar.sinRueda}.`), fuente: 'BYMA y ArgentinaDatos' });
+    else if (ar.sinLiquidacion) out.push({ ...base, titulo: 'BYMA opera sin liquidar', detalle: frase(`${ar.sinLiquidacion}.`), fuente: 'BYMA y ArgentinaDatos' });
   }
   return out;
 }

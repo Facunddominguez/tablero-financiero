@@ -92,16 +92,20 @@ async function usarMercado(nuevos, { forzar = false } = {}) {
 }
 
 // Las señales de directivos que se ven por primera vez quedan como carteras fantasma, para medirlas contra SPY.
+let anotando = false; // los precios y los datos remotos llegan a la vez: se anota de a una
 async function registrarSenales() {
-  if (!S.estado || S.localManda) return;
+  if (!S.estado || S.localManda || anotando) return;
   const nuevas = eventosSenales(S.estado);
-  if (nuevas.length) await ctx.registrar(...nuevas);
+  if (!nuevas.length) return;
+  anotando = true;
+  try { await ctx.registrar(...nuevas); } finally { anotando = false; }
 }
 
 // Publica la lista de tickers a seguir (data/seguimiento.json). Si falla, no frena nada: se reintenta en la próxima.
 async function publicarLista() {
   const gh = S.gh;
-  if (!gh || !S.estado || S.localManda) return;
+  // sin los ratios cargados la lista saldría mal (no se sabría el subyacente de cada CEDEAR): mejor la próxima
+  if (!gh || !S.estado?.ratios || S.localManda) return;
   try { await publicarSeguimiento(gh, seguimiento(S.estado)); S.seguimiento = { error: null }; }
   catch (err) { S.seguimiento = { error: err.message }; }
 }

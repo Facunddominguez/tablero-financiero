@@ -1,7 +1,7 @@
 // Formularios del diario: anotar, editar y borrar predicciones y carteras fantasma, y cargar rotaciones.
 import { h, fmt, fechas, aNumero } from '../util.js';
 import { dialogo, campo, entrada, boton } from './comun.js';
-import { eventosRotacion, serieDeTicker, comoPedirlo, contraReferencia, leerHistorialAllaria, REFERENCIAS, FORMATO_ALLARIA } from '../diario.js';
+import { eventosRotacion, contraReferencia, leerHistorialAllaria, REFERENCIAS, FORMATO_ALLARIA } from '../diario.js';
 
 const texto = (placeholder, filas = 2, value = '') => h('textarea', { rows: filas, placeholder, value });
 const acciones = (d, guardar) => h('div.acciones', boton('Cancelar', () => d().close(), 'fantasma'), h('button.boton.primario', { type: 'submit' }, guardar));
@@ -66,7 +66,7 @@ export function botonFantasma(ctx, origen, ticker) {
   const e = ctx.estado, ya = (e.datos.fantasmas || []).filter(f => f.ticker === ticker && f.origen === origen).map(f => f.fecha).sort().at(-1);
   if (ya) return h('small.desglose', `fantasma desde el ${fmt.fecha(ya)}`);
   return h('button.enlace.fantasma-seguir', { type: 'button', title: 'Anotalo sin comprar: después se compara con SPY', onclick: async () => {
-    await ctx.registrar({ tipo: 'fantasma', origen, ticker, fecha: e.hoy }, { tipo: 'decision', fecha: e.hoy, texto: `Fantasma: ${ticker} (${origen})${serieDeTicker(e, ticker) ? '' : `; sumá ${comoPedirlo(e, ticker)} a historico_extra`}` });
+    await ctx.registrar({ tipo: 'fantasma', origen, ticker, fecha: e.hoy }, { tipo: 'decision', fecha: e.hoy, texto: `Fantasma: ${ticker} (${origen})` });
   } }, 'Seguir como fantasma');
 }
 

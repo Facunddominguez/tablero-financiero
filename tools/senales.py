@@ -5,8 +5,8 @@ La lista de qué seguir (data/seguimiento.json) la escribe la app al sincronizar
 El Action nunca ve los datos cifrados. Cada fuente va por separado y, si falla, conserva el último dato y lo marca
 `stale`. Si falta un secreto, esa parte se saltea con un aviso.
 
-Lo llama mercado.main() (no en los pedidos de precios desde la app) y el resumen del sábado.
-Uso: python tools/senales.py
+Lo corren el workflow de mercado (en un trabajo aparte, nunca en los pedidos de precios desde la app) y el del
+resumen del sábado. Uso: python tools/senales.py
 """
 import datetime as dt
 import os

@@ -27,7 +27,7 @@ function candidatas(e, ticker) {
   return [ticker, ADR_DE_LOCAL[ticker], info?.usa].filter(Boolean);
 }
 export const serieDeTicker = (e, ticker) => candidatas(e, ticker).find(t => serieDe(e.historico, t)?.some(v => v > 0)) || null;
-// Lo que habría que sumar a historico_extra para poder seguirlo.
+// La serie del histórico que hace falta para poder seguirlo.
 export const comoPedirlo = (e, ticker) => ADR_DE_LOCAL[ticker] || e.ratios?.[ticker]?.usa || ticker;
 
 // Precio de una serie: 'compra' = primer cierre desde la fecha; si no, el último hasta la fecha.

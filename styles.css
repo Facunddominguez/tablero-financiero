@@ -136,9 +136,13 @@ h2.sub { margin-top: 2rem; }
 .noticia { padding: .55rem 0; border-top: 1px solid var(--linea); }
 .noticia-linea { font-size: .93rem; }
 .noticia-meta { font-size: .8rem; color: var(--tinta-3); margin-top: .15rem; overflow-wrap: anywhere; }
-.puntaje summary { cursor: pointer; list-style: none; }
+.puntaje summary { cursor: pointer; list-style: none; font-size: 1.25rem; }
 .puntaje summary .alto { color: var(--acento); }
-.puntaje ul { list-style: none; margin: .4rem 0 0; padding: 0; font: .78rem/1.5 var(--f-texto); color: var(--tinta-2); text-align: left; min-width: 11rem; }
+.puntaje ul { list-style: none; margin: .4rem 0 0; padding: 0; font: .74rem/1.45 var(--f-texto); color: var(--tinta-2); min-width: 7.5rem; }
+.directivos-tabla td { vertical-align: top; }
+.directivos-tabla .desglose, .calendario-tabla .desglose { white-space: normal; }
+.calendario-tabla td { vertical-align: top; }
+.calendario-tabla td:first-child { white-space: nowrap; }
 .directivos h3 { font-size: .95rem; margin: 1.25rem 0 .35rem; }
 .resumen-semana { margin-top: 2.25rem; padding-top: 1rem; border-top: 1px solid var(--linea-fuerte); }
 .resumen-semana h3 { font-size: .95rem; margin: 1rem 0 .25rem; }

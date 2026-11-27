@@ -68,7 +68,7 @@ function seccionRiesgo(e) {
 // "+12,0%" arriba y, abajo, cuánto hizo la referencia y la diferencia.
 const contra = (x, nombre) => x == null ? '—' : [color(x.rend, fmt.pctSigno(x.rend, 1)),
   h('span.desglose', h('span', `${nombre} ${fmt.pctSigno(x.ref, 1)}`), h('span', `diferencia ${fmt.pp(x.dif)}`))];
-const pedirSeries = faltan => faltan.length ? aviso(`Sin historia de precios: ${faltan.join(', ')}. Para compararlos, sumalos a historico_extra en tools/mercado_config.json.`, 'alerta') : null;
+const pedirSeries = faltan => faltan.length ? aviso(`Sin historia de precios: ${faltan.join(', ')}. Se baja sola en la próxima actualización de precios, después de sincronizar.`, 'alerta') : null;
 
 // Cada satélite contra su referencia (Trimestral).
 function seccionReferencias(ctx) {
@@ -385,7 +385,7 @@ function medidaAllaria(e) {
   const m = medirHistorialAllaria(e);
   if (!m) return null;
   const pc = x => x == null ? '—' : color(x, fmt.pctSigno(x, 1));
-  const nucleo = `Núcleo ${Object.values(e.datos.nucleo.pesos_internos).map(w => Math.round(w * 100)).join('/')}`;
+  const pesos = Object.values(e.datos.nucleo.pesos_internos).map(w => Math.round(w * 100)).join('/');
   const a = m.acumulado;
   return sec('La cartera modelo contra SPY y tu núcleo',
     tabla([
@@ -393,9 +393,9 @@ function medidaAllaria(e) {
         f.entran?.length || f.salen?.length ? h('small.desglose', [f.entran.length ? `entra ${f.entran.join(', ')}` : '', f.salen.length ? `sale ${f.salen.join(', ')}` : ''].filter(Boolean).join(' · ')) : null] },
       { titulo: 'Allaria', num: 1, celda: f => pc(f.rendimiento) },
       { titulo: 'SPY', num: 1, celda: f => pc(f.spy) },
-      { titulo: nucleo, num: 1, celda: f => pc(f.nucleo) },
-    ], m.filas, { pie: a ? [`Acumulado de ${a.periodos} ${a.periodos === 1 ? 'período' : 'períodos'}`, pc(a.rendimiento), pc(a.spy), pc(a.nucleo)] : null }),
-    h('p.nota', { style: 'margin-top:.6rem' }, `Rendimientos de Allaria según ${m.fuente}. SPY y el núcleo: en dólares de EE.UU. con dividendos, entre las mismas fechas; confirmá en qué moneda publica Allaria los suyos.${m.sin_historia.length ? ` Sin historia de precios para ${m.sin_historia.join(', ')} (empieza el ${fmt.fecha(m.desde_historia)}).` : ''}${m.filas.at(-1)?.abierto && m.filas.at(-1).rendimiento != null ? ' El último período se mide hasta hoy: puede no cerrar en la misma fecha que su cifra.' : ''}`));
+      { titulo: 'Núcleo', num: 1, celda: f => pc(f.nucleo) },
+    ], m.filas, { clase: 'compacta', pie: a ? [`Acumulado de ${a.periodos} ${a.periodos === 1 ? 'período' : 'períodos'}`, pc(a.rendimiento), pc(a.spy), pc(a.nucleo)] : null }),
+    h('p.nota', { style: 'margin-top:.6rem' }, `Rendimientos de Allaria según ${m.fuente}. SPY y el núcleo (${pesos}): en dólares de EE.UU. con dividendos, entre las mismas fechas; confirmá en qué moneda publica Allaria los suyos.${m.sin_historia.length ? ` Sin historia de precios para ${m.sin_historia.join(', ')} (empieza el ${fmt.fecha(m.desde_historia)}).` : ''}${m.filas.at(-1)?.abierto && m.filas.at(-1).rendimiento != null ? ' El último período se mide hasta hoy: puede no cerrar en la misma fecha que su cifra.' : ''}`));
 }
 
 function allaria(ctx) {

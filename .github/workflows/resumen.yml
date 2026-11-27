@@ -16,9 +16,9 @@ on:
 permissions:
   contents: write
 
-# el mismo grupo que "Datos de mercado": no escriben los dos a la vez
+# el mismo grupo que las señales de "Datos de mercado": no escriben las noticias los dos a la vez
 concurrency:
-  group: mercado
+  group: senales
   cancel-in-progress: false
 
 jobs:

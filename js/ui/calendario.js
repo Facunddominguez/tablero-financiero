@@ -27,9 +27,9 @@ export function informeCalendario(ctx, { hoja, sec }) {
       vencen.length ? aviso(`Falta cargar fechas nuevas en data/eventos.json: ${vencen.map(v => `${v.titulo} (hasta el ${fmt.fecha(v.hasta)})`).join('; ')}.`, 'alerta') : null,
       lista.length ? tabla([
         { titulo: 'Fecha', celda: x => [h('span.num', fechaCorta(x)), x.sinDia ? h('small.desglose', 'día a confirmar') : null] },
-        { titulo: 'Qué', celda: x => [h('strong', x.titulo), x.detalle ? h('small.desglose', x.detalle) : null] },
-        { titulo: 'Tipo', celda: x => chip(TIPOS[x.tipo] || x.tipo, x.tipo === 'balance' || x.tipo === 'cupon' ? 'acento' : 'neutro') },
-        { titulo: 'Fuente', celda: x => x.url ? h('a', { href: x.url, target: '_blank', rel: 'noopener noreferrer' }, x.fuente) : x.fuente },
-      ], lista, { clase: 'compacta' }) : h('p.nota', 'No hay eventos cargados para este período.'),
+        { titulo: 'Qué', celda: x => [h('strong', x.titulo), ' ', chip(TIPOS[x.tipo] || x.tipo, x.tipo === 'balance' || x.tipo === 'cupon' ? 'acento' : 'neutro'),
+          x.detalle ? h('small.desglose', x.detalle) : null,
+          h('small.desglose', 'Fuente: ', x.url ? h('a', { href: x.url, target: '_blank', rel: 'noopener noreferrer' }, x.fuente) : x.fuente)] },
+      ], lista, { clase: 'compacta.calendario-tabla' }) : h('p.nota', 'No hay eventos cargados para este período.'),
       h('p.nota', { style: 'margin-top:.6rem' }, 'Las fechas de balances las publica cada empresa y pueden cambiar. El movimiento de las opciones es lo que el mercado paga por cubrirse hasta ese vencimiento: no dice para qué lado.')));
 }
