@@ -131,5 +131,12 @@ fijos, propios = criticos_por_anio(None), criticos_por_anio(G)
 print(f"     críticos del día por año: {fijos:.1f} con umbrales fijos, {propios:.1f} según la volatilidad de cada activo")
 res.append(ok(propios <= fijos and propios <= 22, "calibración con el tope: no hay más críticos que antes (los escalones acumulados no cambian)"))
 
+# ---------- bitácora de la semana (pública): sin el tope duro, sin repetir y solo dos semanas ----------
+al, _ = alertas.evaluar(cfg, mercado([9400, -6.0], [5600, 12.0], [1000, 0.0]), {}, "2026-11-16")
+b = alertas.bitacora({"items": [{"fecha": "2026-10-01", "ticker": "X", "tipo": "dia", "cambio": 0.1}]}, al, "2026-11-16")
+res.append(ok(sorted(x["ticker"] for x in b["items"]) == ["AAA", "BBB"] and all(set(x) == {"fecha", "ticker", "tipo", "cambio"} for x in b["items"]),
+              "la bitácora no guarda el tope duro, precios ni textos, y olvida lo viejo"))
+res.append(ok(alertas.bitacora(b, al, "2026-11-16")["items"] == b["items"] and abs(b["items"][0]["cambio"]) > 0.05, "no repite el mismo aviso del día"))
+
 print(f"\n{sum(res)}/{len(res)} pruebas de alertas pasan")
 sys.exit(0 if all(res) else 1)

@@ -358,6 +358,7 @@ function filasSenales(e) {
     ['Noticias de lo que seguís', 'Google News (RSS), en español e inglés', f.google?.actualizado, f.google?.stale],
     ['Clasificación de las noticias', quienClasifica(e), e.ia_uso?.corridas?.at(-1)?.fecha, !!e.ia_uso?.corridas?.at(-1)?.sin_ia],
     ['Formularios 4 de directivos', e.directivos?.aviso || 'SEC EDGAR; precio y tamaño de Yahoo Finance', e.directivos?.actualizado, e.directivos?.stale],
+    ['Resumen del sábado', e.resumen ? `Redactado por ${e.resumen.por}` : 'Corre los sábados a las 12:00', e.resumen?.generado, false],
     ['Hechos relevantes de BYMA y CNV', f.byma?.nota || 'Sin acceso público estable: se usan los 6-K de la SEC', null, false, 'sin fuente'],
   ];
 }

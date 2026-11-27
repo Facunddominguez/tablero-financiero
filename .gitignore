@@ -9,3 +9,4 @@ privado/
 CLAUDE.md
 .claude/
 __pycache__/
+node_modules/

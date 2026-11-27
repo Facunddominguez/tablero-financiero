@@ -8,6 +8,7 @@ import { lineaSemaforo } from './argentina.js';
 import { lineaClima, lineaAporteExtra } from './clima.js';
 import { lineaCalendario } from './calendario.js';
 import { lineaIA } from './noticias.js';
+import { seccionResumen } from './resumen.js';
 
 function antiguedad(e) {
   if (e.precios.origen === 'archivo') return `precios del resumen del ${fmt.fecha(e.precios.fecha_archivo)}`;
@@ -144,6 +145,7 @@ export function vistaHoy(ctx) {
       avisos.length || lineas.length ? [h('h2.sub', 'Para saber'),
         lineas.length ? h('ul.lineas-contexto', lineas) : null,
         avisos.length ? h('ol.lista-pasos', avisos.map(p => tarjetaPaso(ctx, p))) : null] : null),
+    seccionResumen(ctx),
     indicadores(e),
     vigentes(plan));
 }

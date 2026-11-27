@@ -71,13 +71,22 @@ jobs:
           SEC_CONTACTO: ${{ secrets.SEC_CONTACTO }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - uses: actions/setup-node@v4
+        if: steps.chequeo.outputs.correr == 'true'
+        with:
+          node-version: "22"
+      # Color del semáforo y lectura del clima del día, para el resumen del sábado. Si falla, no frena el resto.
+      - name: Estado del día
+        if: steps.chequeo.outputs.correr == 'true'
+        continue-on-error: true
+        run: node tools/estado_dia.mjs
       - name: Guardar si cambió algo
         if: steps.chequeo.outputs.correr == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # solo lo que escribe este Action (nunca el archivo cifrado); lo que todavía no existe se saltea
-          for f in market insiders historico alertas_estado feriados_ar argentina clima largo_plazo sec_cik agenda noticias ia_uso directivos; do
+          for f in market insiders historico alertas_estado feriados_ar argentina clima largo_plazo sec_cik agenda noticias ia_uso directivos semaforo alertas_semana; do
             if [ -f "data/$f.json" ]; then git add "data/$f.json"; fi
           done
           if git diff --cached --quiet; then

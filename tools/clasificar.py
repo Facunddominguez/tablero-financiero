@@ -125,14 +125,14 @@ def necesita_ia(x):
 # ---------- validación ----------
 
 def numeros(texto):
-    """Los números de un texto, sin separadores de miles y con punto decimal: "1.234,5" → "1234.5"."""
+    """Los números de un texto, sin separadores de miles y con punto decimal: "1.234,5" y "1,234.5" → "1234.5"."""
     out = set()
     for t in re.findall(r"\d+(?:[.,]\d+)*", texto or ""):
-        if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", t):
-            t = re.sub(r"[.,]", "", t)
-        else:
-            t = t.replace(",", ".")
-        out.add(t)
+        miles = re.fullmatch(r"(\d{1,3}(?:\.\d{3})+)(?:,(\d+))?", t) or re.fullmatch(r"(\d{1,3}(?:,\d{3})+)(?:\.(\d+))?", t)
+        n = re.sub(r"[.,]", "", miles.group(1)) + (f".{miles.group(2)}" if miles.group(2) else "") if miles else t.replace(",", ".")
+        if "." in n and n.count(".") == 1:
+            n = n.rstrip("0").rstrip(".")  # 16,0 y 16 son el mismo número
+        out.add(n)
     return out
 
 

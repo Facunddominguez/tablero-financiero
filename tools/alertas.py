@@ -20,6 +20,8 @@ import urllib.request
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 ESTADO = RAIZ / "data" / "alertas_estado.json"
+SEMANA = RAIZ / "data" / "alertas_semana.json"
+DIAS_GUARDADOS = 14
 
 # Los mismos valores que usa la app (js/motor.js, VOLATILIDAD).
 PARAMETROS = {"lambda": 0.94, "aviso": 2.5, "critico": 4.0, "grupo": {"nucleo": 1.25}, "min_datos": 40, "tope": 1.5}
@@ -168,7 +170,7 @@ def evaluar(cfg, mercado, estado, hoy, historico=None, feriados=None, parametros
     u, _ = umbral_del_dia(historico, "MEP", "mep", hoy, cfg["dia"].get("mep"), parametros)
     if u and mep_prev and abs(cambio_mep) >= u and s.get("d") != hoy:
         s["d"] = hoy
-        alertas.append({"titulo": f"Dólar MEP {_pct(cambio_mep)} hoy",
+        alertas.append({"tipo": "mep", "ticker": "MEP", "cambio": cambio_mep, "titulo": f"Dólar MEP {_pct(cambio_mep)} hoy",
                         "cuerpo": f"Salto fuerte del tipo de cambio (tu umbral hoy es ±{_num(u * 100)}%). Lo que tenés en pesos vale distinto en dólares; tus reglas no piden hacer nada por esto.",
                         "prioridad": 4})
 
@@ -191,7 +193,7 @@ def evaluar(cfg, mercado, estado, hoy, historico=None, feriados=None, parametros
                     "tope": f"Pasa el máximo de tu umbral (±{_num(u * 100)}%).",
                     "fijo": f"Movimiento fuerte en dólares (tu umbral es ±{_num(u * 100)}%)."}[clase]
             porque = explicar_dia(mercado, serie, dia_usd, feriados) if es_cedear and serie else ""
-            alertas.append({"titulo": f"{a['t']} {_pct(dia_usd)} hoy", "cuerpo": " ".join(x for x in (vara, porque, sufijo) if x), "prioridad": 4})
+            alertas.append({"tipo": "dia", "ticker": a["t"], "cambio": dia_usd, "titulo": f"{a['t']} {_pct(dia_usd)} hoy", "cuerpo": " ".join(x for x in (vara, porque, sufijo) if x), "prioridad": 4})
 
         # 2 · Acumulado desde el precio de referencia, por escalones
         u = cfg["nivel"].get(a["g"])
@@ -205,17 +207,31 @@ def evaluar(cfg, mercado, estado, hoy, historico=None, feriados=None, parametros
                 total = precio_usd / a["ref"] - 1
                 base = f"Desde el {cfg.get('fecha', 'precio de referencia')}, en dólares (escalones de {u * 100:.0f}%)."
                 porque = explicar_acumulado(mercado, historico, serie, cfg.get("fecha"), total) if es_cedear and serie else ""
-                alertas.append({"titulo": f"{a['t']} acumula {_pct(total)}",
+                alertas.append({"tipo": "acumulado", "ticker": a["t"], "cambio": total, "titulo": f"{a['t']} acumula {_pct(total)}",
                                 "cuerpo": " ".join(x for x in (base, porque, sufijo) if x), "prioridad": 4})
             s["k"] = banda
 
         # 3 · Precio en el que la posición cruza su tope duro
         if a.get("tope") and precio_usd >= a["tope"] and _dias(s.get("t"), hoy) >= 14:
             s["t"] = hoy
-            alertas.append({"titulo": f"{a['t']} llegó a su tope",
+            alertas.append({"tipo": "tope", "ticker": a["t"], "titulo": f"{a['t']} llegó a su tope",
                             "cuerpo": "A este precio pasa el tope duro de tu regla de satélites. Abrí el tablero: es la única regla que puede pedir reducir, y antes hay que revisar costos y esperar 48 horas.",
                             "prioridad": 5})
     return alertas, estado
+
+
+def bitacora(anterior, alertas, hoy):
+    """Los movimientos avisados en las últimas dos semanas, para el resumen del sábado. Es público: solo ticker y
+    porcentaje (datos de mercado). El aviso del tope duro no se guarda porque depende de cuánto pesa la posición."""
+    desde = (dt.date.fromisoformat(hoy) - dt.timedelta(days=DIAS_GUARDADOS)).isoformat()
+    items = [x for x in (anterior or {}).get("items") or [] if x.get("fecha", "") >= desde]
+    vistos = {(x["fecha"], x["ticker"], x["tipo"]) for x in items}
+    for a in alertas:
+        clave = (hoy, a.get("ticker"), a.get("tipo"))
+        if a.get("tipo") in ("dia", "acumulado", "mep") and clave not in vistos:
+            vistos.add(clave)
+            items.append({"fecha": hoy, "ticker": a["ticker"], "tipo": a["tipo"], "cambio": round(a["cambio"], 4)})
+    return {"nota": "Movimientos de precio avisados. Sin montos ni cantidades.", "items": items}
 
 
 def enviar(topic, alerta, url_app=None):
@@ -254,5 +270,9 @@ def correr(mercado):
         except Exception:  # noqa: BLE001
             pass
     ESTADO.write_text(json.dumps(estado, separators=(",", ":"), sort_keys=True), encoding="utf-8")
+    previa = _leer(SEMANA)
+    nueva = bitacora(previa, alertas, hoy)
+    if nueva.get("items") != previa.get("items"):
+        SEMANA.write_text(json.dumps(nueva, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"alertas: {len(alertas)} para avisar, {enviadas} enviadas")
     return enviadas

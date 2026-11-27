@@ -28,6 +28,8 @@ jobs:
           node tools/chequear_modulos.mjs
           node --input-type=module --check < js/app.js
           node --input-type=module --check < js/pagina-pruebas.js
+          node --check tools/resumen.mjs
+          node --check tools/estado_dia.mjs
       - name: Pruebas sin datos privados
         run: node tools/pruebas_publicas.mjs
       - name: Pruebas de alertas

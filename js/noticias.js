@@ -32,7 +32,7 @@ const MOTIVOS = {
 
 // La última corrida del Action: null si anduvo; si terminó sin ningún modelo de IA, el motivo en palabras.
 export function avisoIA(e) {
-  const c = e.ia_uso?.corridas?.at(-1);
+  const c = e.ia_uso?.corridas?.filter(x => x.tarea !== 'resumen').at(-1);
   if (!c?.sin_ia) return null;
   const errores = [...new Set(Object.values(c.modelos || {}).flatMap(m => Object.keys(m.errores || {})))];
   const motivo = [...(c.avisos || []), errores.map(x => MOTIVOS[x] || `error ${x}`).join(', ')].filter(Boolean).join('; ') || 'no respondió ningún modelo';

@@ -12,7 +12,8 @@ const NOMBRE_LISTA = { cartera: 'en cartera', watchlist: 'watchlist', fantasma: 
 // Subyacente de EE.UU. → { tickers: con qué lo seguís, en: ['cartera', …] }.
 export function seguidosPorSubyacente(e) {
   const m = new Map();
-  for (const x of tickersASeguir(e)) {
+  // Sin los datos privados (resumen del sábado) la lista llega ya armada desde data/seguimiento.json.
+  for (const x of e.lista_seguimiento || tickersASeguir(e)) {
     if (!x.usa) continue;
     const y = m.get(x.usa) || { tickers: [], en: [] };
     y.tickers.push(x.t);

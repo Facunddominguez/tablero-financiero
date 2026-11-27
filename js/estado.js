@@ -172,6 +172,9 @@ export function aplicarEventos(base, eventosLocales = []) {
         break;
       }
       case 'objetivo_borrar': d.objetivos = (d.objetivos || []).filter(x => x.id !== e.ref); break;
+      case 'resumen_leido': // el último resumen del sábado que marcaste leído
+        if (!d.resumen_leido || e.resumen > d.resumen_leido) d.resumen_leido = e.resumen;
+        break;
       case 'aporte_extra': d.aporte_extra = { ...d.aporte_extra, ...e.cambios }; break;
       case 'config': Object.assign(d.config, e.cambios); break;
       case 'perfil': Object.assign(d.perfil, e.cambios); break;
@@ -278,7 +281,7 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
     // balances y dividendos de lo que seguís, y eventos con fecha fija
     agenda: ext.agenda || null, eventos_fijos: ext.eventosFijos || null,
     // noticias de lo que seguís (SEC y Google News), con su clasificación
-    noticias: ext.noticias || null, ia_uso: ext.iaUso || null, directivos: ext.directivos || null,
+    noticias: ext.noticias || null, ia_uso: ext.iaUso || null, directivos: ext.directivos || null, resumen: ext.resumen || null,
     // calendario de mercado: EE.UU. y BYMA, más los feriados argentinos que guarda el Action
     feriados: ext.feriados || ext.feriadosAr ? { ...ext.feriados, argentina: ext.feriadosAr || null } : null,
   };

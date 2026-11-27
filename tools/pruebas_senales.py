@@ -491,6 +491,7 @@ def filtro_por_reglas():
 
 
 def lineas_y_json():
+    assert clasificar.numeros("1.234,50 y 1,234.5 y 16,0 y 05") == {"1234.5", "16", "05"}
     x = {"t": "NVDA", "titulo": "Nvidia revenue up 99% to $1,234 million", "fecha": "2026-11-24"}
     assert clasificar.linea_valida("NVDA: ingresos 99% arriba, USD 1.234 millones.", x) == "NVDA: ingresos 99% arriba, USD 1.234 millones."
     for mala in ("NVDA creció 45%.", "Te conviene comprar NVDA.", "Recomendamos vender.", "", "x" * 300):

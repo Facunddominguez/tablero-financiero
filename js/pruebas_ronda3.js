@@ -8,6 +8,8 @@ import { planificador } from './motor.js';
 import { noticiasMateriales, avisoIA, usoIA, porReglas } from './noticias.js';
 import { comprasPuntuadas, ventasDestacadas, senalesRadar, eventosSenales, umbralRadar } from './directivos.js';
 import { compararFantasmas } from './diario.js';
+import { hechos, plantilla, redactar, revisar, numeros, aviso as avisoTelefono, pedidoModelo, sumarDia, lecturaDelDia, LARGO_AVISO } from './resumen.js';
+import { resumenSinLeer } from './ui/resumen.js';
 
 const evento = (id, resto) => ({ id: 'r3-' + id, ts: `2026-11-30T12:00:00.${String(id).padStart(3, '0')}Z`, ...resto });
 
@@ -180,6 +182,96 @@ function etapa5() {
   ];
 }
 
+// ---------- etapa 6 · resumen del sábado ----------
+// Los archivos públicos tal como los lee tools/resumen.mjs, armados con el ejemplo.
+export function publicoEjemplo({ hoy = '2026-11-30', ajustar } = {}) {
+  const { e, ext } = mundo({ hoy });
+  const p = {
+    ...ext, eventos: ext.eventosFijos, seguimiento: seguimiento(e), semaforo: { dias: { '2026-11-23': { semaforo: 'verde' } } },
+    alertasSemana: { items: [{ fecha: '2026-11-25', ticker: 'NVDA', tipo: 'dia', cambio: -0.123 }, { fecha: '2026-11-10', ticker: 'SPY', tipo: 'dia', cambio: -0.08 }] },
+  };
+  ajustar?.(p);
+  return p;
+}
+const respuesta = cambios => ({ stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'text', text: JSON.stringify({ cartera: ['NVDA presentó novedades el 29/11.'], senales: ['Sin señales nuevas.'], contexto: 'Argentina en amarillo.', ...cambios }) }] });
+
+function etapa6() {
+  return [
+    ['Resumen: hechos de la semana en orden, con su fuente y archivo', async () => {
+      const h = hechos(publicoEjemplo(), '2026-11-30');
+      igual(Object.keys(h), ['fecha', 'semana', 'cartera', 'senales', 'contexto', 'avisos'], 'orden fijo');
+      igual(h.cartera.noticias.map(x => x.ticker), ['NVDA', 'NVDA', 'PAM'], 'solo cartera, material y de la semana');
+      si(h.cartera.agenda.some(x => /Ex dividendo de SPY/.test(x.titulo)) && !h.cartera.agenda.some(x => /NVDA|PAM/.test(x.titulo)), 'eventos de los próximos 7 días');
+      igual(h.cartera.alertas.map(a => a.texto), ['NVDA −12,3% en el día (25/11)'], 'alertas de la semana');
+      si(h.cartera.semaforo.hoy === 'amarillo' && h.cartera.semaforo.hace_una_semana === 'verde' && h.cartera.semaforo.cambios.length === 1, JSON.stringify(h.cartera.semaforo));
+      igual(h.senales.directivos.map(d => d.ticker), ['NVDA', 'KO'], 'accionables sobre el umbral, de la semana');
+      igual(h.senales.analistas.map(a => [a.ticker, a.recomendacion]), [['NVDA', 'compra']], 'recomendaciones explícitas');
+      for (const x of [...h.cartera.noticias, ...h.cartera.agenda, ...h.cartera.alertas, ...h.senales.directivos, ...h.senales.analistas]) si(x.fuente && /data\//.test(x.archivo), 'sin fuente: ' + JSON.stringify(x));
+    }],
+    ['Resumen: los cupones van sin montos y un aviso dice si la IA no anduvo', async () => {
+      const h = hechos(publicoEjemplo({ hoy: '2027-01-10', ajustar: p => { p.iaUso = { corridas: [{ fecha: '2027-01-08T15:00:00Z', sin_ia: true }, { fecha: '2027-01-09T15:00:00Z', sin_ia: true, tarea: 'resumen' }] }; } }), '2027-01-10');
+      const cupon = h.cartera.agenda.find(x => /Cupón de ON1/.test(x.titulo));
+      si(cupon && !/USD|\$/.test(cupon.titulo + cupon.detalle), JSON.stringify(cupon));
+      si(h.avisos.some(a => /una actualización sin IA/.test(a)), h.avisos.join(' '));
+      const vacio = hechos({}, '2026-11-30');
+      si(plantilla(vacio).cartera[0].startsWith('Sin noticias') && revisar(plantilla(vacio), vacio) === null && vacio.avisos.length === 1, 'sin ningún archivo tampoco se rompe');
+    }],
+    ['Resumen: con plantillas, todo número del texto está en los hechos', async () => {
+      const h = hechos(publicoEjemplo(), '2026-11-30');
+      const r = await redactar(h);
+      si(r.por === 'plantilla' && r.motivo === 'sin clave de IA' && revisar(r.secciones, h) === null, String(revisar(r.secciones, h)));
+      const permitidos = numeros(JSON.stringify(h));
+      for (const n of numeros(Object.values(r.secciones).flat().join(' '))) si(permitidos.has(n), 'número suelto: ' + n);
+      igual([...numeros('USD 1.234,50 el 05/12, +4,4%')], ['1234.5', '5', '12', '4.4'], 'comparables');
+    }],
+    ['Resumen: se descarta lo que inventa números, empresas o recomienda; queda la plantilla', async () => {
+      const h = hechos(publicoEjemplo(), '2026-11-30');
+      const con = async r => redactar(h, { llamar: async () => r });
+      si((await con(respuesta({}))).por === 'claude-haiku-5-5', 'una respuesta limpia se usa');
+      for (const [cambios, motivo] of [[{ contexto: 'El VIX está en 47.' }, /número que no está/], [{ senales: ['TSLA subió.'] }, /nombra algo/], [{ cartera: ['Te conviene comprar NVDA.'] }, /recomendación propia/], [{ cartera: [] }, /forma/]]) {
+        const r = await con(respuesta(cambios));
+        si(r.por === 'plantilla' && motivo.test(r.motivo), `${JSON.stringify(cambios)} → ${r.motivo}`);
+      }
+      const cortada = await con({ ...respuesta({}), stop_reason: 'max_tokens' });
+      si(cortada.por === 'plantilla' && /no terminó/.test(cortada.motivo), cortada.motivo);
+      const caida = await redactar(h, { llamar: async () => { throw Object.assign(new Error('x'), { status: 529 }); } });
+      si(caida.por === 'plantilla' && caida.motivo === 'la API respondió 529', caida.motivo);
+    }],
+    ['Resumen: el pedido a Haiku lleva los hechos sin direcciones y pide JSON', async () => {
+      const h = hechos(publicoEjemplo(), '2026-11-30'), p = pedidoModelo(h, 'claude-haiku-5-5');
+      si(p.model === 'claude-haiku-5-5' && p.output_config.format.type === 'json_schema' && !('temperature' in p), 'forma del pedido');
+      si(!p.messages[0].content.includes('example.com') && p.messages[0].content.includes('150.000'), 'sin direcciones');
+    }],
+    ['Resumen: el aviso al teléfono es corto, en orden y con el enlace', async () => {
+      const h = hechos(publicoEjemplo(), '2026-11-30'), r = await redactar(h);
+      const a = avisoTelefono({ ...r, avisos: ['Aviso'] }, 'https://ejemplo.github.io/tablero/');
+      si(a.message.length <= LARGO_AVISO + 60 && a.click.startsWith('https://') && a.message.indexOf('Tu cartera:') === 0 && a.message.indexOf('Señales:') > 0, a.message);
+      si(/cosas más en el tablero/.test(a.message), 'avisa que hay más');
+      const largo = avisoTelefono({ secciones: { cartera: Array(10).fill('x'.repeat(300)), senales: Array(8).fill('y'.repeat(300)), contexto: 'z' } }, '');
+      si(largo.message.length <= LARGO_AVISO + 60 && !largo.click, 'recorta');
+    }],
+    ['Resumen: en Hoy aparece como "Desde la última vez" hasta marcarlo leído', async () => {
+      const resumen = { id: '2026-11-28', secciones: { cartera: ['a'], senales: ['b'], contexto: 'c' }, por: 'plantilla' };
+      const x = mundo({ ajustar: y => { y.ext.resumen = resumen; } });
+      si(resumenSinLeer(x.e)?.id === '2026-11-28', 'sin leer');
+      const leido = valuar(aplicarEventos(x.datos, [evento(1, { tipo: 'resumen_leido', resumen: '2026-11-28', fecha: '2026-11-30' })]), x.ext, '2026-11-30');
+      si(resumenSinLeer(leido) === null, 'leído');
+      si(resumenSinLeer({ ...leido, resumen: { ...resumen, id: '2026-12-05' } })?.id === '2026-12-05', 'el siguiente vuelve a aparecer');
+      si(resumenSinLeer({ ...x.e, hoy: '2027-01-15' }) === null, 'uno viejo no');
+      igual(planificador(x.e, x.e.hoy).pasos, planificador(mundo().e, x.e.hoy).pasos, 'no es una tarea');
+    }],
+    ['Resumen: el registro diario del semáforo guarda un punto por día', async () => {
+      const l = lecturaDelDia(publicoEjemplo(), '2026-11-30');
+      si(l.semaforo === 'amarillo' && l.clima === 'tranquilo', JSON.stringify(l));
+      const r = sumarDia(sumarDia(null, '2026-11-29', l), '2026-11-30', l);
+      igual(Object.keys(r.dias), ['2026-11-29', '2026-11-30'], 'dos días');
+      let largo = null;
+      for (let i = 0; i < 70; i++) largo = sumarDia(largo, `2027-${String(1 + Math.floor(i / 28)).padStart(2, '0')}-${String(1 + i % 28).padStart(2, '0')}`, l);
+      si(Object.keys(largo.dias).length === 60, 'como mucho 60');
+    }],
+  ];
+}
+
 export function pruebasRonda3() {
-  return [...etapa1(), ...etapa2(), ...etapa4(), ...etapa5()];
+  return [...etapa1(), ...etapa2(), ...etapa4(), ...etapa5(), ...etapa6()];
 }

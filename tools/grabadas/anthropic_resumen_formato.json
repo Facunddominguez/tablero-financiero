@@ -1,0 +1,12 @@
+{
+  "id": "msg_01GrabadaResumen",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    { "type": "thinking", "thinking": "", "signature": "firma-de-prueba" },
+    { "type": "text", "text": "{\"cartera\":[\"NVDA anunció un cambio de director ejecutivo (SEC EDGAR, 29/11).\",\"PAM presentó resultados el 27/11.\",\"El jueves 03/12 SPY cotiza ex dividendo. El 07/12 BYMA opera sin liquidar.\",\"NVDA bajó 12,3% en el día el 25/11.\",\"El semáforo pasó de verde a amarillo el 30/11.\"],\"senales\":[\"En NVDA compró el CEO por USD 150.000 el 25/11, con puntaje 74.\",\"En KO compró el CEO por USD 150.000, con puntaje 61.\",\"Un analista recomienda comprar NVDA (28/11).\"],\"contexto\":\"Argentina en amarillo por el canje (5,0%); el clima de mercado está tranquilo, con el VIX en 16,0.\"}" }
+  ],
+  "stop_reason": "end_turn",
+  "usage": { "input_tokens": 1450, "output_tokens": 260 }
+}
