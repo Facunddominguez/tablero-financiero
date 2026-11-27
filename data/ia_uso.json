@@ -1,0 +1,1 @@
+{"corridas":[{"fecha":"2026-11-27T16:49:22Z","proveedor":"gemini","modelos":{"gemini-3.5-flash-lite":{"pedidos":6,"ok":6,"errores":{},"tokens_entrada":4581,"tokens_salida":4177,"costo_usd":null}},"avisos":[],"omitidos":[],"con_ia":60,"por_reglas":319,"pendientes":209,"sin_ia":false,"costo_usd":0}]}
