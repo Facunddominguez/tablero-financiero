@@ -15,7 +15,7 @@ export const supuestos = e => fundir(e.supuestos || {}, e.datos?.supuestos || {}
 // Qué se puede editar en ⋯ → Supuestos: [grupo, título, [[clave, etiqueta, formato]]]. formato: 'pct' o 'num'.
 export const EDITABLES = [
   ['retornos_etf', 'Retorno anual esperado de los ETF', [['SPY', 'SPY (%)', 'pct'], ['EFA', 'EFA (%)', 'pct'], ['EEM', 'EEM (%)', 'pct'], ['IWM', 'IWM (%)', 'pct']]],
-  ['acciones', 'Acciones sueltas', [['tasa_libre', 'Tasa libre de riesgo (%)', 'pct'], ['prima_mercado', 'Prima de mercado (%)', 'pct']]],
+  ['acciones', 'Acciones sueltas (ancladas a SPY)', [['prima_mercado', 'Prima de mercado (%)', 'pct']]],
   ['otros', 'Lo demás, retorno anual en dólares', [['on', 'Obligaciones negociables (%)', 'pct'], ['fci_usd', 'Fondos en dólares (%)', 'pct'], ['caja_usd', 'Dólares sin invertir (%)', 'pct'], ['pesos', 'Pesos (%)', 'pct']]],
   ['semaforo', 'Semáforo argentino', [
     ['riesgo_pais.amarillo', 'Riesgo país: amarillo desde', 'num'], ['riesgo_pais.rojo', 'Riesgo país: rojo desde', 'num'],

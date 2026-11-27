@@ -20,7 +20,7 @@ De paso se corrigió un error anterior: un campo precargado como "1.200" se leí
 - **Polymarket prendido (decisión del dueño, 26/11/2026).** La justicia porteña ordenó bloquearlo en el país (marzo de 2026) y desde esta computadora no responde; no se esquivó el bloqueo acá: lo lee el Action desde GitHub. No hay respuesta real grabada: la prueba usa el formato de la API con valores inventados, así que la primera corrida en `main` es la que lo confirma.
 - **Feriados**: los "puente" y los días no laborables tienen rueda sin liquidación (calendario de BYMA); el 31/12/2026 no tiene rueda aunque no sea feriado.
 - **Riesgo país desde 2020; cuotapartes un valor por mes hacia atrás** (a la fuente le faltan días) y diario desde ahora.
-- **Simulación**: retornos de Vanguard como compuestos; los de las acciones (tasa libre + beta × prima) como promedio. Vienen de fuentes distintas y no son del todo coherentes entre sí. Sin cupones, sin amortización de la ON y sin desviar ahorro a la reserva, como la proyección anterior.
+- **Simulación**: retornos de Vanguard como compuestos. Las acciones van ancladas a SPY (pedido del dueño antes del merge): promedio = SPY compuesto + vol_SPY²/2 + (beta − 1) × prima, y compuesto = promedio − vol²/2. Ya no se usa la tasa libre más beta × prima, que dejaba a una acción de beta 1 por encima de SPY. Sin cupones, sin amortización de la ON y sin desviar ahorro a la reserva, como la proyección anterior.
 - **Chance en 12 y 24 meses** = haberlo logrado al menos una vez antes del plazo.
 - **Combinada de la elección** = promedio ponderado por volumen (contratos en Kalshi, dólares en Polymarket); probabilidad de Kalshi = punta media si las puntas distan 10 puntos o menos, si no el último precio. No se usa el mercado de primera vuelta.
 - **Umbrales** del semáforo y del clima: criterio propio. Con los datos del 26/11/2026 el semáforo está en **rojo** por YPF y PAM contra SPY (−22,5% en 30 días).
@@ -47,7 +47,7 @@ De paso se corrigió un error anterior: un campo precargado como "1.200" se leí
 - Serie propia para la ON (sigue con volatilidad fija).
 - Calibrar los umbrales del semáforo y del clima con la historia ya guardada; mostrar las condiciones financieras (`NFCI`) o dejar de bajarlas.
 - Historia diaria de cuotapartes hacia atrás.
-- Retornos esperados coherentes entre ETF y acciones, y actualizarlos solos cuando cambien.
+- Actualizar solos los retornos esperados y la prima cuando cambien las fuentes.
 - Actualizar los ratios con un botón cuando BYMA cambie alguno.
 - Fechas de las rotaciones viejas de Allaria; cambiar referencias desde la app.
 - Marzo de 2027: horario de BYMA, y las excepciones de su calendario 2027.

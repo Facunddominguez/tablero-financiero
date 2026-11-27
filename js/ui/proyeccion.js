@@ -123,7 +123,7 @@ function seccionSupuestos(ctx, sim) {
         { titulo: 'Retorno anual', num: 1, celda: x => [fmt.pct(x.retorno), x.tipoRetorno === 'promedio' ? h('span.desglose', `beta ${fmt.num(x.beta, 2)}`) : null] },
         { titulo: 'Volatilidad anual', num: 1, celda: x => [fmt.pct(x.vol), h('span.desglose', origen[m.factores[x.factor].origen])] },
       ], m.items.filter(x => x.usd !== 0 || x.grupo === 'nucleo'))),
-    h('p.nota', { style: 'margin-top:.6rem' }, 'En las acciones sueltas el retorno es el promedio de todos los caminos: cuanto más se mueven, más abajo queda el del medio. Las volatilidades y cómo se mueven juntas salen de la historia; lo que no tiene historia se supone sin relación con el resto. Los cupones no se simulan aparte. Los montos son en dólares, sin descontar inflación.'),
+    h('p.nota', { style: 'margin-top:.6rem' }, 'En las acciones sueltas el retorno es el promedio de todos los caminos y sale del de SPY según su beta: con beta 1 y la volatilidad de SPY, el camino del medio es el de SPY; cuanto más se mueven, más abajo queda.Las volatilidades y cómo se mueven juntas salen de la historia; lo que no tiene historia se supone sin relación con el resto. Los cupones no se simulan aparte. Los montos son en dólares, sin descontar inflación.'),
     h('div.acciones.izq.no-imprimir', { style: 'margin-top:.6rem' }, boton('Cambiar los supuestos', () => ctx.menu('supuestos'), 'chico')));
 }
 

@@ -49,7 +49,11 @@ Herramienta personal de seguimiento de inversiones.
 - Para R3, R5, R6 y "lugar para una tesis nueva": la fecha para la que ya se logró en 1, en 5 y en 9 de cada 10 caminos, y la chance antes de 12 y 24 meses.
 - Patrimonio a 1, 3 y 5 años (percentiles 10, 50 y 90) con el abanico.
 - **Objetivos con fecha**: se cargan ahí mismo (monto y fecha, contra el patrimonio total). Los objetivos externos que tengan monto y fecha se miden aparte, sin simulación.
-- Los ETF usan el retorno de Vanguard como retorno compuesto, y la volatilidad y las correlaciones de los cierres mensuales desde 2005. Las acciones sueltas, tasa libre + beta × prima (retorno promedio: cuanto más se mueven, más abajo queda el camino del medio) y la historia diaria de dos años. ON, fondos y caja, los supuestos de abajo.
+- Los ETF usan el retorno de Vanguard como retorno compuesto, y la volatilidad y las correlaciones de los cierres mensuales desde 2005. ON, fondos y caja, los supuestos de abajo.
+- Las **acciones sueltas** van ancladas a SPY y usan la historia diaria de dos años:
+  - retorno promedio = (retorno compuesto de SPY + volatilidad de SPY² / 2) + (beta contra SPY − 1) × prima de mercado;
+  - retorno compuesto (el camino del medio) = retorno promedio − volatilidad de la acción² / 2.
+  - Con beta 1 y la volatilidad de SPY, la acción tiene la misma mediana que SPY; cuanto más se mueve, más abajo queda. Sin historia de precios se supone beta 1 y 35% de volatilidad.
 - No simula cupones, la amortización de la ON ni la parte del ahorro que iría a la reserva.
 
 ## Semáforo argentino, reserva en pesos y elecciones
@@ -73,8 +77,8 @@ Los números que no salen de ningún dato están en `data/supuestos.json`, cada 
 | Supuesto | Valor | Fuente |
 |---|---|---|
 | Retorno anual de SPY, EFA, EEM, IWM | 5,8 · 6,3 · 4,7 · 5,8% | Vanguard al 30/09/2026, punto medio (verificado en su página) |
-| Tasa libre y prima de mercado | 5,29 y 3,70% | FRED `DGS10` al 30/09/2026 · Damodaran, 08/10/2026 |
-| ON · fondos en dólares · caja · pesos | 5,29 · 4,2 · 0 · 0% | Criterio propio |
+| Prima de mercado (acciones sueltas, ancladas a SPY) | 3,70% | Damodaran, 08/10/2026 |
+| ON · fondos en dólares · caja · pesos | 5,29 · 4,2 · 0 · 0% | Criterio propio (ON: FRED `DGS10`; fondos: `DGS3MO`, al 30/09/2026) |
 | Semáforo (amarillo y rojo) | riesgo país 800 y 1.500; canje 5 y 10%; brecha 10 y 30%; acciones −7 y −15% | Criterio propio, a confirmar |
 | Clima (atento y tenso) | bonos 4 y 6; curva 0,25 y 0; VIX 20 y 30; SPY 0 y −5% | Criterio propio, a confirmar |
 

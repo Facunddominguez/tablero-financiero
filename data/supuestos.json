@@ -10,10 +10,9 @@
     "IWM": 0.058
   },
   "acciones": {
-    "fuente": "Acciones sueltas: tasa libre de riesgo + beta contra SPY × prima de mercado. Tasa: bono del Tesoro a 10 años al 30/09/2026 (FRED, DGS10). Prima: prima implícita de Damodaran a comienzos de octubre de 2026 (publicada el 08/10/2026).",
+    "fuente": "Acciones sueltas, ancladas a SPY: retorno promedio = retorno de SPY pasado a promedio (compuesto de Vanguard + volatilidad de SPY² / 2) + (beta contra SPY − 1) × prima de mercado. El retorno compuesto sale del promedio menos la volatilidad de la acción² / 2. Prima: prima implícita de Damodaran a comienzos de octubre de 2026 (publicada el 08/10/2026).",
     "url": "https://aswathdamodaran.blogspot.com/2026/10/stock-prices-earnings-and-cashflows-ai.html",
-    "fecha": "2026-09-30",
-    "tasa_libre": 0.0529,
+    "fecha": "2026-10-08",
     "prima_mercado": 0.037
   },
   "semaforo": {
@@ -38,7 +37,7 @@
     "spy_promedio": { "atento": 0, "tenso": -0.05 }
   },
   "otros": {
-    "fuente": "Criterio propio de la herramienta: obligaciones negociables, la tasa libre a 10 años; fondos en dólares, la letra a 3 meses al 30/09/2026 (FRED, DGS3MO); dólares sin invertir, nada; pesos, nada en dólares (se supone que el interés apenas compensa la suba del dólar).",
+    "fuente": "Criterio propio de la herramienta: obligaciones negociables, el bono del Tesoro a 10 años al 30/09/2026 (FRED, DGS10); fondos en dólares, la letra a 3 meses al 30/09/2026 (FRED, DGS3MO); dólares sin invertir, nada; pesos, nada en dólares (se supone que el interés apenas compensa la suba del dólar).",
     "fecha": "2026-11-26",
     "on": 0.0529,
     "fci_usd": 0.042,

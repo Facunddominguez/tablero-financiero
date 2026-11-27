@@ -98,7 +98,7 @@ export function ejemplo({ hoy = '2026-11-30' } = {}) {
   };
   const supuestos = {
     retornos_etf: { fuente: 'Ejemplo', fecha: '2026-09-30', SPY: 0.06, EFA: 0.065, EEM: 0.05, IWM: 0.06 },
-    acciones: { fuente: 'Ejemplo', fecha: '2026-09-30', tasa_libre: 0.05, prima_mercado: 0.04 },
+    acciones: { fuente: 'Ejemplo', fecha: '2026-09-30', prima_mercado: 0.04 },
     otros: { fuente: 'Ejemplo', fecha: '2026-09-30', on: 0.05, fci_usd: 0.04, caja_usd: 0, pesos: 0 },
     semaforo: { fuente: 'Ejemplo', fecha: '2026-11-26', riesgo_pais: { amarillo: 800, rojo: 1500 }, canje: { amarillo: 0.05, rojo: 0.1 }, brecha: { amarillo: 0.1, rojo: 0.3 }, adr: { amarillo: -0.07, rojo: -0.15 } },
     elecciones: { fuente: 'Ejemplo', fecha: '2026-11-26', diferencia: 0.1 },

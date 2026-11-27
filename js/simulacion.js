@@ -84,7 +84,7 @@ export function raizCorrelacion(C) {
 // { items: [{ ticker, grupo, usd, factor, retorno, tipoRetorno, vol, beta }], factores, A } o null sin supuestos.
 export function modelo(e) {
   const s = supuestos(e);
-  if (!s.retornos_etf || !s.acciones || !s.otros) return null;
+  if (s.retornos_etf?.SPY == null || !s.acciones || !s.otros) return null;
   const par = parametros(e), hist = e.historico ? historiaRiesgo(e) : null, largo = e.largo_plazo, escala = s.escala_volatilidad ?? 1;
   const base = itemsDeRiesgo(e, { conEmergencia: true });
   // los ETF del núcleo que todavía no tenés también reciben aportes
@@ -112,6 +112,11 @@ export function modelo(e) {
     return i;
   };
   const spy = diaria('SPY');
+  // Las acciones sueltas se anclan a SPY: su retorno promedio es el de SPY pasado a promedio (compuesto + vol²/2)
+  // más (beta − 1) × prima de mercado. De promedio a compuesto se vuelve con la misma regla (promedio − vol²/2),
+  // así una acción con beta 1 y la volatilidad de SPY tiene exactamente la mediana de SPY.
+  const volSpy = factores[factorDe(base.find(x => x.ticker === 'SPY') || { ticker: 'SPY', serie: 'SPY' })].vol * escala;
+  const promedioSpy = s.retornos_etf.SPY + volSpy * volSpy / 2;
   const items = base.map(x => {
     const f = factorDe(x), vol = factores[f].vol * escala;
     let retorno, tipoRetorno = 'compuesto', beta = null;
@@ -119,14 +124,15 @@ export function modelo(e) {
     else if (x.tipo === 'cedear' || x.tipo === 'accion_ar') {
       const mia = x.serie ? diaria(x.serie) : null, m = mia && spy ? momentos(mia, spy) : null;
       beta = m && m.yy > 0 ? m.xy / m.yy : 1;
-      retorno = s.acciones.tasa_libre + beta * s.acciones.prima_mercado;
+      retorno = promedioSpy + (beta - 1) * s.acciones.prima_mercado;
       tipoRetorno = 'promedio'; // el promedio de los caminos; el del medio queda más abajo cuanto más se mueve
     } else if (x.tipo === 'on') retorno = s.otros.on;
     else if (x.tipo === 'fci' && x.moneda === 'USD') retorno = s.otros.fci_usd;
     else if (x.tipo === 'caja' && x.moneda === 'USD') retorno = s.otros.caja_usd;
     else retorno = s.otros.pesos;
-    const deriva = Math.log(1 + retorno) - (tipoRetorno === 'promedio' ? vol * vol / 2 : 0);
-    return { ticker: x.ticker, grupo: x.grupo, usd: x.usd, factor: f, retorno, tipoRetorno, vol, deriva, beta };
+    // el piso de −90% anual solo actúa con volatilidades enormes (más de 140%), donde la regla deja de servir
+    const compuesto = tipoRetorno === 'promedio' ? Math.max(-0.9, retorno - vol * vol / 2) : retorno;
+    return { ticker: x.ticker, grupo: x.grupo, usd: x.usd, factor: f, retorno, tipoRetorno, vol, deriva: Math.log(1 + compuesto), beta };
   });
   const C = factores.map((a, i) => factores.map((b, j) => i === j ? 1
     : a.larga && b.larga ? correlacion(a.larga, b.larga) : a.corta && b.corta ? correlacion(a.corta, b.corta) : 0));

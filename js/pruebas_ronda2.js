@@ -161,7 +161,7 @@ function etapa1() {
 }
 
 // Sin volatilidad ni retornos: lo mismo que "si los precios no cambian".
-const QUIETO = { escala_volatilidad: 0, retornos_etf: { SPY: 0, EFA: 0, EEM: 0, IWM: 0 }, acciones: { tasa_libre: 0, prima_mercado: 0 }, otros: { on: 0, fci_usd: 0, caja_usd: 0, pesos: 0 } };
+const QUIETO = { escala_volatilidad: 0, retornos_etf: { SPY: 0, EFA: 0, EEM: 0, IWM: 0 }, acciones: { prima_mercado: 0 }, otros: { on: 0, fci_usd: 0, caja_usd: 0, pesos: 0 } };
 
 function etapa3() {
   return [
@@ -229,16 +229,47 @@ function etapa3() {
       si(sim.modelo.factores[s.factor].origen === 'largo', 'los ETF usan la historia larga');
     }],
 
-    ['Proyección: acciones por tasa libre + beta × prima; lo sin historia, con los supuestos de riesgo', async () => {
+    ['Proyección: una acción con beta 1 y la volatilidad de SPY tiene la misma mediana que SPY', async () => {
+      // Dos mundos iguales salvo dónde está la plata: todo en SPY o todo en una acción que se mueve exactamente igual.
+      const conTodoEn = ticker => {
+        const { e } = mundo({ ajustar: x => {
+          x.datos.posiciones = x.datos.posiciones.filter(p => p.ticker === 'SPY' || p.ticker === 'NVDA');
+          for (const p of x.datos.posiciones) p.cantidad = p.ticker === ticker ? 100 : 0;
+          x.datos.lotes_costo = []; x.datos.caja = { ARS: 0, USD_MEP: 0 };
+          x.datos.nucleo.pesos_internos = { SPY: 1 }; x.datos.perfil.ingreso_mensual_usd = 500; // sin aportes
+          x.ext.historico.series.NVDA = x.ext.historico.series.SPY.slice();
+          delete x.ext.largoPlazo; // así las dos volatilidades salen de la misma historia
+        } });
+        // el mismo horizonte en los dos: así cada camino usa los mismos números al azar (si no, la simulación
+        // corta antes donde las reglas se cumplen antes)
+        return { e, sim: simular(e, { escenarios: 1000, horizonte: 60 }) };
+      };
+      const spy = conTodoEn('SPY'), accion = conTodoEn('NVDA');
+      const m = accion.sim.modelo, de = t => m.items.find(x => x.ticker === t);
+      cerca(de('NVDA').beta, 1, 1e-9, 'beta'); cerca(de('NVDA').vol, de('SPY').vol, 1e-12, 'misma volatilidad');
+      cerca(de('NVDA').retorno, 0.06 + de('SPY').vol ** 2 / 2, 1e-12, 'promedio: el de SPY compuesto más vol²/2');
+      cerca(de('NVDA').deriva, de('SPY').deriva, 1e-12, 'misma mediana en el modelo');
+      accion.sim.anios.forEach((a, i) => {
+        const s = spy.sim.anios[i];
+        for (const q of ['p10', 'p50', 'p90']) cerca(a[q] / accion.e.total_usd, s[q] / spy.e.total_usd, 1e-9, `${q} a ${a.anios} años`);
+      });
+      cerca(accion.sim.anios[0].p50 / accion.e.total_usd, 1.06, 0.02, 'y es el retorno compuesto de SPY');
+    }],
+
+    ['Proyección: acciones ancladas a SPY más (beta − 1) × prima; lo sin historia, con los supuestos de riesgo', async () => {
       const { e } = mundo({ ajustar: x => {
         const h = x.ext.historico.series;
         h.NVDA = h.SPY.map((v, i) => 150 * (v / h.SPY[0]) ** 2); // se mueve el doble que SPY
         delete h.PAM;
       } });
       const m = modelo(e), de = t => m.items.find(x => x.ticker === t), f = x => m.factores[x.factor];
-      cerca(de('NVDA').beta, 2, 1e-6, 'beta'); cerca(de('NVDA').retorno, 0.05 + 2 * 0.04, 1e-6, 'retorno');
-      cerca(de('NVDA').deriva, Math.log(1.13) - de('NVDA').vol ** 2 / 2, 1e-9, 'el promedio se corrige por volatilidad');
+      const promedioSpy = 0.06 + de('SPY').vol ** 2 / 2;
+      cerca(de('NVDA').beta, 2, 1e-6, 'beta'); cerca(de('NVDA').retorno, promedioSpy + (2 - 1) * 0.04, 1e-6, 'retorno promedio');
+      cerca(de('NVDA').deriva, Math.log(1 + de('NVDA').retorno - de('NVDA').vol ** 2 / 2), 1e-12, 'el promedio se corrige por volatilidad');
       si(de('PAMP').beta === 1 && f(de('PAMP')).origen === 'fija' && de('PAMP').vol === 0.35, JSON.stringify(de('PAMP')));
+      cerca(de('PAMP').retorno, promedioSpy, 1e-12, 'sin historia se supone beta 1');
+      cerca(de('PAMP').deriva, Math.log(1 + promedioSpy - 0.35 ** 2 / 2), 1e-12, 'más volatilidad, mediana más baja');
+      si(de('PAMP').deriva < de('SPY').deriva, 'queda debajo de SPY');
       si(de('ON1').vol === 0.08 && de('FCID').vol === 0.03 && de('FCID').retorno === 0.04 && de('Caja en dólares').vol === 0, 'ON, fondos y caja');
       si(f(de('FCIP')).id === 'FCI:FCIP' && f(de('Caja en pesos')).id === 'MEP', 'el fondo en pesos con su cuotaparte; la caja, con el MEP');
       si(m.correlaciones[de('FCIP').factor][de('Caja en pesos').factor] > 0.9, 'se mueven casi juntos');
@@ -273,8 +304,10 @@ function etapa3() {
     ['Supuestos: se editan desde la app, mandan sobre el archivo y se pueden restaurar', async () => {
       const cambio = evento(50, { tipo: 'supuestos', cambios: { retornos_etf: { SPY: 0.02 } } });
       const con = mundo({ eventos: [cambio] }).e;
-      si(supuestos(con).retornos_etf.SPY === 0.02 && supuestos(con).retornos_etf.EFA === 0.065 && supuestos(con).acciones.tasa_libre === 0.05, JSON.stringify(supuestos(con)));
+      si(supuestos(con).retornos_etf.SPY === 0.02 && supuestos(con).retornos_etf.EFA === 0.065 && supuestos(con).acciones.prima_mercado === 0.04, JSON.stringify(supuestos(con)));
       si(modelo(con).items.find(x => x.ticker === 'SPY').retorno === 0.02, 'la proyección lo usa');
+      const accion = x => modelo(x).items.find(i => i.ticker === 'NVDA').retorno;
+      cerca(accion(mundo().e) - accion(con), 0.04, 1e-12, 'las acciones se mueven con el supuesto de SPY');
       const vuelta = mundo({ eventos: [cambio, evento(51, { tipo: 'supuestos', restaurar: true })] }).e;
       si(supuestos(vuelta).retornos_etf.SPY === 0.06, 'restaurado');
       si(simular(mundo({ ajustar: x => { delete x.ext.supuestos; } }).e) === null, 'sin supuestos no se inventa nada');
