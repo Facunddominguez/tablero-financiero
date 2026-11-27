@@ -1,7 +1,7 @@
 // Menú "⋯": sincronizar, importar el Excel de Balanz, movimientos, decisiones, fuentes, configuración, seguridad y respaldo.
 import { h, poner, fmt, aNumero } from '../util.js';
 import { fortaleza, generarFrase, bloqueo } from '../seguridad.js';
-import { enlacePermiso, enlacePermisoCron, LISTA_PERMISOS, urlDisparo, cuerpoDisparo } from '../sync.js';
+import { enlacePermiso, enlacePermisoCron, LISTA_PERMISOS, urlDisparo, cuerpoDisparo, WORKFLOW_RESUMEN } from '../sync.js';
 import { dialogo, campo, entrada, boton, aviso, chip, cargarScript, CDN, botonPrecios, notaPrecios } from './comun.js';
 import { paraVender, textoPrima, textoVentana, avisoPrecioJusto } from '../precios.js';
 import { esSobreCifrado } from '../cripto.js';
@@ -455,7 +455,9 @@ function guiaCron(ctx) {
         copiable('Accept: application/vnd.github+json'), copiable('X-GitHub-Api-Version: 2022-11-28'), copiable('Content-Type: application/json'), h('p', h('code', 'Authorization: Bearer github_pat_…'))),
       h('li', h('p', 'Cuerpo (Request body):'), copiable(cuerpoDisparo('cron'))),
       h('li', h('p', 'Guardá y tocá "Test run": tiene que responder ', h('code', '204'), '. En un minuto esta tabla muestra la hora nueva.'))),
-    h('p.nota', 'El permiso queda guardado en cron-job.org. Si alguien lo obtuviera, lo único que podría hacer es lanzar esta misma actualización. Vence al año: cuando falle, generá otro y reemplazalo ahí.'));
+    h('p.nota', 'Para el resumen del sábado, creá una segunda tarea igual (mismo permiso y encabezados), los sábados a las 12:00, con esta URL y el mismo cuerpo:'),
+    copiable(urlDisparo(repo, WORKFLOW_RESUMEN)),
+    h('p.nota', 'El permiso queda guardado en cron-job.org. Si alguien lo obtuviera, lo único que podría hacer es lanzar estas tareas del tablero. Vence al año: cuando falle, generá otro y reemplazalo ahí.'));
 }
 
 // ---------- Respaldo (cifrado por defecto; en claro solo a pedido) ----------

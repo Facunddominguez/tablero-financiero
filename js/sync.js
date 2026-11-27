@@ -121,11 +121,12 @@ export const LISTA_PERMISOS = 'https://github.com/settings/personal-access-token
 // ---------- Actualizar precios a pedido ----------
 // GitHub atrasa o saltea las corridas programadas; desde la app se puede lanzar una y esperar el resultado.
 export const WORKFLOW = 'mercado.yml';
+export const WORKFLOW_RESUMEN = 'resumen.yml';
 const ARCHIVOS_MERCADO = { mercado: 'data/market.json', insiders: 'data/insiders.json', historico: 'data/historico.json', feriadosAr: 'data/feriados_ar.json', argentina: 'data/argentina.json', clima: 'data/clima.json', largoPlazo: 'data/largo_plazo.json', agenda: 'data/agenda.json', noticias: 'data/noticias.json', iaUso: 'data/ia_uso.json', directivos: 'data/directivos.json', resumen: 'data/resumen.json' };
 const SIN_ACTIONS = 'El permiso guardado en este dispositivo no deja pedir precios. Si generaste un permiso nuevo, hay que pegarlo acá (⋯ → Sincronizar → Cambiar el permiso). Si editaste el que ya tenías, revisá que en "Repository permissions" diga "Actions: Read and write" y que lo hayas guardado con "Update".';
 
 // Dirección y cuerpo de la llamada que lanza la actualización (los usa también la guía del cron externo).
-export const urlDisparo = repo => `${API}/repos/${repo}/actions/workflows/${WORKFLOW}/dispatches`;
+export const urlDisparo = (repo, workflow = WORKFLOW) => `${API}/repos/${repo}/actions/workflows/${workflow}/dispatches`;
 export const cuerpoDisparo = (origen, rama = 'main') => JSON.stringify({ ref: rama, inputs: { origen } });
 
 // Lo que GitHub dice del error, para mostrarlo tal cual (ayuda a saber si es el permiso u otra cosa).

@@ -4,7 +4,8 @@ Herramienta personal de seguimiento de inversiones.
 
 - App: `index.html` + `styles.css` + módulos ES en `js/`. Sin build ni frameworks.
 - Los datos privados viajan **cifrados** en `data/cartera.enc.json` (AES-256-GCM, PBKDF2-SHA256 con 600.000 iteraciones) y se descifran en el navegador con la clave. La clave no está en ningún archivo.
-- Datos de mercado: un GitHub Action corre `tools/mercado.py` tres veces por día hábil (lo lanza un cron externo; ver "Precios a horario"), y a pedido desde la app.
+- Datos de mercado: un GitHub Action corre `tools/mercado.py` tres veces por día hábil (lo lanza un cron externo; ver "Precios a horario"), y a pedido desde la app. En un trabajo aparte, `tools/senales.py` busca calendario, noticias y compras de directivos.
+- Cada sábado, otro workflow arma el resumen de la semana y lo manda al teléfono (ver "Resumen del sábado").
 - Plan de trabajo, auditoría y decisiones pendientes: `docs/plan.md`.
 
 ## Uso diario
@@ -14,7 +15,62 @@ Herramienta personal de seguimiento de inversiones.
 3. Una vez por mes: **Aportar → ¿Cuánto invierto este mes?** Cargás el extracto del banco y, en seis pasos, sale cuánto invertir y en qué.
 4. Para comprar o vender, mirá la ventana que dice el paso. Si dice que no hay precio justo, o los precios tienen más de una hora, tocá **Actualizar ahora** dentro de la ventana.
 5. Debajo del patrimonio se ve siempre de cuándo son los precios (tocá para ver cada fuente) y el estado de la sincronización.
-6. **Para saber** junta lo informativo: el semáforo argentino, el clima de mercado y los avisos. Nada de eso es una tarea.
+6. **Para saber** junta lo informativo: el semáforo argentino, el clima de mercado, lo que viene en 14 días y los avisos. Nada de eso es una tarea.
+7. Los sábados aparece **Desde la última vez** con el resumen de la semana, hasta que lo marcás leído.
+
+## Qué seguir
+
+Al sincronizar, la app escribe `data/seguimiento.json`: los tickers de tu cartera, la watchlist y las carteras fantasma, con su tipo, su subyacente en EE.UU. y de qué lista salen. **Es público: nunca lleva cantidades, montos, precios ni fechas.** También lista las referencias que elegiste para los satélites, para bajar su historia. Con eso el Action busca fechas, noticias y formularios de la SEC, y suma esos tickers al histórico de precios (ya no hace falta `historico_extra`). Sin permiso para sincronizar, el archivo no se actualiza.
+
+Una acción local se sigue por su ADR (PAMP → PAM, YPFD → YPF), una ON del bloque YPF por YPF; los fondos no se siguen.
+
+## Calendario
+
+**Hoy → Para saber** muestra los próximos 14 días; **Informes → Calendario**, los próximos 90: balances y fechas ex dividendo de lo que seguís, reuniones de la Fed, publicación de la inflación de EE.UU. y del INDEC, la revisión anual de MSCI, las elecciones, feriados y cupones.
+
+- Junto a cada balance cercano (45 días o menos) va el **movimiento que descuentan las opciones**: compra y venta de la base más cercana al precio, primer vencimiento posterior al balance, ÷ precio. Solo con puntas válidas: si no las hay, no se muestra. No dice para qué lado.
+- Las fechas de balance salen de Yahoo Finance y pueden cambiar. Yahoo no publica la próxima fecha ex dividendo de los ETF.
+- Los eventos fijos están en `data/eventos.json`, cada grupo con su fuente. El tablero avisa cuando a un grupo le quedan menos de 90 días cargados.
+
+## Noticias
+
+**Radar → Noticias importantes** muestra, por empresa, las de materialidad 2 o más de los últimos 30 días, con su fuente.
+
+- Fuentes: SEC EDGAR (8-K con sus ítems, 10-Q, 10-K, 6-K de los ADR con un extracto, y formulario 4 agrupado por día) y Google News en español e inglés. Sin duplicados, 30 días, hasta 40 por empresa (`data/noticias.json`). De SPY, EFA, EEM, IWM, SMH y ARGT no se buscan noticias en Google (`noticias.sin_google` en `tools/mercado_config.json`).
+- **BYMA y CNV** no tienen un acceso público estable a los hechos relevantes: para las argentinas se usan sus 6-K y Google News.
+- **Clasificación**: materialidad 0 a 3, categoría, si un analista recomienda comprar o vender, y una línea en castellano. La IA solo clasifica lo que se le pasa: si la línea trae un número que no está en la noticia, o una recomendación propia, se muestra el título original. "Por reglas" quiere decir que no la leyó una IA.
+- **Proveedor** (`ia.proveedor` en `tools/mercado_config.json`): `haiku` (por defecto, `claude-haiku-5-5`), `gemini` o `ninguno`. Con Gemini: cadena de modelos (`modelos_gemini`), saltea los que ya no existen, 30 s por pedido, 2 reintentos con espera creciente, descarta un modelo tras 3 fallas seguidas, y pasa a Haiku o al filtro por reglas. Los formularios 4 no gastan IA.
+- Cada corrida clasifica solo lo nuevo (hasta 60 noticias, 60.000 tokens, 150 s); lo que falta queda para la próxima. Si una corrida termina sin ningún modelo, aparece en "Para saber" y en el resumen.
+
+## Compras de directivos
+
+**Radar → Compras de directivos con puntaje**: formularios 4 de los últimos 30 días de lo que seguís y de las empresas del filtro de OpenInsider. Solo compras y ventas en el mercado; las ventas se destacan si son de 3 o más directivos.
+
+- Puntaje 0 a 100: no rutinaria (30), cargo (20), cuánto sube su tenencia (15), monto contra el tamaño de la empresa (15), caída en los 6 meses previos (10) y cantidad de compradores (10). Pesos y topes en `data/supuestos.json` (`radar_directivos`), **criterio propio, a calibrar**. Lo que no se puede saber suma cero.
+- "Rutinaria" (Cohen, Malloy y Pomorski): operó en ese mismo mes los tres años anteriores. Para ser "oportunista" tiene que haber presentado algo en cada uno de esos tres años; si no, "sin historia" (vale la mitad). Es una aproximación: se miran las presentaciones del directivo, no solo sus operaciones de mercado.
+- **Accionable** si hay CEDEAR o la tenés. Cada señal accionable desde el umbral (⋯ → Supuestos, 60) entra sola como cartera fantasma "radar" la primera vez que la app la ve; como mucho una por empresa cada 90 días, y borrarla no la trae de vuelta.
+
+## Resumen del sábado
+
+Sábados 12:00 (workflow "Resumen del sábado", también con *Run workflow* o desde cron-job.org: la guía está en ⋯ → Fuentes y fechas). Orden fijo: tu cartera (noticias materiales, eventos de 7 días, alertas y cambios del semáforo), señales explícitas (compras de directivos accionables con buen puntaje y recomendaciones de analistas) y una línea de contexto. Claude Haiku lo redacta a partir de un JSON de hechos; si trae un número o una empresa que no está en los hechos, o una recomendación, se usa la plantilla. Sin clave, siempre plantilla. Llega por ntfy con el link y queda en `data/resumen.json`.
+
+Es público: no lleva montos ni cantidades tuyas. Usa los umbrales de `data/supuestos.json`, no los que cambiaste en la app (esos están cifrados).
+
+## Secretos del repositorio
+
+| Secreto | Para qué | Sin él |
+|---|---|---|
+| `NTFY_TOPIC` | Canal de ntfy para alertas y resumen | No llegan avisos al teléfono |
+| `ALERTAS_CONFIG` | Alertas de precio (ver más abajo) | No hay alertas de precio ni "alertas de la semana" |
+| `SEC_CONTACTO` | Nombre y mail para identificarse ante la SEC | No hay presentaciones, formularios 4 ni puntajes |
+| `ANTHROPIC_API_KEY` | Clasificar noticias y redactar el resumen | Filtro por reglas y plantillas |
+| `GEMINI_API_KEY` | Solo si el proveedor es `gemini` | Se usa Haiku si hay clave |
+
+Se cargan con `gh secret set NOMBRE` (pide el valor) o en GitHub → Settings → Secrets and variables → Actions. Ninguno se imprime ni se guarda en archivos.
+
+## Costo de la API
+
+Cada corrida anota proveedor, modelo, pedidos, errores, tokens y costo en `data/ia_uso.json` (últimas 60), y Radar muestra el total de 30 días. Estimado **sin medir** (no hubo clave para probar): Claude Haiku 5.5 a USD 0,10 / 0,50 por millón de tokens; una corrida normal, menos de USD 0,005; el tope de 60.000 tokens pone un máximo de unos USD 0,03 por corrida; el resumen, alrededor de USD 0,001. Las primeras corridas se ponen al día de a 60 noticias. El costo de Gemini no se calcula (se puede cargar en `ia.precios`).
 
 ## Comprar y vender al mejor precio
 
@@ -25,21 +81,21 @@ Herramienta personal de seguimiento de inversiones.
 - La **hora de esos precios** va al lado del precio justo y del límite. Con más de 60 minutos y la ventana abierta, sugiere actualizarlos antes de operar (`config.minutos_precio_viejo`).
 - **Ventas** (paso por tope duro y ⋯ → Registrar un movimiento → Vendí): la misma lógica al revés. Límite = precio justo (o el de pantalla, si está más caro) menos 1%; si está más de 1% barato, dice que conviene esperar.
 - Si el ratio que surge de los precios difiere más de 5% del oficial, pide revisarlo y no usa el precio justo.
-- **Cambios de ratio**: el Action lee la lista de BYMA una vez por día. Si cambió el ratio de algo que usás, lo avisa en "Para saber" con el valor nuevo y deja de poner límite para ese papel. No cambia el archivo solo.
+- **Cambios de ratio**: el Action lee la lista de BYMA una vez por día. Si cambió el ratio de algo que usás, lo avisa en "Para saber" con el valor nuevo y deja de poner límite para ese papel hasta que toques **Usar el ratio nuevo** (queda en tus datos; el archivo no cambia solo). Después revisá las unidades en el broker.
 - **Ventana**: con Wall Street abierto y hasta media hora antes del cierre de BYMA. Avisa feriados y medias ruedas de EE.UU. y **feriados argentinos**: sin rueda en BYMA no se opera y dice cuál es la próxima ventana. Los días "puente" tienen rueda sin liquidación (calendario de BYMA).
 - **Dólares en la cuenta**: si la especie en dólares (SPYD, por ejemplo) no es más cara que en pesos, la sugiere. Al registrarla se descuentan los dólares y se suma al mismo activo.
 
 ## Riesgo
 
-**Cartera → "% del riesgo"** y **Informes → Trimestral → Riesgo** muestran cuánto de los altibajos de la cartera de largo plazo explica cada cosa, la pérdida de un mes malo (1 de cada 20), y dos escenarios: el peor mes de cada activo a la vez y "crisis argentina" (peor mes de YPF, PAM y el dólar MEP). Sale de la volatilidad y las correlaciones de los últimos dos años. Los fondos en dólares y las ON usan una volatilidad fija, que se muestra como supuesto. Los fondos en pesos se miden con su cuotaparte pasada a dólares MEP, así cuenta el interés (sin cuotapartes, con la tasa de plazo fijo). Un ticker sin historia aparece como tal: se suma a `historico_extra`.
+**Cartera → "% del riesgo"** y **Informes → Trimestral → Riesgo** muestran cuánto de los altibajos de la cartera de largo plazo explica cada cosa, la pérdida de un mes malo (1 de cada 20), y dos escenarios: el peor mes de cada activo a la vez y "crisis argentina" (peor mes de YPF, PAM y el dólar MEP). Sale de la volatilidad y las correlaciones de los últimos dos años. Los fondos en dólares y las ON usan una volatilidad fija, que se muestra como supuesto. Los fondos en pesos se miden con su cuotaparte pasada a dólares MEP, así cuenta el interés (sin cuotapartes, con la tasa de plazo fijo). Un ticker sin historia aparece como tal: si cotiza en EE.UU., se baja sola después de sincronizar.
 
 ## Predicciones y carteras fantasma
 
 - **Editar y borrar**: cada predicción y cada cartera fantasma tiene "Editar" y "Borrar" (y "Quitar" para un ticker). En una predicción resuelta se corrige el resultado, no la probabilidad.
 - **Predicciones**: ⋯ → Anotar una predicción (o Radar → "Antes de abrir una tesis nueva"). Cuando vence, aparece en Hoy para marcar si se cumplió. **Informes → Predicciones y fantasmas** muestra el puntaje de Brier (0 es perfecto) y el acierto por rango de probabilidad.
-- **Fantasmas**: "Seguir como fantasma" en Radar. Se comparan con SPY a 1, 3, 6 y 12 meses. Sin historia de precios, avisa qué sumar a `historico_extra`.
-- **Allaria**: Informes → Contraste con Allaria → "Cargar una rotación nueva". Guarda la fecha, actualiza la cartera modelo y la suma como fantasma.
-- **Satélites contra su referencia**: en el Trimestral. Los pares por defecto están en `js/diario.js` (sin referencia propia, SPY) y se cambian en los datos.
+- **Fantasmas**: "Seguir como fantasma" en Radar, o solas desde el radar de directivos. Se comparan con SPY a 1, 3, 6 y 12 meses. Su historia se baja sola después de sincronizar.
+- **Allaria**: Informes → Contraste con Allaria → "Cargar una rotación nueva" (guarda la fecha, actualiza la cartera modelo y la suma como fantasma) o **"Pegar el historial de rotaciones"**: un JSON como `{"fuente": "...", "rotaciones": [{"id": "P1", "fecha": "2026-01-02", "entran": ["TSLA"], "salen": [], "rendimiento": -0.0871}]}`. Queda cifrado y mide cada período contra SPY y el núcleo.
+- **Satélites contra su referencia**: en el Trimestral, con **Cambiar las referencias**. Las predeterminadas están en `js/diario.js` (sin referencia propia, SPY).
 
 ## Proyección con rangos
 
@@ -54,7 +110,7 @@ Herramienta personal de seguimiento de inversiones.
   - retorno promedio = (retorno compuesto de SPY + volatilidad de SPY² / 2) + (beta contra SPY − 1) × prima de mercado;
   - retorno compuesto (el camino del medio) = retorno promedio − volatilidad de la acción² / 2.
   - Con beta 1 y la volatilidad de SPY, la acción tiene la misma mediana que SPY; cuanto más se mueve, más abajo queda. Sin historia de precios se supone beta 1 y 35% de volatilidad.
-- No simula cupones, la amortización de la ON ni la parte del ahorro que iría a la reserva.
+- Los cupones de la ON salen de su valor y entran al núcleo el mes en que se pagan; al vencer, también el capital. No simula la parte del ahorro que iría a la reserva.
 
 ## Semáforo argentino, reserva en pesos y elecciones
 
@@ -67,7 +123,8 @@ En **Hoy → Para saber** (una línea) e **Informes → Trimestral**.
 
 ## Clima de mercado y aporte extra
 
-- Línea en "Para saber" e Informes → Trimestral: sobretasa de bonos de alto riesgo, curva 10 años contra 3 meses, VIX y SPY contra su promedio de 200 ruedas, cada uno "tranquilo", "atento" o "tenso", con su historia.
+- Línea en "Para saber" e Informes → Trimestral: sobretasa de bonos de alto riesgo, curva 10 años contra 3 meses, VIX, SPY contra su promedio de 200 ruedas y condiciones financieras (NFCI), cada uno "tranquilo", "atento" o "tenso", con su historia.
+- **Calibrar umbrales**: ⋯ → Supuestos → "Proponer umbrales del semáforo y del clima con la historia". Calcula percentiles (75 y 90, editables) y completa los campos; nada cambia hasta "Guardar".
 - **Aporte extra** (⋯ → Configuración), apagado de fábrica: si la reserva tiene excedente (R1) y el núcleo cae más de 15% desde su máximo, sugiere usar la mitad del excedente (los dos valores se cambian). No es un paso y nunca sugiere vender ni frenar aportes. El máximo se mide con la historia diaria disponible (desde junio de 2024).
 
 ## Supuestos
@@ -80,7 +137,8 @@ Los números que no salen de ningún dato están en `data/supuestos.json`, cada 
 | Prima de mercado (acciones sueltas, ancladas a SPY) | 3,70% | Damodaran, 08/10/2026 |
 | ON · fondos en dólares · caja · pesos | 5,29 · 4,2 · 0 · 0% | Criterio propio (ON: FRED `DGS10`; fondos: `DGS3MO`, al 30/09/2026) |
 | Semáforo (amarillo y rojo) | riesgo país 800 y 1.500; canje 5 y 10%; brecha 10 y 30%; acciones −7 y −15% | Criterio propio, a confirmar |
-| Clima (atento y tenso) | bonos 4 y 6; curva 0,25 y 0; VIX 20 y 30; SPY 0 y −5% | Criterio propio, a confirmar |
+| Clima (atento y tenso) | bonos 4 y 6; curva 0,25 y 0; VIX 20 y 30; SPY 0 y −5%; NFCI −0,25 y 0 | Criterio propio, a confirmar |
+| Radar de directivos | pesos y topes; señal desde 60 puntos | Criterio propio, a calibrar |
 
 ## Sincronizar
 
@@ -160,22 +218,29 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | `js/riesgo.js` | Aporte de cada cosa al riesgo, mes malo y escenarios. Puro. |
 | `js/diario.js` | Puntaje de las predicciones, carteras fantasma, satélites contra su referencia, rotaciones. Puro. |
 | `js/ejemplo.js` | Cartera inventada para las pruebas públicas. |
+| `js/seguimiento.js` | Qué seguir (la lista pública de tickers). Puro. |
+| `js/calendario.js`, `js/noticias.js`, `js/directivos.js` | Calendario, noticias materiales y radar de directivos en la app. Puros. |
+| `js/resumen.js` | Hechos, plantillas, pedido a Haiku y control del texto del resumen. Puro. |
+| `js/calibrar.js` | Propuesta de umbrales por percentiles. Puro. |
 | `js/extracto.js` | Lectura de extractos (tabla, CSV, texto) y categorización de gastos. Puro. |
 | `js/sync.js` | Leer, fusionar y subir el archivo cifrado a GitHub; pedir precios nuevos (`actualizarMercado`). |
 | `js/seguridad.js` | Fortaleza de la clave, generador de frases, guardado local cifrado, bloqueo. |
 | `js/cripto.js`, `js/db.js` | WebCrypto e IndexedDB. |
 | `js/ui/*.js` | Pantallas, menú y el paso a paso del mes (`mes.js`). |
 | `js/pruebas.js` | Pruebas; corren en `tests.html` y con `node tools/pruebas_node.mjs`. |
-| `js/pruebas_publicas.js`, `js/pruebas_ronda2.js` | Pruebas que no usan datos privados; también corren en cada PR. |
+| `js/pruebas_publicas.js`, `js/pruebas_ronda2.js`, `js/pruebas_ronda3.js` | Pruebas que no usan datos privados; también corren en cada PR. |
 | `tools/mercado.py` | Escribe `data/market.json`, `data/insiders.json`, `data/historico.json` y `data/feriados_ar.json`. Si una fuente falla, conserva el último dato y lo marca `stale`. |
 | `tools/contexto.py` | Escribe `data/argentina.json` (riesgo país, tasa, cuotapartes, elección), `data/clima.json` y `data/largo_plazo.json`, con el mismo criterio y un tope de tiempo por corrida. |
+| `tools/senales.py` | Corre lo de abajo, cada parte por separado: `sec.py` (SEC y CIK), `calendario.py` (`agenda.json`), `noticias.py` (`noticias.json`), `clasificar.py` (`ia_uso.json`) y `directivos.py` (`directivos.json`). |
+| `tools/estado_dia.mjs`, `tools/resumen.mjs` | Semáforo de cada día (`semaforo.json`) y resumen del sábado (`resumen.json`). |
+| `data/eventos.json` | Fed, inflación de EE.UU. e INDEC, MSCI y elecciones, con fuente. A mano. |
 | `tools/cedear_ratios.json` | Ratios oficiales de BYMA, con fuente y fecha. |
 | `tools/grabadas/` | Respuestas grabadas y el histórico congelado para las pruebas de Python. |
 | `data/calendario.json` | Cupones y amortización de la ON, por cada 1 de valor nominal. |
 | `data/feriados_eeuu.json` | Feriados y medias ruedas de EE.UU. 2026 y 2027, horario de BYMA y excepciones de su calendario. |
 | `data/supuestos.json` | Supuestos con fuente y fecha. |
 
-**Eventos**: `aporte`, `compra` (con `moneda: "USD"` y `especie` si se pagó en dólares), `cobro`, `venta`, `mes` (cierre con gastos), `reglas_gasto`, `paso`, `decision`, `config`, `perfil`, `fecha_aporte`, `aporte_historico`, `importar_lotes`, `prediccion`, `prediccion_resultado`, `prediccion_editar`, `prediccion_borrar`, `fantasma`, `fantasma_editar`, `fantasma_borrar`, `rotacion_allaria`, `supuestos`, `objetivo`, `objetivo_borrar`, `aporte_extra`. Se aplican encima de los datos base; al sincronizar se guarda base + eventos + un valor por día (patrimonio, largo plazo, núcleo, parte en CEDEARs y acciones, MEP y contado con liqui).
+**Eventos** (también `resumen_leido`, `historial_allaria`, `referencias`, `ratio_aceptado` y `fantasma` con `senal` cuando la anota el radar): `aporte`, `compra` (con `moneda: "USD"` y `especie` si se pagó en dólares), `cobro`, `venta`, `mes` (cierre con gastos), `reglas_gasto`, `paso`, `decision`, `config`, `perfil`, `fecha_aporte`, `aporte_historico`, `importar_lotes`, `prediccion`, `prediccion_resultado`, `prediccion_editar`, `prediccion_borrar`, `fantasma`, `fantasma_editar`, `fantasma_borrar`, `rotacion_allaria`, `supuestos`, `objetivo`, `objetivo_borrar`, `aporte_extra`. Se aplican encima de los datos base; al sincronizar se guarda base + eventos + un valor por día (patrimonio, largo plazo, núcleo, parte en CEDEARs y acciones, MEP y contado con liqui).
 
 **Ajustes en los datos** (todos opcionales):
 
@@ -194,17 +259,24 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 
 ## Mantenimiento
 
+- **Eventos fijos** (`data/eventos.json`): sumar el 2.º semestre de 2027 del INDEC cuando lo publique, el día de la revisión de MSCI y las reuniones y fechas de 2028.
+- **Modelos de Gemini** (`ia.modelos_gemini`): si se usa ese proveedor, revisar la lista de vez en cuando.
 - **Ratios de CEDEARs**: cambian cuando hay splits o ajustes. El tablero avisa (`market.json` → `ratios_byma.cambios`, y `implicito.revisar_ratios` si los precios no cierran). Para actualizarlos: editar `tools/cedear_ratios.json` (ratios y fecha) con la lista de [BYMA](https://www.byma.com.ar/productos/productos-financieros/cedears).
 - **Calendario de BYMA**: los feriados argentinos se bajan solos; las excepciones (`byma.excepciones` en `data/feriados_eeuu.json`) se cargan a mano cuando BYMA publica el calendario de cada año.
 - **Supuestos**: revisar cada trimestre el retorno de Vanguard, la tasa y la prima en `data/supuestos.json`.
 - **Marzo de 2027**: confirmar el horario de BYMA cuando EE.UU. pase al horario de verano y cargarlo en `data/feriados_eeuu.json` (hoy se asume cierre a las 17:00).
 - **Antes de 2028**: sumar los feriados de EE.UU. de ese año.
-- **Historia de precios**: lo que quieras medir (fantasmas, satélites, riesgo) tiene que estar en `historico_extra`. El archivo es público: no hace falta que sea algo que tenés.
+- **Historia de precios**: lo que seguís y las referencias se bajan solos (`data/seguimiento.json`). `historico_extra` sigue sirviendo para sumar otra cosa.
 
 **Fuentes de mercado** (en la app: ⋯ → Fuentes y fechas):
 
 | Dato | Fuente |
 |---|---|
+| Presentaciones y formularios 4 | SEC EDGAR: `company_tickers.json`, `data.sec.gov/submissions`, `Archives` (menos de 10 pedidos por segundo, identificados con `SEC_CONTACTO`) |
+| Noticias | Google News RSS por empresa, `es-419/AR` y `en-US/US` |
+| Balances, ex dividendo, opciones, tamaño y precio previo | Yahoo Finance (yfinance) |
+| Clasificación y resumen | API de Claude (SDK `anthropic` / `@anthropic-ai/sdk`) o API de Gemini |
+| Eventos fijos | Reserva Federal (calendario del FOMC), BLS (IPC), INDEC (calendario de difusión), MSCI, Código Electoral |
 | MEP, CCL, oficial | dolarapi.com `/v1/dolares` (MEP = promedio compra/venta de "bolsa") |
 | CEDEARs, acciones, ON | data912.com `live/arg_cedears`, `arg_stocks`, `arg_corp` (las ON vienen cada 100 VN) |
 | Cuotapartes de fondos | api.argentinadatos.com `/v1/finanzas/fci/…/ultimo` (`vcp` viene cada 1.000 cuotapartes) |
@@ -222,10 +294,10 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | Riesgo país | api.argentinadatos.com `/v1/finanzas/indices/riesgo-pais` (desde 2020) |
 | Tasa de plazo fijo | api.argentinadatos.com `/v1/finanzas/tasas/depositos30Dias` (BCRA, 30 días) |
 | Historia de cuotapartes | api.argentinadatos.com `/v1/finanzas/fci/{categoría}/{año}/{mes}/{día}`: un valor cerca de cada fin de mes y el de cada día desde ahora (a la fuente le faltan días) |
-| Bonos de riesgo, curva, VIX, condiciones financieras | FRED `BAMLH0A0HYM2` (solo tres años), `T10Y3M`, `VIXCLS`, `NFCI` (se guarda, todavía no se muestra) |
+| Bonos de riesgo, curva, VIX, condiciones financieras | FRED `BAMLH0A0HYM2` (solo tres años), `T10Y3M`, `VIXCLS`, `NFCI` |
 | ETF: cierres mensuales desde 2005 | yfinance → `largo_plazo.json` (cambia una vez por mes) |
 | Elección 2027 | Kalshi `/trade-api/v2/events?series_ticker=KXARGENTINAPRES`; Polymarket `gamma-api.polymarket.com/events?slug=…` (solo desde GitHub) |
-| Histórico de lo que tenés | Yahoo Finance, tickers de `historico_extra` en `tools/mercado_config.json` (solo para reconstruir la evolución de tu cartera antes de los registros diarios; si un ticker falla no frena al resto) |
+| Histórico de lo que tenés | Yahoo Finance: `data/seguimiento.json` más `historico_extra` de `tools/mercado_config.json` (solo para reconstruir la evolución de tu cartera antes de los registros diarios; si un ticker falla no frena al resto) |
 
 ## Probar en la computadora
 
@@ -241,6 +313,8 @@ Sin datos privados (lo mismo que corre GitHub Actions en cada PR, workflow `prue
 node tools/chequear_modulos.mjs && node tools/pruebas_publicas.mjs
 python tools/pruebas_alertas.py && python tools/pruebas_mercado.py
 ```
+
+Las respuestas grabadas de `tools/grabadas/` que dicen `formato` se armaron a mano con el formato de la fuente (SEC `company_tickers` y 6-K, Gemini y Claude): no hubo clave ni contacto declarado para grabarlas.
 
 El Action de mercado instala `yfinance` desde `tools/requirements.txt` (rango acotado a la versión mayor actual) y deja la versión en el registro de la corrida.
 
