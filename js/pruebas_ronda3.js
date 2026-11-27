@@ -1,7 +1,7 @@
 // Pruebas públicas de la ronda 3 (sin datos privados). Corren junto con js/pruebas_publicas.js.
-import { aplicarEventos, valuar } from './estado.js';
+import { aplicarEventos, valuar, sinRetirados, eventoRetirado } from './estado.js';
 import { tickersASeguir, seguimiento, subyacenteUsa } from './seguimiento.js';
-import { publicarSeguimiento } from './sync.js';
+import { publicarSeguimiento, fusionar } from './sync.js';
 import { cerca, igual, si, mundo } from './pruebas_ronda2.js';
 import { agendaProxima, calendarioPorVencer, comoLoSeguis, fechaCorta } from './calendario.js';
 import { planificador } from './motor.js';
@@ -13,8 +13,7 @@ import { resumenSinLeer } from './ui/resumen.js';
 import { simular } from './simulacion.js';
 import { climaMercado, textoClima } from './clima.js';
 import { proponerUmbrales, percentil } from './calibrar.js';
-import { leerHistorialAllaria, medirHistorialAllaria, contraReferencia, FORMATO_ALLARIA } from './diario.js';
-import { rendimientoHist } from './finanzas.js';
+import { contraReferencia } from './diario.js';
 import { precioJusto } from './precios.js';
 
 const evento = (id, resto) => ({ id: 'r3-' + id, ts: `2026-11-30T12:00:00.${String(id).padStart(3, '0')}Z`, ...resto });
@@ -42,7 +41,7 @@ function githubArchivo(inicial = null, { conflictos = 0 } = {}) {
 function etapa1() {
   return [
     ['Qué seguir: cartera, watchlist y fantasmas, con su tipo y su subyacente en EE.UU.', async () => {
-      const { e } = mundo({ eventos: [evento(1, { tipo: 'fantasma', origen: 'radar', ticker: 'CTSO', fecha: '2026-11-20' }), evento(2, { tipo: 'fantasma', origen: 'allaria', ticker: 'AAPL', fecha: '2026-11-03', grupo: 'Allaria P3' })] });
+      const { e } = mundo({ eventos: [evento(1, { tipo: 'fantasma', origen: 'radar', ticker: 'CTSO', fecha: '2026-11-20' }), evento(2, { tipo: 'fantasma', origen: 'watchlist', ticker: 'AAPL', fecha: '2026-11-03' })] });
       const l = tickersASeguir(e), por = Object.fromEntries(l.map(x => [x.t, x]));
       igual(por.SPY, { t: 'SPY', tipo: 'cedear', usa: 'SPY', en: ['cartera'] }, 'SPY');
       igual([por.PAMP.tipo, por.PAMP.usa], ['accion_ar', 'PAM'], 'acción local por su ADR');
@@ -346,28 +345,6 @@ function etapa7() {
       si(proponerUmbrales(x.e, { atencion: 0.5, alarma: 0.99 })[0].propuesto[0] < 1250, 'los percentiles se cambian');
       igual(p['semaforo.riesgo_pais'].actual, [800, 1500], 'muestra lo de hoy: no cambia nada solo');
     }],
-    ['Allaria: se pega el historial como JSON, se valida y se mide contra SPY y el núcleo', async () => {
-      const ej = leerHistorialAllaria(FORMATO_ALLARIA.replace('"..."', '"Allaria"'), '2026-11-30');
-      igual(ej.rotaciones[0], { id: 'P1', fecha: '2026-01-02', entran: ['TSLA'], salen: [], rendimiento: -0.0871 }, 'el formato de ejemplo entra');
-      for (const [malo, motivo] of [['x', /JSON/], ['{"rotaciones":[]}', /fuente/], ['{"fuente":"a","rotaciones":[]}', /al menos una/],
-        ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2026-13-01"}]}', /fecha/], ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2027-01-02"}]}', /futura/],
-        ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2026-01-02","rendimiento":-8.71}]}', /fracción/], ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2026-01-02","entran":["<b>"]}]}', /ticker/],
-        ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2026-01-02"},{"id":"P1","fecha":"2026-02-02"}]}', /mismo/], ['{"fuente":"a","rotaciones":[{"id":"P1","fecha":"2026-01-02"},{"id":"P2","fecha":"2026-01-02"}]}', /misma fecha/]]) {
-        let error = '';
-        try { leerHistorialAllaria(malo, '2026-11-30'); } catch (err) { error = err.message; }
-        si(motivo.test(error), `${malo} → ${error}`);
-      }
-      const h = leerHistorialAllaria(JSON.stringify({ fuente: 'Informe', rotaciones: [{ id: 'P2', fecha: '2026-06-01', rendimiento: 0.05 }, { id: 'P1', fecha: '2026-03-02', rendimiento: 0.02 }, { id: 'P0', fecha: '2024-01-02', rendimiento: 0.1 }, { id: 'P3', fecha: '2026-09-01' }] }), '2026-11-30');
-      const x = mundo();
-      const e = valuar(aplicarEventos(x.datos, [evento(1, { tipo: 'historial_allaria', fecha: '2026-11-30', ...h })]), x.ext, '2026-11-30');
-      const m = medirHistorialAllaria(e);
-      igual(m.filas.map(f => [f.id, f.desde, f.hasta, f.abierto]), [['P0', '2024-01-02', '2026-03-02', false], ['P1', '2026-03-02', '2026-06-01', false], ['P2', '2026-06-01', '2026-09-01', false], ['P3', '2026-09-01', '2026-11-30', true]], 'períodos');
-      cerca(m.filas[1].spy, rendimientoHist(e.historico, 'SPY', '2026-03-02', '2026-06-01'), 1e-12, 'SPY en las mismas fechas');
-      si(m.filas[1].nucleo != null && m.filas[0].spy === null && m.sin_historia.join() === 'P0', 'antes de la historia no se inventa');
-      cerca(m.acumulado.rendimiento, 1.02 * 1.05 - 1, 1e-12, 'acumulado de los períodos completos');
-      si(m.acumulado.periodos === 2 && medirHistorialAllaria(x.e) === null, 'dos completos; sin historial, nada');
-      si(e.datos.cartera_modelo_allaria.activos.length === x.datos.cartera_modelo_allaria.activos.length, 'la cartera modelo vigente no cambia');
-    }],
     ['Referencias: se cambian desde la app, vuelven a la predeterminada y se piden al histórico', async () => {
       const x = mundo();
       const con = evs => valuar(aplicarEventos(x.datos, evs), x.ext, '2026-11-30');
@@ -395,6 +372,48 @@ function etapa7() {
   ];
 }
 
+// ---------- funciones sacadas ----------
+// Datos como los de antes: con cartera modelo, rotaciones y carteras fantasma de Allaria.
+function datosViejos() {
+  const { datos, ext } = mundo();
+  datos.cartera_modelo_allaria = { rotacion: 'P3', activos: [{ ticker: 'AAPL' }] };
+  datos.fantasmas = [{ origen: 'allaria', ticker: 'AAPL', fecha: '2026-06-01' }, { origen: 'watchlist', ticker: 'KO', fecha: '2026-06-01' }];
+  datos.eventos = [
+    evento(1, { tipo: 'rotacion_allaria', fecha: '2026-11-03', rotacion: 'P3', entra: ['KO'], sale: [] }),
+    evento(2, { tipo: 'historial_allaria', fecha: '2026-11-03', fuente: 'x', rotaciones: [] }),
+    evento(3, { tipo: 'fantasma', origen: 'allaria', ticker: 'MSFT', fecha: '2026-11-03', grupo: 'Allaria P3' }),
+    evento(4, { tipo: 'fantasma_borrar', clave: 'allaria|Allaria P3|2026-11-03' }),
+    evento(5, { tipo: 'fantasma', origen: 'radar', ticker: 'NVDA', fecha: '2026-11-04' }),
+    evento(6, { tipo: 'decision', fecha: '2026-11-03', texto: 'Rotación P3 de Allaria' }),
+  ];
+  return { datos, ext };
+}
+function retirados() {
+  return [
+    ['Datos viejos: se abren igual y lo de funciones sacadas no se usa', async () => {
+      const { datos, ext } = datosViejos();
+      const suelto = evento(9, { tipo: 'fantasma', origen: 'allaria', ticker: 'PEP', fecha: '2026-11-20' });
+      const e = valuar(aplicarEventos(datos, [suelto]), ext, '2026-11-30');
+      si(!('cartera_modelo_allaria' in e.datos), 'sin cartera modelo');
+      igual(e.datos.fantasmas.map(f => `${f.origen}:${f.ticker}`), ['watchlist:KO', 'radar:NVDA'], 'solo las otras fantasmas');
+      igual(e.datos.decisiones.map(x => x.texto), ['Rotación P3 de Allaria'], 'el registro de decisiones se conserva');
+      si(e.posiciones.length && planificador(e, e.hoy).pasos.length >= 0 && !tickersASeguir(e).some(x => x.t === 'MSFT' || x.t === 'PEP'), 'todo lo demás funciona');
+      si(datos.cartera_modelo_allaria && datos.eventos.length === 6, 'no toca los datos originales');
+    }],
+    ['Datos viejos: al guardar se descarta la cartera modelo y sus fantasmas', async () => {
+      const { datos } = datosViejos();
+      const limpio = sinRetirados(datos);
+      si(!('cartera_modelo_allaria' in limpio) && limpio.fantasmas.length === 1, 'base limpia');
+      igual(limpio.eventos.map(x => x.tipo), ['fantasma', 'decision'], 'eventos');
+      // La sincronización une lo remoto (viejo) con lo local y ya no lo vuelve a escribir.
+      const unido = fusionar(datos, { ...datos, eventos: [...datos.eventos, evento(7, { tipo: 'fantasma', origen: 'allaria', ticker: 'PEP', fecha: '2026-11-20' })] });
+      si(!JSON.stringify({ ...unido, eventos: unido.eventos.filter(x => x.tipo !== 'decision') }).toLowerCase().includes('allaria'), JSON.stringify(unido.fantasmas));
+      igual(unido.eventos.map(x => x.tipo), ['fantasma', 'decision'], 'sin eventos retirados');
+      si(eventoRetirado({ tipo: 'fantasma_editar', clave: 'allaria|x|y' }) && !eventoRetirado({ tipo: 'fantasma_editar', clave: 'radar|NVDA|y' }), 'solo lo de Allaria');
+    }],
+  ];
+}
+
 export function pruebasRonda3() {
-  return [...etapa1(), ...etapa2(), ...etapa4(), ...etapa5(), ...etapa6(), ...etapa7()];
+  return [...etapa1(), ...etapa2(), ...etapa4(), ...etapa5(), ...etapa6(), ...etapa7(), ...retirados()];
 }

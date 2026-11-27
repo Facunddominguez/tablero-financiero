@@ -6,7 +6,7 @@ import { repartirAporte, planificador, movimientosFuertes } from './motor.js';
 import { volatilidadReciente } from './finanzas.js';
 import { ejemplo } from './ejemplo.js';
 import { riesgo, inversaNormal } from './riesgo.js';
-import { puntajePredicciones, compararFantasmas, contraReferencia, eventosRotacion } from './diario.js';
+import { puntajePredicciones, compararFantasmas, contraReferencia } from './diario.js';
 import { proximaAccion } from './motor.js';
 import { fusionar } from './sync.js';
 import { deflactor, rendimiento, xirr, curvaPorcentual, inicioDelPeriodo, historiaCartera, resumenPeriodo, benchmarks, rendimientoPorBloque, canjeDe } from './finanzas.js';
@@ -126,7 +126,7 @@ export function pruebasPublicas() {
     ['Fantasmas: contra SPY a 1, 3, 6 y 12 meses, solo lo que ya pasó, y avisa qué falta pedir', async () => {
       const fs = ['2026-01-02', '2026-02-02', '2026-04-02', '2026-07-02', '2026-08-03'];
       const e = { hoy: '2026-08-04', ratios: { BRKB: { ratio: 22, usa: 'BRK.B' } }, historico: { fechas: fs, series: { SPY: [100, 110, 110, 120, 125], KO: [50, 60, 45, 66, 70], MEP: [1, 1, 1, 1, 1] } },
-        datos: { fantasmas: [{ origen: 'watchlist', ticker: 'KO', fecha: '2026-01-02' }, { origen: 'allaria', ticker: 'KO', fecha: '2026-01-02', grupo: 'Allaria P9' }, { origen: 'allaria', ticker: 'BRKB', fecha: '2026-01-02', grupo: 'Allaria P9' }, { origen: 'allaria', ticker: 'SPY', fecha: '2026-01-02', grupo: 'Allaria P9' }] } };
+        datos: { fantasmas: [{ origen: 'watchlist', ticker: 'KO', fecha: '2026-01-02' }, { origen: 'radar', ticker: 'KO', fecha: '2026-01-02', grupo: 'Grupo de prueba' }, { origen: 'radar', ticker: 'BRKB', fecha: '2026-01-02', grupo: 'Grupo de prueba' }, { origen: 'radar', ticker: 'SPY', fecha: '2026-01-02', grupo: 'Grupo de prueba' }] } };
       const r = compararFantasmas(e);
       igual(r.faltan, ['BRK.B'], 'avisa con el ticker que hay que sumar');
       const w = r.grupos.find(g => g.origen === 'watchlist').filas[0];
@@ -134,7 +134,7 @@ export function pruebasPublicas() {
       cerca(w.plazos[3].rend, -0.1, 1e-12, 'a 3 meses'); cerca(w.plazos[6].rend, 66 / 50 - 1, 1e-12, 'a 6 meses');
       if (w.plazos[12] !== null) throw new Error('12 meses todavía no pasó');
       cerca(w.hoy.rend, 0.4, 1e-12, 'hasta hoy');
-      const a = r.grupos.find(g => g.origen === 'allaria');
+      const a = r.grupos.find(g => g.origen === 'radar');
       cerca(a.promedio.plazos[1].rend, (0.2 + 0.1) / 2, 1e-12, 'cartera con el mismo peso (sin el que no tiene precios)');
       if (a.promedio.plazos[1].cantidad !== 2) throw new Error('cantidad');
       // Entre dos fechas sin un cierre posterior al de entrada no hay resultado.
@@ -155,16 +155,6 @@ export function pruebasPublicas() {
       datos.referencias = { NVDA: 'QQQ' };
       const x = contraReferencia(valuar(aplicarEventos(datos), ext, '2026-11-30'));
       if (x.filas.find(v => v.ticker === 'NVDA').referencia !== 'QQQ' || !x.faltan.includes('QQQ')) throw new Error('no tomó la referencia de los datos');
-    }],
-
-    ['Una rotación nueva de Allaria guarda la fecha, actualiza la cartera modelo y entra como fantasma', async () => {
-      const { datos, ext } = ejemplo();
-      const ev = eventosRotacion(datos, { fecha: '2026-11-20', rotacion: 'P4', entra: ['MSFT'], sale: ['KO'] }, '2026-11-30').map((x, i) => ({ id: 'r' + i, ts: `2026-11-30T10:00:0${i}Z`, ...x }));
-      const d = aplicarEventos(datos, ev), a = d.cartera_modelo_allaria;
-      igual(a.activos.map(x => x.ticker), ['AAPL', 'SPY', 'MSFT'], 'cartera nueva');
-      if (a.rotacion !== 'P4' || a.fecha !== '2026-11-20' || a.rotaciones.at(-1).fecha !== '2026-11-20' || a.ultimos_cambios[0].entra !== 'MSFT') throw new Error(JSON.stringify(a));
-      igual(d.fantasmas.map(f => [f.origen, f.ticker, f.fecha]), [['allaria', 'AAPL', '2026-11-20'], ['allaria', 'SPY', '2026-11-20'], ['allaria', 'MSFT', '2026-11-20']], 'fantasmas');
-      if (planificador(valuar(d, ext, '2026-11-30'), '2026-11-30').pasos.some(p => /allaria|fantasma/i.test(p.id + p.titulo))) throw new Error('no tiene que crear tareas');
     }],
 
     ['Avisos de precio: el umbral es un múltiplo de lo que cada activo suele moverse', async () => {

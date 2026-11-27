@@ -6,7 +6,7 @@ import { guardarCifrado, leerCifrado, bloqueo } from './seguridad.js';
 import { sincronizar, leerRemoto, repoDeUbicacion, actualizarMercado, leerArchivosMercado, probarActions, publicarSeguimiento } from './sync.js';
 import { seguimiento } from './seguimiento.js';
 import { eventosSenales } from './directivos.js';
-import { aplicarEventos, valuar, snapshotDe } from './estado.js';
+import { aplicarEventos, valuar, snapshotDe, sinRetirados, eventoRetirado } from './estado.js';
 import { planificador } from './motor.js';
 import { vistaHoy } from './ui/hoy.js';
 import { vistaCartera } from './ui/cartera.js';
@@ -192,7 +192,7 @@ const ctx = {
     d.eventos = [...(S.base.eventos || []), ...S.eventos].filter(e => !vistos.has(e.id) && vistos.add(e.id));
     d.snapshots = { ...(S.base.snapshots || {}), ...S.snaps };
     d.meta.sincronizado = new Date().toISOString();
-    return d;
+    return sinRetirados(d);
   },
   cifrarDatos: datos => cifrar(datos, S.clave, S.sobre.salt, S.sobre.iter),
   // Abre un respaldo cifrado. Con la misma clave de ahora no pide nada; si se cifró con otra, hace falta esa frase.
@@ -339,7 +339,10 @@ async function cargarTodo(frase) {
   // Un respaldo importado manda hasta que se suba.
   S.localManda = !!(local && (!S.base.meta.sincronizado || S.base.meta.sincronizado < local.guardado));
   if (S.localManda) S.base = local.datos; else if (local) await db.borrar('base_local').catch(() => {});
-  S.eventos = eventos || []; podar();
+  // lo de funciones sacadas que haya quedado sin subir no cuenta como cambio pendiente
+  S.eventos = (eventos || []).filter(x => !eventoRetirado(x));
+  if (S.eventos.length !== (eventos || []).length) await persistir('eventos', S.eventos);
+  podar();
   S.snaps = snaps || {};
   S.gh = gh?.token ? gh : null;
   S.sync = { fecha: sync?.fecha || null, ids: new Set(sync?.ids || []), error: null, enCurso: false };

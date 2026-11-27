@@ -25,6 +25,19 @@ export function tickersPropios(posiciones) {
   return m;
 }
 
+// Lo que quedó de funciones que se sacaron (la cartera modelo de Allaria y sus carteras fantasma): los datos viejos
+// que todavía lo traen se abren igual, pero no se usa ni se vuelve a guardar. El registro de decisiones se conserva.
+const EVENTOS_RETIRADOS = new Set(['rotacion_allaria', 'historial_allaria']);
+export const eventoRetirado = e => EVENTOS_RETIRADOS.has(e.tipo)
+  || (e.tipo === 'fantasma' && e.origen === 'allaria')
+  || ((e.tipo === 'fantasma_editar' || e.tipo === 'fantasma_borrar') && String(e.clave || '').startsWith('allaria|'));
+export function sinRetirados(datos) {
+  const { cartera_modelo_allaria, ...d } = datos;
+  if (d.fantasmas) d.fantasmas = d.fantasmas.filter(f => f.origen !== 'allaria');
+  if (d.eventos) d.eventos = d.eventos.filter(e => !eventoRetirado(e));
+  return d;
+}
+
 const arsDe = (c, mep) => c.cantidad * c.precio * (c.moneda === 'USD' ? mep : 1) + (c.gastos || 0);
 
 function sumarCompra(d, c, fecha, mep, nota) {
@@ -41,14 +54,14 @@ function sumarCompra(d, c, fecha, mep, nota) {
 
 // Aplica los eventos (ordenados por momento) sobre una copia de los datos base.
 export function aplicarEventos(base, eventosLocales = []) {
-  const d = clon(base);
+  const d = clon(sinRetirados(base));
   d.pasos = d.pasos || {}; d.meses = d.meses || {}; d.decisiones = d.decisiones || [];
   d.cobros = d.cobros || []; d.realizados = d.realizados || []; d.snapshots = d.snapshots || {};
   d.predicciones = d.predicciones || []; d.fantasmas = d.fantasmas || [];
   d.senales_radar = d.senales_radar || {}; // empresa → cuándo se anotó sola su última señal
   const vistos = new Set();
   const todos = [...(base.eventos || []), ...eventosLocales]
-    .filter(e => !vistos.has(e.id) && vistos.add(e.id))
+    .filter(e => !eventoRetirado(e) && !vistos.has(e.id) && vistos.add(e.id))
     .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   d.eventos = todos;
 
@@ -153,11 +166,6 @@ export function aplicarEventos(base, eventosLocales = []) {
         d.fantasmas = [...resto.slice(0, i), ...nuevos, ...resto.slice(i)];
         break;
       }
-      case 'historial_allaria': { // el historial completo, pegado como JSON (reemplaza al anterior)
-        const a = d.cartera_modelo_allaria = d.cartera_modelo_allaria || { activos: [] };
-        a.historial = { fuente: e.fuente, rotaciones: e.rotaciones, cargado: e.fecha };
-        break;
-      }
       case 'referencias': { // con qué se compara cada satélite; vacío vuelve a la predeterminada
         const r = { ...d.referencias };
         for (const [t, x] of Object.entries(e.cambios || {})) { if (x) r[t] = x; else delete r[t]; }
@@ -167,16 +175,6 @@ export function aplicarEventos(base, eventosLocales = []) {
       case 'ratio_aceptado': // aceptaste el ratio nuevo que publicó BYMA
         d.ratios_aceptados = { ...d.ratios_aceptados, [e.ticker]: { ratio: e.ratio, anterior: e.anterior, fecha: e.fecha } };
         break;
-      case 'rotacion_allaria': {
-        const a = d.cartera_modelo_allaria = d.cartera_modelo_allaria || { activos: [] };
-        const activos = (a.activos || []).filter(x => !e.sale.includes(x.ticker));
-        for (const t of e.entra) if (!activos.some(x => x.ticker === t)) activos.push({ ticker: t, desde: e.fecha });
-        a.activos = activos;
-        a.ultimos_cambios = [{ fecha: e.fecha, entra: e.entra.join(', ') || '—', sale: e.sale.join(', ') || '—' }, ...(a.ultimos_cambios || [])];
-        a.rotaciones = [...(a.rotaciones || []), { rotacion: e.rotacion, fecha: e.fecha }];
-        a.rotacion = e.rotacion; a.fecha = e.fecha;
-        break;
-      }
       case 'supuestos': // lo que cambiaste de data/supuestos.json; restaurar: volver a los originales
         d.supuestos = e.restaurar ? {} : fundir(d.supuestos || {}, e.cambios || {});
         break;
@@ -246,7 +244,6 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
   const mep = m?.fx?.mep || datos.meta.tc_snapshot.mep;
   const ccl = m?.fx?.ccl || datos.meta.tc_snapshot.cable_usd;
   const cambioMep = m?.fx?.mep_prev ? m.fx.mep / m.fx.mep_prev - 1 : 0;
-  const allaria = new Set((datos.cartera_modelo_allaria?.activos || []).map(a => a.ticker));
 
   const posiciones = datos.posiciones.map(p => {
     const pm = precioDeMercado(p, m);
@@ -264,7 +261,7 @@ export function valuar(datos, ext = {}, hoy = fechas.hoy()) {
       // movimiento del día medido en dólares: se descuenta lo que se movió el MEP (los fondos no tienen variación diaria)
       dia_usd_pct: pm && p.tipo !== 'fci' ? (1 + variacion / 100) / (1 + cambioMep) - 1 : 0,
       costo_usd, pnl_usd: lotes.length ? valor_usd - costo_usd : null, pnl_pct: costo_usd > 0 ? valor_usd / costo_usd - 1 : null,
-      precio_de_mercado: !!pm, en_allaria: allaria.has(p.subyacente || p.ticker_subyacente_usa || p.ticker),
+      precio_de_mercado: !!pm,
     };
   });
 

@@ -94,7 +94,6 @@ Cada corrida anota proveedor, modelo, pedidos, errores, tokens y costo en `data/
 - **Editar y borrar**: cada predicción y cada cartera fantasma tiene "Editar" y "Borrar" (y "Quitar" para un ticker). En una predicción resuelta se corrige el resultado, no la probabilidad.
 - **Predicciones**: ⋯ → Anotar una predicción (o Radar → "Antes de abrir una tesis nueva"). Cuando vence, aparece en Hoy para marcar si se cumplió. **Informes → Predicciones y fantasmas** muestra el puntaje de Brier (0 es perfecto) y el acierto por rango de probabilidad.
 - **Fantasmas**: "Seguir como fantasma" en Radar, o solas desde el radar de directivos. Se comparan con SPY a 1, 3, 6 y 12 meses. Su historia se baja sola después de sincronizar.
-- **Allaria**: Informes → Contraste con Allaria → "Cargar una rotación nueva" (guarda la fecha, actualiza la cartera modelo y la suma como fantasma) o **"Pegar el historial de rotaciones"**: un JSON como `{"fuente": "...", "rotaciones": [{"id": "P1", "fecha": "2026-01-02", "entran": ["TSLA"], "salen": [], "rendimiento": -0.0871}]}`. Queda cifrado y mide cada período contra SPY y el núcleo.
 - **Satélites contra su referencia**: en el Trimestral, con **Cambiar las referencias**. Las predeterminadas están en `js/diario.js` (sin referencia propia, SPY).
 
 ## Proyección con rangos
@@ -216,7 +215,7 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | `js/clima.js` | Clima de mercado, caída del núcleo y aporte extra. Puro. |
 | `js/supuestos.js`, `js/series.js` | Supuestos (archivo más lo tuyo) e interpolación de cuotapartes. Puros. |
 | `js/riesgo.js` | Aporte de cada cosa al riesgo, mes malo y escenarios. Puro. |
-| `js/diario.js` | Puntaje de las predicciones, carteras fantasma, satélites contra su referencia, rotaciones. Puro. |
+| `js/diario.js` | Puntaje de las predicciones, carteras fantasma y satélites contra su referencia. Puro. |
 | `js/ejemplo.js` | Cartera inventada para las pruebas públicas. |
 | `js/seguimiento.js` | Qué seguir (la lista pública de tickers). Puro. |
 | `js/calendario.js`, `js/noticias.js`, `js/directivos.js` | Calendario, noticias materiales y radar de directivos en la app. Puros. |
@@ -240,7 +239,9 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | `data/feriados_eeuu.json` | Feriados y medias ruedas de EE.UU. 2026 y 2027, horario de BYMA y excepciones de su calendario. |
 | `data/supuestos.json` | Supuestos con fuente y fecha. |
 
-**Eventos** (también `resumen_leido`, `historial_allaria`, `referencias`, `ratio_aceptado` y `fantasma` con `senal` cuando la anota el radar): `aporte`, `compra` (con `moneda: "USD"` y `especie` si se pagó en dólares), `cobro`, `venta`, `mes` (cierre con gastos), `reglas_gasto`, `paso`, `decision`, `config`, `perfil`, `fecha_aporte`, `aporte_historico`, `importar_lotes`, `prediccion`, `prediccion_resultado`, `prediccion_editar`, `prediccion_borrar`, `fantasma`, `fantasma_editar`, `fantasma_borrar`, `rotacion_allaria`, `supuestos`, `objetivo`, `objetivo_borrar`, `aporte_extra`. Se aplican encima de los datos base; al sincronizar se guarda base + eventos + un valor por día (patrimonio, largo plazo, núcleo, parte en CEDEARs y acciones, MEP y contado con liqui).
+**Eventos** (también `resumen_leido`, `referencias`, `ratio_aceptado` y `fantasma` con `senal` cuando la anota el radar): `aporte`, `compra` (con `moneda: "USD"` y `especie` si se pagó en dólares), `cobro`, `venta`, `mes` (cierre con gastos), `reglas_gasto`, `paso`, `decision`, `config`, `perfil`, `fecha_aporte`, `aporte_historico`, `importar_lotes`, `prediccion`, `prediccion_resultado`, `prediccion_editar`, `prediccion_borrar`, `fantasma`, `fantasma_editar`, `fantasma_borrar`, `supuestos`, `objetivo`, `objetivo_borrar`, `aporte_extra`. Se aplican encima de los datos base; al sincronizar se guarda base + eventos + un valor por día (patrimonio, largo plazo, núcleo, parte en CEDEARs y acciones, MEP y contado con liqui).
+
+Lo de funciones que se sacaron se ignora al leer y no se vuelve a guardar (`sinRetirados` en `js/estado.js`): los datos y respaldos viejos se abren igual.
 
 **Ajustes en los datos** (todos opcionales):
 

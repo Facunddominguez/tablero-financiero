@@ -1,6 +1,8 @@
 // Sincronización con GitHub: lee el archivo cifrado más nuevo, fusiona con lo local y lo sube.
 // Nunca descarta cambios locales: lo local solo se da por sincronizado cuando GitHub confirma la subida.
 
+import { sinRetirados } from './estado.js';
+
 const API = 'https://api.github.com';
 const RUTA = 'data/cartera.enc.json';
 
@@ -55,7 +57,7 @@ export function fusionar(remoto, local, { localManda = false } = {}) {
   base.eventos = [...(remoto?.eventos || []), ...(local.eventos || [])].filter(e => !vistos.has(e.id) && vistos.add(e.id));
   base.snapshots = { ...(remoto?.snapshots || {}), ...(local.snapshots || {}) };
   base.meta = { ...base.meta, sincronizado: new Date().toISOString() };
-  return base;
+  return sinRetirados(base); // lo de funciones sacadas no se vuelve a guardar
 }
 
 // Ciclo completo. `local` son los datos completos de este dispositivo; `abrir(sobre)` descifra un archivo remoto

@@ -134,14 +134,6 @@ export function benchmarks(estado, flujos) {
     .filter(Boolean);
 }
 
-// Rendimiento de un ticker del histórico entre dos fechas (cierre ajustado). null si no hay datos.
-export function rendimientoHist(hist, ticker, desde, hasta) {
-  if (!hist?.fechas?.length || !serieDe(hist, ticker)) return null;
-  const a = indice(hist, desde, 'valuacion'), b = indice(hist, hasta, 'valuacion');
-  if (a < 0 || b < 0 || a === b) return null;
-  return hist.series[ticker][b] / hist.series[ticker][a] - 1;
-}
-
 // Resumen de rendimiento: XIRR de la cartera y de los benchmarks con los mismos aportes en las mismas fechas.
 // Factor para llevar dólares de un mes a dólares del último mes con IPC de EE.UU. publicado.
 // meses = { 'AAAA-MM': índice }. Si el mes no está, usa el anterior más cercano; si es posterior al último, 1.

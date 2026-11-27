@@ -1,6 +1,6 @@
 // Diario: predicciones con su puntaje, carteras fantasma y satélites contra su referencia. Todo puro.
 import { fechas, suma } from './util.js';
-import { ADR_DE_LOCAL, serieDe, rendimientoHist } from './finanzas.js';
+import { ADR_DE_LOCAL, serieDe } from './finanzas.js';
 
 // ---------- predicciones ----------
 export const RANGOS = [[0, 0.2], [0.2, 0.4], [0.4, 0.6], [0.6, 0.8], [0.8, 1]];
@@ -106,68 +106,4 @@ export function contraReferencia(e) {
     };
   });
   return { filas, faltan: [...faltan].sort() };
-}
-
-// ---------- historial de rotaciones de Allaria ----------
-export const FORMATO_ALLARIA = '{"fuente": "...", "rotaciones": [{"id": "P1", "fecha": "2026-01-02", "entran": ["TSLA"], "salen": [], "rendimiento": -0.0871}]}';
-const TICKER = /^[A-Z0-9.]{1,12}$/;
-
-// Lee el JSON pegado. Devuelve { fuente, rotaciones } ordenadas por fecha, o lanza con qué corregir.
-// "rendimiento" es el del período que empieza en esa fecha, como fracción (-0.0871 es −8,71%); puede faltar en la última.
-export function leerHistorialAllaria(texto, hoy) {
-  let o;
-  try { o = JSON.parse(String(texto).trim()); } catch { throw new Error('No es un JSON válido. Revisá comas, comillas y llaves.'); }
-  const mal = que => { throw new Error(que); };
-  if (!o || typeof o.fuente !== 'string' || !o.fuente.trim()) mal('Falta "fuente".');
-  if (!Array.isArray(o.rotaciones) || !o.rotaciones.length) mal('"rotaciones" tiene que ser una lista con al menos una.');
-  const lista = (v, donde) => {
-    if (v == null) return [];
-    if (!Array.isArray(v)) mal(`${donde}: tiene que ser una lista de tickers.`);
-    return v.map(t => { const x = String(t).trim().toUpperCase(); return TICKER.test(x) ? x : mal(`${donde}: "${t}" no parece un ticker.`); });
-  };
-  const rotaciones = o.rotaciones.map((r, i) => {
-    const id = String(r?.id ?? '').trim(), donde = `Rotación ${id || i + 1}`;
-    if (!id || id.length > 12) mal(`${donde}: falta "id".`);
-    const f = r.fecha;
-    const dia = /^\d{4}-\d{2}-\d{2}$/.test(f) ? new Date(f + 'T12:00:00Z') : null;
-    if (!dia || Number.isNaN(dia.getTime()) || dia.toISOString().slice(0, 10) !== f) mal(`${donde}: "fecha" va como 2026-01-02.`);
-    if (hoy && f > hoy) mal(`${donde}: la fecha es futura.`);
-    const x = r.rendimiento;
-    if (x != null && !(typeof x === 'number' && x > -1 && x < 10)) mal(`${donde}: "rendimiento" es una fracción (por ejemplo -0.0871), no un porcentaje.`);
-    return { id, fecha: f, entran: lista(r.entran, donde), salen: lista(r.salen, donde), rendimiento: x ?? null };
-  }).sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
-  for (let i = 1; i < rotaciones.length; i++) if (rotaciones[i].fecha === rotaciones[i - 1].fecha) mal(`Dos rotaciones tienen la misma fecha (${rotaciones[i].fecha}).`);
-  if (new Set(rotaciones.map(r => r.id)).size !== rotaciones.length) mal('Hay dos rotaciones con el mismo "id".');
-  return { fuente: o.fuente.trim().slice(0, 200), rotaciones };
-}
-
-// La cartera modelo contra SPY y el núcleo, período por período (de cada rotación a la siguiente; la última, hasta hoy).
-// En dólares de EE.UU. con dividendos. acumulado: solo los períodos que tienen las tres cifras.
-export function medirHistorialAllaria(e, historial = e.datos.cartera_modelo_allaria?.historial) {
-  if (!historial?.rotaciones?.length) return null;
-  const pesos = Object.entries(e.datos.nucleo.pesos_internos);
-  const nucleo = (a, b) => { const p = pesos.map(([t, w]) => [w, rendimientoHist(e.historico, t, a, b)]); return p.some(([, r]) => r == null) ? null : suma(p, ([w, r]) => w * r); };
-  const primera = e.historico?.fechas?.[0];
-  const filas = historial.rotaciones.map((r, i) => {
-    const siguiente = historial.rotaciones[i + 1]?.fecha, hasta = siguiente || e.hoy, medible = primera && r.fecha >= primera && hasta > r.fecha;
-    return { id: r.id, desde: r.fecha, hasta, abierto: !siguiente, entran: r.entran, salen: r.salen, rendimiento: r.rendimiento,
-      spy: medible ? rendimientoHist(e.historico, 'SPY', r.fecha, hasta) : null, nucleo: medible ? nucleo(r.fecha, hasta) : null };
-  });
-  const completas = filas.filter(f => f.rendimiento != null && f.spy != null && f.nucleo != null);
-  const junto = k => completas.reduce((a, f) => a * (1 + f[k]), 1) - 1;
-  return { fuente: historial.fuente, filas, acumulado: completas.length ? { periodos: completas.length, rendimiento: junto('rendimiento'), spy: junto('spy'), nucleo: junto('nucleo') } : null,
-    sin_historia: filas.filter(f => f.spy == null).map(f => f.id), desde_historia: primera || null };
-}
-
-// ---------- rotaciones de Allaria ----------
-// Los eventos que se guardan al cargar una rotación nueva: la rotación y la cartera resultante como fantasma.
-export function eventosRotacion(datos, { fecha, rotacion, entra = [], sale = [] }, hoy) {
-  const actuales = (datos.cartera_modelo_allaria?.activos || []).map(a => a.ticker);
-  const nuevos = [...actuales.filter(t => !sale.includes(t)), ...entra.filter(t => !actuales.includes(t))];
-  const lista = l => l.length ? l.join(', ') : 'nada';
-  return [
-    { tipo: 'rotacion_allaria', fecha, rotacion, entra, sale },
-    ...nuevos.map(ticker => ({ tipo: 'fantasma', origen: 'allaria', ticker, fecha, grupo: `Allaria ${rotacion}` })),
-    { tipo: 'decision', fecha: hoy, texto: `Rotación ${rotacion} de Allaria: entra ${lista(entra)}; sale ${lista(sale)}` },
-  ];
 }

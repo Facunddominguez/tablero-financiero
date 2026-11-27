@@ -79,11 +79,5 @@ export function vistaRadar(ctx) {
           h('p.nota', `Nunca: ${d.reglas_tesis.prohibido.map(x => x.toLowerCase()).join('; ')}.`),
         ] : null,
         h('p.nota', 'Escribí qué tiene que pasar para que la tesis esté bien, y qué te haría cambiar de idea.'),
-        h('div.acciones.izq', boton('Anotar la predicción', () => nuevaPrediccion(ctx), 'chico')))),
-
-    d.cartera_modelo_allaria ? h('section',
-      h('h2', `Cartera modelo de referencia · Allaria ${d.cartera_modelo_allaria.rotacion}, ${fmt.fecha(d.cartera_modelo_allaria.fecha)}`),
-      h('ul.allaria-lista', d.cartera_modelo_allaria.activos.map(a => h('li' + (mios.has(a.ticker) ? '.tengo' : ''), a.ticker,
-        mios.has(a.ticker) ? h('small', 'en cartera') : watch.has(a.ticker) ? h('small', 'watchlist') : null))),
-      h('p.nota', h('a', { href: '#informes/allaria' }, 'Ver el contraste completo con tu cartera →'))) : null);
+        h('div.acciones.izq', boton('Anotar la predicción', () => nuevaPrediccion(ctx), 'chico')))));
 }
