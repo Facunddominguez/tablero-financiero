@@ -103,24 +103,35 @@ def desde_envios(datos, ticker, cik, desde):
     return out
 
 
+CARATULA = re.compile(
+    r"(?i)^(united states|securities and exchange commission|washington|form 6-k|report of foreign|pursuant to rule|"
+    r"under the securities|for the month|commission file|\(exact name|\(translation|\(address|indicate by check|"
+    r"form 20-f|yes\b|no\b|if .yes.|signature|[☐☒xX_\-\s|:]+$)")
+# La carátula termina en el número de la regla 12g3-2(b), aunque venga partida en varias líneas.
+FIN_CARATULA = re.compile(r"(?i)rule\s+12g3-2\s*\(b\)\s*:\s*82\s*-?[\s_.\d]*\)?")
+FIRMA = re.compile(r"(?i)(\bsignatures?\s+)?pursuant to the requirements of the securities exchange act")
+# Restos de carátula en un extracto ya guardado: hay que volver a leer el documento.
+RESTOS = re.compile(r"(?i)check\s+mark|rule\s+12g3-2|form 20-f or form 40-f")
+
+
 def extracto_de(documento):
-    """Las primeras frases con contenido de un documento HTML de la SEC (sin la carátula)."""
+    """Las primeras frases con contenido de un documento HTML de la SEC (sin la carátula ni las firmas)."""
     texto = re.sub(r"(?is)<(script|style|ix:header)\b.*?</\1>", " ", documento)
     texto = re.sub(r"(?i)</(p|div|tr|li|h\d)>|<br\s*/?>", "\n", texto)
     texto = html.unescape(re.sub(r"<[^>]+>", " ", texto)).replace("\xa0", " ")
-    caratula = re.compile(
-        r"(?i)^(united states|securities and exchange commission|washington|form 6-k|report of foreign|pursuant to rule|"
-        r"under the securities|for the month|commission file|\(exact name|\(translation|\(address|indicate by check|"
-        r"form 20-f|yes\b|no\b|if .yes.|signature|[☐☒xX_\-\s|:]+$)")
-    lineas = []
-    for linea in texto.splitlines():
-        linea = re.sub(r"\s+", " ", linea).strip()
-        if len(linea) < 40 or caratula.search(linea):
-            continue
-        lineas.append(linea)
-        if sum(len(x) for x in lineas) > 600:
-            break
-    return " ".join(lineas)[:600].strip()
+    lineas = [x for x in (re.sub(r"\s+", " ", linea).strip() for linea in texto.splitlines()) if x]
+    todo = " ".join(lineas)
+    fin = list(FIN_CARATULA.finditer(todo))
+    if fin:
+        todo = todo[fin[-1].end():]
+    else:  # sin esa marca, se sacan una por una las líneas de la carátula
+        todo = " ".join(x for x in lineas if len(x) >= 40 and not CARATULA.search(x))
+    todo = FIRMA.split(todo)[0]
+    contiene = re.search(r"(?i)\bcontains\s*:\s*", todo[:400])  # "This Form 6-K for … contains: …"
+    if contiene:
+        todo = todo[contiene.end():]
+    todo = re.sub(r"^\s*\d{1,2}\s*:\s*", "", todo)  # "1: Letter dated…"
+    return todo[:600].strip(" .;:")
 
 
 def desde_rss(texto, ticker, idioma, desde, maximo=MAXIMO_POR_BUSQUEDA):
@@ -258,6 +269,10 @@ def correr(m, tickers):
     cfg = m.CFG.get("noticias") or {}
     anterior = m.leer("noticias.json")
     previas = anterior.get("items") or []
+    for x in previas:  # un extracto que quedó con la carátula se vuelve a leer y a clasificar
+        if RESTOS.search(x.get("extracto") or ""):
+            for k in ("extracto", "materialidad", "categoria", "recomendacion", "linea", "por", "intentos_ia"):
+                x.pop(k, None)
     hoy = m.hoy_argentina()
     desde = (dt.date.fromisoformat(hoy) - dt.timedelta(days=DIAS)).isoformat()
     cik = m.leer("sec_cik.json")

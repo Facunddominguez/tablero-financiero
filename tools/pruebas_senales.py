@@ -287,6 +287,23 @@ def extracto_del_6k():
     assert "Commission File" not in t and "venta de un activo" in t and len(t) <= 600, t
 
 
+def caratula_partida_en_lineas():
+    t = noticias.extracto_de(grabada("sec_6k_caratula_formato.htm"))
+    assert t == "Letter dated November 2, 2026 entitled “Information on Resignation of a Director.”", t
+    assert noticias.RESTOS.search("mark whether the registrant files or will file ... check mark") and not noticias.RESTOS.search(t)
+    malo = {"items": [{"id": "sec-0000904851-26-000050", "t": "YPF", "fecha": "2026-11-20T21:00:00Z", "fuente": "SEC", "forma": "6-K", "items": [], "titulo": "6-K",
+                       "extracto": "by check mark whether the registrant…", "materialidad": 1, "categoria": "otro", "linea": "x", "por": {"proveedor": "gemini"}}]}
+    pedidos = []
+
+    def probar():
+        r = noticias.correr(mercado, ["YPF"])
+        x = next(i for i in r["items"] if i["id"] == "sec-0000904851-26-000050")
+        assert "venta de un activo" in x["extracto"] and "por" not in x and "materialidad" not in x, x
+        assert [u for u, _ in pedidos if u.endswith("ypf6k.htm")], "se vuelve a abrir el documento"
+    with entorno(SEC_CONTACTO="x x@example.com"), parches((mercado, "bajar", red_noticias(pedidos=pedidos))):
+        con_noticias(probar, noticias=malo)
+
+
 def rss_de_google():
     l = noticias.desde_rss(RSS, "NVDA", "en", "2026-11-01")
     assert len(l) == 6 and l[0]["fecha"] >= l[-1]["fecha"], "las más nuevas primero"
@@ -693,6 +710,7 @@ def roles_y_tenencia():
     r = lambda cargo, **k: directivos.rol(dict({"cargo": cargo, "oficial": True}, **k))[0]  # noqa: E731
     assert [r("CEO"), r("EVP & Chief Financial Officer"), r("President"), r("Senior Vice President"), r("Chief Operating Officer")] == \
         ["ceo_cfo", "ceo_cfo", "presidente", "directivo", "presidente"]
+    assert directivos.rol({"cargo": "See Remarks", "oficial": True}) == ("directivo", "Directivo")
     assert r("", oficial=False, director=True) == "director" and r("", oficial=False, dueno10=True) == "dueno" and r("", oficial=False) == "otro"
     ops = [{"fecha": "2026-11-01", "codigo": "P", "acciones": 100, "despues": 1100, "tenencia": "D|"},
            {"fecha": "2026-11-02", "codigo": "P", "acciones": 100, "despues": 1200, "tenencia": "D|"}]
@@ -818,6 +836,7 @@ PRUEBAS = [
     ("IA: si Gemini rechaza el formato nuevo, prueba el anterior", gemini_con_la_forma_anterior),
     ("Noticias SEC: 8-K con sus ítems, formulario 4 agrupado y solo lo pedido", envios_de_la_sec),
     ("Noticias SEC: del 6-K se saca de qué trata, sin la carátula", extracto_del_6k),
+    ("Noticias SEC: carátula partida en líneas; lo mal extraído se vuelve a leer", caratula_partida_en_lineas),
     ("Noticias Google: titular sin el medio, fecha y tope por búsqueda", rss_de_google),
     ("Noticias: sin duplicados, 30 días, tope por empresa y clasificación conservada", sin_duplicados_y_con_tope),
     ("Noticias: SEC y Google en español e inglés; si fallan conservan lo anterior", noticias_completas),
