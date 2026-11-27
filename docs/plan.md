@@ -7,7 +7,7 @@ Nada de esto está en `main` hasta que se apruebe el PR. Probado con datos inven
 | Etapa | Estado | Qué hace |
 |---|---|---|
 | 1 · Arreglos de la ronda 1 | Hecha | Feriados argentinos en la ventana; hora de los precios y sugerencia de actualizar; precio justo en ventas; editar y borrar predicciones y fantasmas; aviso de cambios de ratio de BYMA. |
-| 2 · Datos nuevos | Hecha | Riesgo país, tasa de plazo fijo, cuotapartes históricas, cuatro series de FRED, cierres mensuales desde 2005, elección en Kalshi (Polymarket programado y apagado). |
+| 2 · Datos nuevos | Hecha | Riesgo país, tasa de plazo fijo, cuotapartes históricas, cuatro series de FRED, cierres mensuales desde 2005, elección en Kalshi y Polymarket. |
 | 3 · Proyecciones con rangos | Hecha | Simulación de 2.000 caminos; rangos en Hoy y Radar; Informes → Proyección; supuestos editables; objetivos con fecha. |
 | 4 · Semáforo y reserva en pesos | Hecha | Semáforo de cuatro indicadores, elección 2027, reserva en pesos mes a mes, interés de los fondos en pesos en el riesgo. |
 | 5 · Clima de mercado | Hecha | Cuatro lecturas con historia; aviso opcional de aporte extra. |
@@ -17,7 +17,7 @@ De paso se corrigió un error anterior: un campo precargado como "1.200" se leí
 
 ### Decisiones tomadas (para confirmar)
 
-- **Polymarket apagado.** Desde esta computadora no responde: la justicia porteña ordenó bloquearlo en el país (marzo de 2026). El Action podría leerlo desde GitHub, pero es una decisión del dueño. No hay respuesta real grabada: la prueba usa el formato de la API con valores inventados.
+- **Polymarket prendido (decisión del dueño, 26/11/2026).** La justicia porteña ordenó bloquearlo en el país (marzo de 2026) y desde esta computadora no responde; no se esquivó el bloqueo acá: lo lee el Action desde GitHub. No hay respuesta real grabada: la prueba usa el formato de la API con valores inventados, así que la primera corrida en `main` es la que lo confirma.
 - **Feriados**: los "puente" y los días no laborables tienen rueda sin liquidación (calendario de BYMA); el 31/12/2026 no tiene rueda aunque no sea feriado.
 - **Riesgo país desde 2020; cuotapartes un valor por mes hacia atrás** (a la fuente le faltan días) y diario desde ahora.
 - **Simulación**: retornos de Vanguard como compuestos; los de las acciones (tasa libre + beta × prima) como promedio. Vienen de fuentes distintas y no son del todo coherentes entre sí. Sin cupones, sin amortización de la ON y sin desviar ahorro a la reserva, como la proyección anterior.
@@ -38,7 +38,8 @@ De paso se corrigió un error anterior: un campo precargado como "1.200" se leí
 8. Reserva en pesos: comparar el rendimiento mensual de los fondos con el del broker.
 9. Cartera y Trimestral → Riesgo: el fondo en pesos de largo plazo debe decir que incluye el interés.
 10. Editar y borrar una predicción y un fantasma, sincronizar y verlo en otro dispositivo.
-11. Confirmar umbrales, decidir Polymarket y si se prende el aporte extra.
+11. Confirmar umbrales y decidir si se prende el aporte extra.
+12. Después de la primera corrida, ver en Trimestral → Elecciones que Polymarket traiga candidatos (si dice "sin datos", revisar el registro de la corrida: puede cambiar el nombre del evento en `mercado_config.json`).
 
 ### Para la ronda 3
 

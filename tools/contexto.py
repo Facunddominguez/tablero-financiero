@@ -228,7 +228,8 @@ def polymarket(m):
 def elecciones(m, anterior):
     cfg, anterior = m.CFG["elecciones"], anterior or {}
     out = {"fecha": cfg["fecha"], "kalshi": m.seccion("kalshi", anterior.get("kalshi"), lambda: kalshi(m))}
-    # Polymarket está bloqueado en Argentina por orden judicial: solo se lee si se activa en mercado_config.json.
+    # Polymarket está bloqueado en Argentina por orden judicial: lo lee el Action, desde afuera, solo si está
+    # activado en mercado_config.json (lo activó el dueño el 26/11/2026).
     out["polymarket"] = (m.seccion("polymarket", anterior.get("polymarket"), lambda: polymarket(m))
                          if cfg.get("polymarket_activado") else {"nombre": "Polymarket", "desactivado": True})
     return out

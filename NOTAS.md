@@ -59,7 +59,7 @@ En **Hoy → Para saber** (una línea) e **Informes → Trimestral**.
 - **Semáforo**: riesgo país, canje, brecha MEP contra oficial, e YPF y PAM contra SPY a 30 días. Toma el peor y dice cuál lo puso así. En rojo solo sugiere revisar R6B y la parte en pesos de la reserva.
 - **Reserva en pesos**: mes a mes, cuánto tenía que subir el MEP para que el fondo en dólares le ganara a la tasa de plazo fijo, cuánto subió y qué rindieron tus fondos en pesos.
 - **Elección 2027**: cuenta regresiva y probabilidad por candidato, ponderada por el volumen de cada mercado; avisa si dos difieren más de 10 puntos. El tablero solo lee.
-- **Polymarket está apagado**: en Argentina está bloqueado por orden judicial (marzo de 2026). Se prende con `elecciones.polymarket_activado` en `tools/mercado_config.json`; el Action corre en servidores de GitHub, fuera del país. Su lectura se probó solo con un ejemplo del formato, no con una respuesta real.
+- **Polymarket está prendido** (decisión del dueño, 26/11/2026). En Argentina está bloqueado por orden judicial (marzo de 2026): el sitio no abre desde acá y el dato lo lee el Action en servidores de GitHub, fuera del país; el tablero muestra solo las probabilidades. Se apaga con `elecciones.polymarket_activado: false` en `tools/mercado_config.json`. La lectura se probó solo con un ejemplo del formato, no con una respuesta real: si falla, dice "sin datos" y el resto sigue igual.
 
 ## Clima de mercado y aporte extra
 
@@ -220,7 +220,7 @@ Se edita `privado/datos_iniciales.json` y se vuelve a cifrar con `cifrar` (mismo
 | Historia de cuotapartes | api.argentinadatos.com `/v1/finanzas/fci/{categoría}/{año}/{mes}/{día}`: un valor cerca de cada fin de mes y el de cada día desde ahora (a la fuente le faltan días) |
 | Bonos de riesgo, curva, VIX, condiciones financieras | FRED `BAMLH0A0HYM2` (solo tres años), `T10Y3M`, `VIXCLS`, `NFCI` (se guarda, todavía no se muestra) |
 | ETF: cierres mensuales desde 2005 | yfinance → `largo_plazo.json` (cambia una vez por mes) |
-| Elección 2027 | Kalshi `/trade-api/v2/events?series_ticker=KXARGENTINAPRES`; Polymarket `gamma-api.polymarket.com/events?slug=…` (apagado) |
+| Elección 2027 | Kalshi `/trade-api/v2/events?series_ticker=KXARGENTINAPRES`; Polymarket `gamma-api.polymarket.com/events?slug=…` (solo desde GitHub) |
 | Histórico de lo que tenés | Yahoo Finance, tickers de `historico_extra` en `tools/mercado_config.json` (solo para reconstruir la evolución de tu cartera antes de los registros diarios; si un ticker falla no frena al resto) |
 
 ## Probar en la computadora

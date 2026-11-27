@@ -449,13 +449,16 @@ def kalshi_grabado():
 
 
 def polymarket_apagado_y_prendido():
-    pedidos = red_contexto()
-    apagado = contexto.elecciones(mercado, {})
-    assert apagado["polymarket"] == {"nombre": "Polymarket", "desactivado": True}, apagado["polymarket"]
-    assert not any("polymarket" in u for u in pedidos), "apagado no se consulta"
-    assert apagado["fecha"] == "2027-10-24" and apagado["kalshi"]["candidatos"]
-    mercado.CFG["elecciones"]["polymarket_activado"] = True
+    cfg = mercado.CFG["elecciones"]
+    configurado = cfg["polymarket_activado"]
     try:
+        cfg["polymarket_activado"] = False
+        pedidos = red_contexto()
+        apagado = contexto.elecciones(mercado, {})
+        assert apagado["polymarket"] == {"nombre": "Polymarket", "desactivado": True}, apagado["polymarket"]
+        assert not any("polymarket" in u for u in pedidos), "apagado no se consulta"
+        assert apagado["fecha"] == "2027-10-24" and apagado["kalshi"]["candidatos"]
+        cfg["polymarket_activado"] = True
         r = contexto.elecciones(mercado, {})["polymarket"]
         assert [c["nombre"] for c in r["candidatos"]] == ["Javier Milei", "Axel Kicillof", "Sergio Massa", "Dante Gebel"], r["candidatos"]
         assert r["candidatos"][0] == {"nombre": "Javier Milei", "prob": 0.58, "volumen": 200000}
@@ -464,8 +467,12 @@ def polymarket_apagado_y_prendido():
         red_contexto({"events?slug=argentina-presidential-election-winner": json.dumps(otro)})
         s = contexto.elecciones(mercado, {"polymarket": r})["polymarket"]
         assert s["stale"] is True and s["candidatos"] == r["candidatos"], "un evento de otra elección no se usa"
+        # sin dato anterior, una falla queda marcada y sin candidatos: el tablero muestra "sin datos"
+        red_contexto({"events?slug=argentina-presidential-election-winner": "[]"})
+        nada = contexto.elecciones(mercado, {"polymarket": {"nombre": "Polymarket"}})["polymarket"]
+        assert nada["stale"] is True and "candidatos" not in nada and "desactivado" not in nada, nada
     finally:
-        mercado.CFG["elecciones"]["polymarket_activado"] = False
+        cfg["polymarket_activado"] = configurado
 
 
 def contexto_completo():
@@ -533,7 +540,7 @@ prueba("Cuotapartes: tope de pedidos, cortes de red y fallas", cuotapartes_con_f
 prueba("FRED: un valor por semana, el último diario y sin días vacíos", fred_semanal)
 prueba("Historia larga: mensual, sin el mes en curso", historia_larga)
 prueba("Kalshi: probabilidad por candidato desde las puntas, con volumen", kalshi_grabado)
-prueba("Polymarket: apagado por defecto; prendido, saltea casilleros vacíos y otras elecciones", polymarket_apagado_y_prendido)
+prueba("Polymarket: apagado no se consulta; prendido, saltea casilleros vacíos y otras elecciones", polymarket_apagado_y_prendido)
 prueba("Contexto completo: escribe los tres archivos y cada parte falla por separado", contexto_completo)
 prueba("Feriados argentinos: este año y el que viene, con su tipo", con_anio(feriados_grabados))
 prueba("Feriados argentinos: si el año que viene no está publicado, sigue con lo que hay", con_anio(feriados_sin_el_anio_que_viene))

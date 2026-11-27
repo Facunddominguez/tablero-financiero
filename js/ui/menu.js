@@ -341,7 +341,7 @@ function filasContexto(e) {
     ['Bonos de alto rendimiento, curva, VIX y condiciones financieras', 'FRED, Reserva Federal de St. Louis', fred.map(s => s.ultimo?.fecha).filter(Boolean).sort()[0], fred.some(s => s.stale)],
     ['ETF: cierres mensuales desde 2005', 'Yahoo Finance (vía yfinance)', l?.actualizado, l?.stale],
     ['Elección 2027: Kalshi', 'API pública de Kalshi (solo lectura)', el.kalshi?.actualizado, el.kalshi?.stale],
-    ['Elección 2027: Polymarket', poly?.desactivado ? 'Apagado: está bloqueado en Argentina por orden judicial' : 'API gamma de Polymarket (solo lectura)', poly?.actualizado, poly?.stale, poly?.desactivado ? '—' : null],
+    ['Elección 2027: Polymarket', poly?.desactivado ? 'Apagado: está bloqueado en Argentina por orden judicial' : 'API gamma de Polymarket (solo lectura, desde GitHub)', poly?.actualizado, poly?.stale, poly?.desactivado ? '—' : null],
   ];
 }
 function fuentes(ctx) {

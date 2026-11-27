@@ -67,8 +67,12 @@ function seccionElecciones(e) {
     ] : h('p.nota', 'Todavía no hay datos de los mercados: aparecen cuando se actualicen los precios.'),
     h('ul.lista-simple.supuestos', el.mercados.map(m => h('li',
       m.desactivado ? `${m.nombre}: apagado. Está bloqueado en Argentina por orden judicial.`
-        : m.activo ? [h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer' }, m.nombre), `: volumen en ${m.unidad || 'su unidad'}${m.actualizado ? `, al ${fmt.fecha(m.actualizado.slice(0, 10))}` : ''}${m.viejo ? ' (sin actualizar)' : ''}.`]
-          : `${m.nombre}: sin datos.`))),
+        : [
+          // el sitio de Polymarket no abre desde Argentina: no se enlaza y se dice de dónde sale el dato
+          m.activo && m.id !== 'polymarket' ? h('a', { href: m.url, target: '_blank', rel: 'noopener noreferrer' }, m.nombre) : m.nombre,
+          m.activo ? `: volumen en ${m.unidad || 'su unidad'}${m.actualizado ? `, al ${fmt.fecha(m.actualizado.slice(0, 10))}` : ''}${m.viejo ? ' (sin actualizar)' : ''}.` : ': sin datos.',
+          m.id === 'polymarket' ? ' Está bloqueado en Argentina por orden judicial: el dato lo lee GitHub desde afuera.' : null,
+        ]))),
     h('p.nota', { style: 'margin-top:.6rem' }, `El tablero solo lee las probabilidades de mercados donde se juega dinero real: no apuesta, no opera y no recomienda a nadie. "Combinada" pondera cada mercado por su volumen${activos.length < 2 ? ' (hoy hay uno solo)' : ''}. Son precios de contratos, no encuestas, y no tienen por qué sumar 100%.`));
 }
 
